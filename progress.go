@@ -3,7 +3,6 @@
 // Package progress implements a simple progress indicator showing the status of processing.
 package progress
 
-
 import (
 	"fmt"
 	"os"
@@ -57,8 +56,9 @@ func (p *Progress) Update(input string) {
 	p.input.Store(input)
 }
 
+// renderLoop periodically draws the progress line at ~60 FPS to ensure a smooth UI without bottlenecking the processing logic.
 func (p *Progress) renderLoop() {
-	ticker := time.NewTicker(16 * time.Millisecond) // ~60 FPS
+	ticker := time.NewTicker(16 * time.Millisecond) // slightly faster than 60 FPS / 60 Hz
 	defer ticker.Stop()
 
 	for {
@@ -67,13 +67,15 @@ func (p *Progress) renderLoop() {
 			p.draw()
 		case <-p.stopChan:
 			p.draw()
-			fmt.Fprint(os.Stderr, "\033[?25h\n") // restore the cursor
+			fmt.Fprint(os.Stderr, "\033[2K\r") // completely clear the progress status line
+			fmt.Fprint(os.Stderr, "\033[?25h") // restore the cursor
 			close(p.doneChan)
 			return
 		}
 	}
 }
 
+// draw clears the current terminal line and prints the formatted percentage and status string, truncating text as needed to fit the terminal width.
 func (p *Progress) draw() {
 	cur     := atomic.LoadInt64(&p.current)
 	percent := (cur * 100) / p.total
@@ -92,9 +94,10 @@ func (p *Progress) draw() {
 		display = display[len(display)-maxLen+3:] + "..."
 	}
 
-	fmt.Fprintf(os.Stderr, "\033[2K%s%s", prefix, display) // \033[2K clears line, \r moves cursor to start
+	fmt.Fprintf(os.Stderr, "\033[2K%s%s", prefix, display) // \033[2K clears line, \r moves the cursor to the beginning of the line
 }
 
+// restoreAndExit restores the cursor upon trapping a SIGINT or SIGTERM signal.
 func (p *Progress) restoreAndExit() {
 	fmt.Fprint(os.Stderr, "\033[?25h\n") // restore the cursor
 	os.Exit(1)
