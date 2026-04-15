@@ -66,9 +66,9 @@ func NewProgress(total int, output io.Writer) *Progress {
 		defer signal.Stop(sigChan) // clean up signal listener
 		select {
 		case <-sigChan:
-			p.restoreAndExit()       // SIGINT or SIGTERM trapped; restore the hidden cursor
+			p.restoreAndExit()     // SIGINT or SIGTERM trapped; restore the hidden cursor
 		case <-p.stopChan:
-			return                   // normal exit triggered by Close()
+			return                 // normal exit triggered by Close()
 		}
 	}()
 
