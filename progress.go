@@ -13,6 +13,15 @@ import (
 	"golang.org/x/term"
 )
 
+// this package largely represents a personal experiment born of curiosity
+// more than a practical solution to a UX issue for its parent module
+//
+// it may evolve into a generic mini library if i can find a more sophisticated
+// method of accurately reporting progress status updates that are actually
+// proportional to the total work underway. as it currently stands, its
+// assumption that every individual chunk of work is the same computational
+// size is very crude and naïve, 
+
 var initialStderrFd uintptr
 
 func init() { initialStderrFd = os.Stderr.Fd() }
