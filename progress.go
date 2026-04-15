@@ -13,14 +13,18 @@ import (
 	"golang.org/x/term"
 )
 
-// this package largely represents a personal experiment born of curiosity
-// more than a practical solution to a UX issue for its parent module
+// this package largely represents a personal experiment born of curiosity more
+// than a practical solution to a UX issue for its parent module, because the
+// main program is already relatively fast at processing fairly substantial
+// code bases, e.g., ~2 seconds for k8s, even before performance optimizations
+// have been implemented.
 //
 // it may evolve into a generic mini library if i can find a more sophisticated
 // method of accurately reporting progress status updates that are actually
-// proportional to the total work underway. as it currently stands, its
+// proportional to the total work underway. but as it currently stands, its
 // assumption that every individual chunk of work is the same computational
-// size is very crude and naïve, 
+// size is very crude and naïve, and ultimately reports inaccurate progress
+// status updates.
 
 var initialStderrFd uintptr
 
