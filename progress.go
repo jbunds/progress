@@ -106,12 +106,11 @@ func (p *Progress) InitialBudget() uint64 { return scale }
 //   if total == 0 (fractional path allocation):  'val' is the scaled budget (portion of scale) for the branch
 func (p *Progress) Report(val uint64, status string) {
 	if status != "" { p.input.Store(status) }
-
 	var share uint64
 	if p.total > 0 {
 		share = val * (scale / uint64(p.total)) // weighted-based accumulation mode: calculate share of scale
 	} else {
-		share = val // fractional path allocation mode: add the budget share directly
+		share = val                             // fractional path allocation mode: add the budget share directly
 	}
 	p.current.Add(share)
 }
@@ -119,7 +118,6 @@ func (p *Progress) Report(val uint64, status string) {
 // renderLoop periodically draws the progress line at ~60 FPS to ensure a smooth UI without bottlenecking the processing logic.
 func (p *Progress) renderLoop() {
 	tickerChan := p.clock.tick()
-
 	for {
 		select {
 		case <-tickerChan:
