@@ -24,9 +24,9 @@ func TestNewProgress(t *testing.T) {
 		want  *Progress
 	}{
 		{
-			name:   "succeeds",
-			total:  uint64(100),
-			want:   &Progress{
+			name:  "succeeds",
+			total: uint64(100),
+			want:  &Progress{
 				total: uint64(100),
 				clock: &realClock{ d: 16 * time.Millisecond },
 				fd:    2,
