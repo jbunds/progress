@@ -175,7 +175,7 @@ func (p *Progress) restoreAndExit() {
 // Close stops the background renderer, restores the terminal cursor, and blocks until the final "done" state is displayed.
 func (p *Progress) Close() {
 	p.closeOnce.Do(func() {
-		p.input.Store("done") // force internal counter to 100% status to "done"
+		p.input.Store("done") // force internal counter to 100% and status to "done"
 		p.current.Store(scale)
 		close(p.stopChan)
 		<-p.doneChan
