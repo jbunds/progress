@@ -15,21 +15,21 @@ func TestNewProgress(t *testing.T) {
 	t.Parallel()
 	opts := []cmp.Option{
 		cmp.AllowUnexported(Progress{}, realClock{}),
-		cmpopts.IgnoreFields(Progress{}, "stopChan", "doneChan", "input", "output"), // non-trivial to compare
+		cmpopts.EquateComparable(atomic.Uint64{}, atomic.Bool{}),
+		cmpopts.IgnoreFields(Progress{}, "stopChan", "doneChan", "input", "output", "closeOnce"), // non-trivial to compare
 	}
 	tests := []struct {
 		name  string
-		total int
+		total uint64
 		want  *Progress
 	}{
 		{
 			name:   "succeeds",
-			total:  int(100),
+			total:  uint64(100),
 			want:   &Progress{
-				current: int64(0),
-				total:   int64(100),
-				clock:   &realClock{ d: 16 * time.Millisecond },
-				fd:      2,
+				total: uint64(100),
+				clock: &realClock{ d: 16 * time.Millisecond },
+				fd:    2,
 			},
 		},
 	}
@@ -50,26 +50,23 @@ func TestNewProgress(t *testing.T) {
 	}
 }
 
-func TestUpdate(t *testing.T) {
+func TestReport(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
-		want int64
+		want uint64
 	}{
 		{
 			name: "3 updates performed",
-			want: 3,
+			want: 30_000_000_000_000_000, // (3 units / 100 total) * 1e18 == 3e16
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			p := &Progress{
-				total:  int64(100),
-				output: io.Discard,
-			}
-			for range 3 { p.Update("updating") }
-			if diff := cmp.Diff(tt.want, p.current); diff != "" {
+			p := NewProgress(100, io.Discard)
+			for range 3 { p.Report(1, "updating") }
+			if diff := cmp.Diff(tt.want, p.current.Load()); diff != "" {
 				t.Errorf("current progress was not updated (-want +got):\n%s", diff)
 			}
 		})
@@ -83,9 +80,13 @@ func TestRenderLoop(t *testing.T) {
 	tickTrigger := make(chan time.Time)
 	notify      := make(chan struct{}) // sync channel
 
+	tick := func() {
+		tickTrigger <- time.Now()
+		<-notify
+	}
+
 	p := &Progress{
 		total:      100,
-		current:    0,
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
 		output:     &buf,
@@ -96,24 +97,22 @@ func TestRenderLoop(t *testing.T) {
 	go p.renderLoop()
 
 	p.input.Store("starting...")
-	tickTrigger <- time.Now()
-	<-notify
+	tick()
 
-	atomic.StoreInt64(&p.current, 50)
-	p.input.Store("50% complete...")
-	tickTrigger <- time.Now()
-	<-notify
+	p.Report(40, "40% complete...")
+	tick()
 
-	atomic.StoreInt64(&p.current, 100)
-	p.input.Store("done")
+	p.Report(60, "done")
+	tick()
+
 	close(p.stopChan)
 	<-notify
 	<-p.doneChan
 
-	want := "\r\033[2Kprocessing (  0%): starting..."     +
-	        "\r\033[2Kprocessing ( 50%): 50% complete..." +
-	        "\r\033[2Kprocessing (100%): done"            +
-	        "\033[2K\r\033[?25h" // cursor restoration ANSI escape sequence
+	want := "\r\033[2Kprocessing (  0%): starting..."     + // tick 1
+	        "\r\033[2Kprocessing ( 40%): 40% complete..." + // tick 2 (Report(40, ...))
+	        "\r\033[2Kprocessing (100%): done"            + // tick 3 (Report(60, ...))
+	        "\033[2K\r\033[?25h"                            // cursor restoration
 
 	if diff := cmp.Diff(want, buf.String()); diff != "" {
 		t.Errorf("renderLoop mismatch (-want +got):\n%s", diff)
