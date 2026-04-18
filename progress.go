@@ -30,7 +30,7 @@ var initialStderrFd uintptr
 
 func init() { initialStderrFd = os.Stderr.Fd() }
 
-// Progress provides a thread-safe, high-precision status indicator for both fixed-batch and recursive workloads.
+// Progress provides a concurrency-safe, high-precision status indicator for both fixed-batch and recursive workloads.
 type Progress struct {
 	total      uint64        // 0 for fractional path allocation; > 0 for weight-based accumulation
 	current    atomic.Uint64 // accumulates shares of scale
@@ -51,23 +51,23 @@ const scale = 1_000_000_000_000_000_000
 // obviates sleeping in unit tests
 type clock interface { tick() <-chan time.Time }
 
-type realClock struct { d time.Duration }
-func (r *realClock) tick() <-chan time.Time { return time.NewTicker(r.d).C }
+type realClock struct { dur time.Duration }
+func (r *realClock) tick() <-chan time.Time { return time.NewTicker(r.dur).C }
 
-type fakeClock struct { c chan time.Time }
-func (f *fakeClock) tick() <-chan time.Time { return f.c }
+type fakeClock struct { chn chan time.Time }
+func (f *fakeClock) tick() <-chan time.Time { return f.chn }
 
-// NewProgress initializes a throttled, thread-safe work unit completion (progress) tracker and begins the background terminal rendering loop.
+// NewProgress initializes a throttled, concurrency-safe work unit completion (progress) tracker and starts a background terminal rendering loop.
 //
-//    pass totalUnits == 0 for fractional path allocation
-//    pass totalUnits  > 0 for weight-based accumulation
+//    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known a priori)
+//    pass totalUnits == 0 for fractional path allocation (when totalUnits is not known a priori)
 func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 	p := &Progress{
 		total:    uint64(totalUnits),
 		stopChan: make(chan struct{}),
 		doneChan: make(chan struct{}),
 		output:   output,
-		clock:    &realClock{ d: 16 * time.Millisecond },
+		clock:    &realClock{ dur: 16 * time.Millisecond },
 	}
 
 	if f, ok := output.(*os.File); ok {
@@ -97,13 +97,13 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 	return p
 }
 
-// InitialBudget returns the full internal scale (100%) to be used as the starting budget for recursive fractional progress tracking.
+// InitialBudget returns the full internal scale (100%) to be used as the starting budget for tracking fractional progress.
 func (p *Progress) InitialBudget() uint64 { return scale }
 
-// Report records the completion of a work unit or a fractional budget share and updates the status message.
+// Report records the completion of a unit of work, or a fractional share or work, and updates the status message.
 //
-//   if total >  0 (weighted-based accumulation): 'val' is the weight of the completed unit
-//   if total == 0 (fractional path allocation):  'val' is the scaled budget (portion of scale) for the branch
+//   if total >  0: 'val' is the weight of the completed unit
+//   if total == 0: 'val' is the scaled budget (portion of scale) for the branch
 func (p *Progress) Report(val uint64, status string) {
 	if status != "" { p.input.Store(status) }
 	var share uint64
