@@ -139,7 +139,7 @@ func (p *Progress) Report(val uint64, status string) {
 	p.current.Add(share)
 }
 
-// renderLoop periodically draws the progress line at ~60 FPS to ensure a smooth UI without bottlenecking the processing logic.
+// renderLoop periodically draws the progress line at ~60 FPS to ensure a smooth UI without impeding the processing logic.
 func (p *Progress) renderLoop() {
 	tickerChan := p.clock.tick()
 	for {
