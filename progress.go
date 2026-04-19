@@ -27,6 +27,10 @@ import (
 // source file) costs the same amount of computational resource is very crude
 // and naïve, and ultimately results in inaccurate progress status updates.
 
+// TODO(jeff): figure out how to simplify the interface to this package
+//             by storing more work completion status to obviate callers
+//             being required to track the status of work completion.
+
 // Progress provides a concurrency-safe, high-precision status indicator for both fixed-batch and recursive workloads.
 type Progress struct {
 	total      uint64        // 0 for fractional path allocation; > 0 for weight-based accumulation
