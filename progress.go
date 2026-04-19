@@ -113,7 +113,7 @@ func getWidth(files ...*os.File) int {
 		// although f.Fd() will certainly be 0 (os.Stdin), 1 (os.Stdout), or 2 (os.Stderr),
 		// the following check is performed just to satisfy the gosec linter (otherwise
 		// gosec complains about possible integer overflow per the call to int())
-		if fd > math.MaxInt { continue } // skip if FD is logically impossible for term.GetSize
+		if fd > math.MaxInt { continue } // skip if FD is logically impossible for term.GetSize (really, just making gosec happy)
 		if w, _, err := term.GetSize(int(fd)); err == nil {
 			if w > width { width = w }
 		}
