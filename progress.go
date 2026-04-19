@@ -27,10 +27,6 @@ import (
 // source file) costs the same amount of computational resource is very crude
 // and naïve, and ultimately results in inaccurate progress status updates.
 
-// TODO(jeff): figure out how to simplify the interface to this package
-//             by storing more work completion status to obviate callers
-//             being required to track the status of work completion.
-
 // Progress provides a concurrency-safe, high-precision status indicator for both fixed-batch and recursive workloads.
 type Progress struct {
 	total      uint64        // 0 for fractional path allocation; > 0 for weight-based accumulation
@@ -65,7 +61,7 @@ func (f *fakeClock) tick() <-chan time.Time { return f.chn }
 func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 	w := 80
 	if f, ok := output.(*os.File); ok {
-		w = getWidth(f)
+		w = getWidth(f) // output is a real *os.File (and not, e.g., io.Discard, as the case may be for certain tests)
 	}
 
 	p := &Progress{
@@ -82,7 +78,7 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 	fmt.Fprint(p.output, "\033[?25l") // hide the cursor
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM) // trap SIGINT and SIGTERM so the hidden cursor can be restored
 
 	go func() {
 		defer signal.Stop(sigChan) // clean up signal listener
@@ -102,20 +98,20 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 func getWidth(files ...*os.File) int {
 	width := 80
 	if len(files) == 0 {
-		files = []*os.File{os.Stdout, os.Stderr, os.Stdin}
+		files = []*os.File{
+			os.Stdout, // Fd() == 1
+			os.Stderr, // Fd() == 2
+			os.Stdin,  // Fd() == 0
+		}
 	}
 	for _, f := range files {
 		fd := f.Fd()
-		// f.Fd() can be reasonably expected to be 0 (os.Stdin), 1 (os.Stdout),
-		// or 2 (os.Stderr), so the following check makes gosec happy (otherwise
-		// it complains about possible integer overflow in the call to int())
-		if fd > math.MaxInt {
-			continue // skip if FD is logically impossible for term.GetSize
-		}
+		// although f.Fd() will certainly be 0 (os.Stdin), 1 (os.Stdout), or 2 (os.Stderr),
+		// the following check is performed just to satisfy the gosec linter (otherwise
+		// gosec complains about possible integer overflow per the call to int())
+		if fd > math.MaxInt { continue } // skip if FD is logically impossible for term.GetSize
 		if w, _, err := term.GetSize(int(fd)); err == nil {
-			if w > width {
-				width = w
-			}
+			if w > width { width = w }
 		}
 	}
 	return max(width, 80) // fallback for pipes, redirects, and non-tty outputs
@@ -178,7 +174,7 @@ func (p *Progress) draw() {
 	display := status
 
 	if len(display) > maxLen && maxLen > 3 {
-		display = "..." + display[len(display)-maxLen+3:] // truncate from left to show most relevant portion
+		display = "..." + display[len(display)-maxLen+3:] // truncate from left to show most relevant portion (e.g., file basename)
 	} else if len(display) > maxLen {
 		display = display[:maxLen]
 	}
