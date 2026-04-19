@@ -4,6 +4,7 @@ package progress
 import (
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/signal"
 	"sync"
@@ -26,10 +27,6 @@ import (
 // source file) costs the same amount of computational resource is very crude
 // and naïve, and ultimately results in inaccurate progress status updates.
 
-var initialStderrFd uintptr
-
-func init() { initialStderrFd = os.Stderr.Fd() }
-
 // Progress provides a concurrency-safe, high-precision status indicator for both fixed-batch and recursive workloads.
 type Progress struct {
 	total      uint64        // 0 for fractional path allocation; > 0 for weight-based accumulation
@@ -39,7 +36,7 @@ type Progress struct {
 	doneChan   chan struct{} // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
 	output     io.Writer     // destination writer for the terminal-formatted progress updates
 	clock      clock         // provides the timing source for throttled UI updates, allowing for fake clocks in tests
-	fd         uintptr       // file descriptor of the output, used to query terminal dimensions
+	width      int           // width of the terminal window (set during construction, so resizing of the terminal window during runtime will not be properly handled)
 	drawNotify chan struct{} // optional channel used to signal completion of a draw cycle for deterministic testing
 	drawnDone  atomic.Bool   // drawnDone ensures the final completion frame is rendered just once to prevent status smearing
 	closeOnce  sync.Once     // closeOnce ensures that cursor restoration and cleanup logic are executed just once
@@ -62,18 +59,18 @@ func (f *fakeClock) tick() <-chan time.Time { return f.chn }
 //    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known a priori)
 //    pass totalUnits == 0 for fractional path allocation (when totalUnits is not known a priori)
 func NewProgress(totalUnits uint64, output io.Writer) *Progress {
+	w := 80
+	if f, ok := output.(*os.File); ok {
+		w = getWidth(f)
+	}
+
 	p := &Progress{
 		total:    uint64(totalUnits),
 		stopChan: make(chan struct{}),
 		doneChan: make(chan struct{}),
 		output:   output,
+		width:    max(w, 80),
 		clock:    &realClock{ dur: 16 * time.Millisecond },
-	}
-
-	if f, ok := output.(*os.File); ok {
-		p.fd = f.Fd()
-	} else {
-		p.fd = initialStderrFd
 	}
 
 	p.input.Store("")
@@ -95,6 +92,29 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 
 	go p.renderLoop()
 	return p
+}
+
+// getWidth determines the width of the terminal window, which is used to format status messages.
+func getWidth(files ...*os.File) int {
+	width := 80
+	if len(files) == 0 {
+		files = []*os.File{os.Stdout, os.Stderr, os.Stdin}
+	}
+	for _, f := range files {
+		fd := f.Fd()
+		// f.Fd() can be reasonably expected to be 0 (os.Stdin), 1 (os.Stdout),
+		// or 2 (os.Stderr), so the following check makes gosec happy (otherwise
+		// it complains about possible integer overflow in the call to int())
+		if fd > math.MaxInt {
+			continue // skip if FD is logically impossible for term.GetSize
+		}
+		if w, _, err := term.GetSize(int(fd)); err == nil {
+			if w > width {
+				width = w
+			}
+		}
+	}
+	return max(width, 80) // fallback for pipes, redirects, and non-tty outputs
 }
 
 // InitialBudget returns the full internal scale (100%) to be used as the starting budget for tracking fractional progress.
@@ -149,12 +169,8 @@ func (p *Progress) draw() {
 		if p.drawnDone.Swap(true) { return }
 	}
 
-	width, _, err := term.GetSize(int(p.fd)) // #nosec G115
-
-	if err != nil || width <= 20 { width = 80 } // fallback for non-tty or pipe outputs; term.GetSize reports 0 width when running `go test`
-
 	prefix  := fmt.Sprintf("processing (%3d%%): ", percent)
-	maxLen  := width - len(prefix)
+	maxLen  := p.width - len(prefix)
 	display := status
 
 	if len(display) > maxLen && maxLen > 3 {

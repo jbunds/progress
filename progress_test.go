@@ -29,7 +29,7 @@ func TestNewProgress(t *testing.T) {
 			want:  &Progress{
 				total: uint64(100),
 				clock: &realClock{ dur: 16 * time.Millisecond },
-				fd:    2,
+				width: 80,
 			},
 		},
 	}
@@ -86,6 +86,7 @@ func TestRenderLoop(t *testing.T) {
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
 		output:     &buf,
+		width:      80,
 		clock:      &fakeClock{ chn: tickTrigger },
 		drawNotify: notify,
 	}
