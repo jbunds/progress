@@ -79,8 +79,13 @@ func TestGetWidth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			f, _ := tt.output.(*os.File)
-			got  := getWidth(f)
+			got := 0
+			if tt.output == nil {
+				got = getWidth()
+			} else {
+				f, _ := tt.output.(*os.File)
+				got = getWidth(f)
+			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("getWidth(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
