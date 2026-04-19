@@ -3,6 +3,7 @@ package progress
 import (
 	"bytes"
 	"io"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,15 +20,27 @@ func TestNewProgress(t *testing.T) {
 		cmpopts.IgnoreFields(Progress{}, "stopChan", "doneChan", "input", "output", "closeOnce"), // non-trivial to compare
 	}
 	tests := []struct {
-		name  string
-		total uint64
-		want  *Progress
+		name   string
+		total  uint64
+		output io.Writer
+		want   *Progress
 	}{
 		{
-			name:  "succeeds",
-			total: uint64(100),
-			want:  &Progress{
+			name:   "weight-based accumulation",
+			total:  uint64(100),
+			output: os.Stdout,
+			want:   &Progress{
 				total: uint64(100),
+				clock: &realClock{ dur: 16 * time.Millisecond },
+				width: 80,
+			},
+		},
+		{
+			name:   "fractional path allocation",
+			total:  uint64(0),
+			output: os.Stderr,
+			want:   &Progress{
+				total: uint64(0),
 				clock: &realClock{ dur: 16 * time.Millisecond },
 				width: 80,
 			},
@@ -36,12 +49,64 @@ func TestNewProgress(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := NewProgress(tt.total, io.Discard)
+			got := NewProgress(tt.total, tt.output)
 			if diff := cmp.Diff(tt.want, got, opts...); diff != "" {
 				t.Errorf("NewProgress(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 			if got.stopChan == nil { t.Errorf("stopChan was not initialized") }
 			if got.doneChan == nil { t.Errorf("doneChan was not initialized") }
+		})
+	}
+}
+
+func TestGetWidth(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		output io.Writer
+		want   int
+	}{
+		{
+			name: "output file omitted",
+			want: 80,
+		},
+		{
+			name:   "output to os.Stderr",
+			output: os.Stderr,
+			want:   80,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f, _ := tt.output.(*os.File)
+			got  := getWidth(f)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("getWidth(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
+func TestInitialBudget(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		want uint64
+	}{
+		{
+			name: "succeeds",
+			want: 1_000_000_000_000_000_000, // 1e18
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p   := NewProgress(0, io.Discard)
+			got := p.InitialBudget()
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("InitialBudget(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
 		})
 	}
 }
@@ -113,5 +178,30 @@ func TestRenderLoop(t *testing.T) {
 
 	if diff := cmp.Diff(want, buf.String()); diff != "" {
 		t.Errorf("renderLoop mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestClose(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		want string
+	}{
+		{
+			name: "succeeds",
+			want: "\033[?25l"                        + // hide the cursor
+			      "\r\033[2Kprocessing (100%): done" + // forcibly updated status
+			      "\033[2K\r\033[?25h",                // cursor restored
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buf := new(bytes.Buffer)
+			p   := NewProgress(0, buf)
+			p.Close()
+			if diff := cmp.Diff(tt.want, buf.String()); diff != "" {
+				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
+		})
 	}
 }

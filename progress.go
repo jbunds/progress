@@ -132,7 +132,7 @@ func (p *Progress) Report(val uint64, status string) {
 	if status != "" { p.input.Store(status) }
 	var share uint64
 	if p.total > 0 {
-		share = val * (scale / uint64(p.total)) // weighted-based accumulation mode: calculate share of scale
+		share = val * (scale / uint64(p.total)) // weight-based accumulation mode: calculate share of scale
 	} else {
 		share = val                             // fractional path allocation mode: add the budget share directly
 	}
