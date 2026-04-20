@@ -12,10 +12,11 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-var opts = []cmp.Option{
+var opts = cmp.Options{
 	cmp.AllowUnexported(Progress{}, realClock{}),
-	cmpopts.EquateComparable(atomic.Uint64{}, atomic.Bool{}),
-	cmpopts.IgnoreFields(Progress{}, "stopChan", "doneChan", "input", "output", "closeOnce"), // non-trivial to compare
+	cmp.Transformer("unwrapAtomic", func(v atomic.Value) any { return v.Load() }),
+	cmpopts.EquateComparable(atomic.Bool{}, atomic.Uint64{}),
+	cmpopts.IgnoreFields(Progress{}, "stopChan", "doneChan", "output", "closeOnce"), // non-trivial to compare
 }
 
 func TestNewProgress(t *testing.T) {
@@ -48,6 +49,7 @@ func TestNewProgress(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := NewProgress(tt.total, io.Discard)
+			tt.want.input.Store("")
 			defer got.Close()
 			if diff := cmp.Diff(tt.want, got, opts...); diff != "" {
 				t.Errorf("NewProgress(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -208,6 +210,7 @@ func TestClose(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.wantProg.current.Store(uint64(1_000_000_000_000_000_000))
+			tt.wantProg.input.Store("done")
 			tt.wantProg.drawnDone.Store(true)
 			got := new(bytes.Buffer)
 			p   := NewProgress(0, got)
