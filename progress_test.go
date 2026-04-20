@@ -296,7 +296,7 @@ func TestRenderLoop(t *testing.T) {
 	want := "\r\033[2K\rprocessing (0.0%): starting..."     + // tick 1
 	        "\r\033[2K\rprocessing ( 40%): 40% complete..." + // tick 2 (Report(40, ...))
 	        "\r\033[2K\rprocessing (100%): done"            + // tick 3 (Report(60, ...))
-	        "\033[2K\r\033[?25h"                            // cursor restoration
+	        "\033[2K\r\033[?25h"                              // cursor restoration
 
 	if diff := cmp.Diff(want, got.String()); diff != "" {
 		t.Errorf("renderLoop mismatch (-want +got):\n%s", diff)
