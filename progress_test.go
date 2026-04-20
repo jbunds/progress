@@ -22,13 +22,11 @@ func TestNewProgress(t *testing.T) {
 	tests := []struct {
 		name   string
 		total  uint64
-		output io.Writer
 		want   *Progress
 	}{
 		{
 			name:   "weight-based accumulation",
 			total:  uint64(100),
-			output: os.Stdout,
 			want:   &Progress{
 				total: uint64(100),
 				clock: &realClock{ dur: 16 * time.Millisecond },
@@ -38,7 +36,6 @@ func TestNewProgress(t *testing.T) {
 		{
 			name:   "fractional path allocation",
 			total:  uint64(0),
-			output: os.Stderr,
 			want:   &Progress{
 				total: uint64(0),
 				clock: &realClock{ dur: 16 * time.Millisecond },
@@ -49,7 +46,8 @@ func TestNewProgress(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := NewProgress(tt.total, tt.output)
+			got := NewProgress(tt.total, io.Discard)
+			defer got.Close()
 			if diff := cmp.Diff(tt.want, got, opts...); diff != "" {
 				t.Errorf("NewProgress(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
@@ -107,7 +105,8 @@ func TestInitialBudget(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			p   := NewProgress(0, io.Discard)
+			p := NewProgress(0, io.Discard)
+			defer p.Close()
 			got := p.InitialBudget()
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("InitialBudget(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -131,6 +130,7 @@ func TestReport(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := NewProgress(100, io.Discard)
+			defer p.Close()
 			for range 3 { p.Report(1, "updating") }
 			if diff := cmp.Diff(tt.want, p.current.Load()); diff != "" {
 				t.Errorf("current progress was not updated (-want +got):\n%s", diff)
