@@ -17,7 +17,7 @@ var opts = cmp.Options{
 	cmp.AllowUnexported(Progress{}, realClock{}),
 	cmp.Transformer("unwrapAtomic", func(v atomic.Value) any { return v.Load() }),
 	cmpopts.EquateComparable(atomic.Bool{}, atomic.Uint64{}),
-	cmpopts.IgnoreFields(Progress{}, "stopChan", "doneChan", "output", "closeOnce"), // non-trivial to compare
+	cmpopts.IgnoreFields(Progress{}, "stopChan", "doneChan", "resizeChan", "output", "closeOnce"), // non-trivial to compare
 }
 
 func TestNewProgress(t *testing.T) {
@@ -154,9 +154,9 @@ func TestReport(t *testing.T) {
 		{
 			name:      "weight-based; reported work done cannot exceed total work",
 			total:     100,
-			unitsDone: 150,       // 150% of 100% of work reported done
+			unitsDone: 150,   // report 150% of total work done
 			status:    "completed more work than budgeted",
-			want:      scale * 3, // each report adds 100% of scale
+			want:      scale, // budget not exceeded
 		},
 		{
 			name:      "fractional path allocation; direct accumulation",
@@ -166,11 +166,11 @@ func TestReport(t *testing.T) {
 			want:      (scale / 10) * 3,
 		},
 		{
-			name:      "fractional path allocation; verify accumulation safety",
+			name:      "fractional path allocation; verify safe accumulation of a very large amount of work",
 			total:     0,
-			unitsDone: math.MaxUint64 / 4,
-			status:    "large amount of work done",
-			want:      (math.MaxUint64 / 4) * 3,
+			unitsDone: math.MaxUint64 / 4, // ~4.6 million times larger than scale
+			status:    "very large amount of work done",
+			want:      scale,              // budget not exceeded
 		},
 	}
 	for _, tt := range tests {
@@ -188,7 +188,7 @@ func TestReport(t *testing.T) {
 
 func TestDraw(t *testing.T) {
 	t.Parallel()
-	ansiEscSeq    := "\r\033[2K"
+	ansiEscSeq    := "\r\033[2K\r"
 	ansiEscSeqLen := len(ansiEscSeq)
 	tests := []struct {
 		name    string
@@ -211,16 +211,16 @@ func TestDraw(t *testing.T) {
 			width:   30,
 			current: 0,
 			status:  "this status message is much too long to fit within the width of the terminal",
-			want:    ansiEscSeq    +     "processing (  0%): "  +     "...terminal",
-			wantLen: ansiEscSeqLen + len("processing (  0%): ") + len("...terminal"),
+			want:    ansiEscSeq    +     "processing (0.0%): "  +     "...terminal",
+			wantLen: ansiEscSeqLen + len("processing (0.0%): ") + len("...terminal"),
 		},
 		{
 			name:    "very narrow terminal; status omitted",
 			width:   10,
 			current: 0,
 			status:  "no room for status",
-			want:    ansiEscSeq    +     "processing (  0%): ",
-			wantLen: ansiEscSeqLen + len("processing (  0%): "),
+			want:    ansiEscSeq    +     "processing (0.0%): ",
+			wantLen: ansiEscSeqLen + len("processing (0.0%): "),
 		},
 		{
 			name:    "verify overflow protection",
@@ -293,9 +293,9 @@ func TestRenderLoop(t *testing.T) {
 	<-notify
 	<-p.doneChan
 
-	want := "\r\033[2Kprocessing (  0%): starting..."     + // tick 1
-	        "\r\033[2Kprocessing ( 40%): 40% complete..." + // tick 2 (Report(40, ...))
-	        "\r\033[2Kprocessing (100%): done"            + // tick 3 (Report(60, ...))
+	want := "\r\033[2K\rprocessing (0.0%): starting..."     + // tick 1
+	        "\r\033[2K\rprocessing ( 40%): 40% complete..." + // tick 2 (Report(40, ...))
+	        "\r\033[2K\rprocessing (100%): done"            + // tick 3 (Report(60, ...))
 	        "\033[2K\r\033[?25h"                            // cursor restoration
 
 	if diff := cmp.Diff(want, got.String()); diff != "" {
@@ -305,19 +305,21 @@ func TestRenderLoop(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
+	status := "\r\033[2K\rprocessing (100%): done"
+	tests  := []struct {
 		name     string
 		wantOut  string
 		wantProg *Progress
 	}{
 		{
 			name:     "succeeds",
-			wantOut:  "\033[?25l"                        + // hide the cursor
-			          "\r\033[2Kprocessing (100%): done" + // forcibly updated status
-			          "\033[2K\r\033[?25h",                // cursor restored
+			wantOut:  "\033[?25l"                          + // hide the cursor
+			          status                               + // status updated by Close()
+			          "\033[2K\r\033[?25h",                  // cursor restored
 			wantProg: &Progress{
-				clock: &realClock{ dur: 16 * time.Millisecond },
-				width: 80,
+				clock:      &realClock{ dur: 16 * time.Millisecond },
+				width:      80,
+				lastStatus: "done",
 			},
 		},
 	}
@@ -325,7 +327,9 @@ func TestClose(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.wantProg.current.Store(scale)
 			tt.wantProg.input.Store("done")
+			tt.wantProg.lastDrawn.Store(scale)
 			tt.wantProg.drawnDone.Store(true)
+			tt.wantProg.buf = []byte(status)
 			got := new(bytes.Buffer)
 			p   := NewProgress(0, got)
 			p.Close()

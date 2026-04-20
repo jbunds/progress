@@ -46,17 +46,21 @@ const (
 
 // Progress provides a concurrency-safe, high-precision status indicator for both fixed-batch and recursive workloads.
 type Progress struct {
-	total      uint64        // 0 for fractional path allocation; > 0 for weight-based accumulation
-	current    atomic.Uint64 // accumulates shares of scale
-	input      atomic.Value  // stores the latest unit of work being processed
-	stopChan   chan struct{} // signals the background rendering loop to perform final cleanup and exit
-	doneChan   chan struct{} // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
-	output     io.Writer     // destination writer for the terminal-formatted work progress status updates
-	clock      clock         // provides the timing source for throttled UI updates, allowing for fake clocks in tests
-	width      int           // width of the terminal window (set during construction, so resizing of the terminal window at runtime is not properly handled)
-	drawNotify chan struct{} // optional channel used to signal completion of a draw cycle for deterministic testing
-	drawnDone  atomic.Bool   // drawnDone ensures the final completion frame is rendered just once to prevent status smearing
-	closeOnce  sync.Once     // closeOnce ensures that cursor restoration and cleanup logic are executed just once
+	total      uint64         // 0 for fractional path allocation; > 0 for weight-based accumulation
+	buf        []byte         // reusable buffer for writing status messages to the terminal
+	output     io.Writer      // destination writer for the terminal-formatted work progress status updates
+	input      atomic.Value   // stores the latest unit of work being processed
+	current    atomic.Uint64  // accumulates shares of scale
+	lastDrawn  atomic.Uint64  // the last drawn value (to skip redundant UI updates)
+	lastStatus string         // the last rendered status message (to skip redundant UI updates)
+	stopChan   chan struct{}  // signals the background rendering loop to perform final cleanup and exit
+	doneChan   chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
+	resizeChan chan os.Signal // handles terminal window resizing
+	clock      clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
+	width      int            // width of the terminal window
+	drawNotify chan struct{}  // optional channel used to signal completion of a draw cycle for deterministic testing
+	drawnDone  atomic.Bool    // drawnDone ensures the final completion frame is rendered just once to prevent status smearing
+	closeOnce  sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed just once
 }
 
 // obviates, e.g., sleeping in unit tests
@@ -85,12 +89,13 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 	}
 
 	p := &Progress{
-		total:    safeTotal,
-		stopChan: make(chan struct{}),
-		doneChan: make(chan struct{}),
-		output:   output,
-		width:    max(w, 80),
-		clock:    &realClock{ dur: 16 * time.Millisecond },
+		total:      safeTotal,
+		output:     output,
+		stopChan:   make(chan struct{}),
+		doneChan:   make(chan struct{}),
+		resizeChan: make(chan os.Signal, 1),
+		width:      max(w, 80),
+		clock:      &realClock{ dur: 16 * time.Millisecond },
 	}
 
 	p.input.Store("")
@@ -99,6 +104,8 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM) // trap SIGINT and SIGTERM so the hidden cursor can be restored
+
+	signal.Notify(p.resizeChan, syscall.SIGWINCH)
 
 	go func() {
 		defer signal.Stop(sigChan) // clean up signal listener
@@ -146,14 +153,16 @@ func (p *Progress) InitialBudget() uint64 { return scale }
 //   if total == 0: 'val' is the scaled budget (portion of scale) for the branch
 func (p *Progress) Report(val uint64, status string) {
 	if status != "" { p.input.Store(status) }
+
 	var share uint64
 	if p.total > 0 {
-		safeVal := min(val, p.total)
-		share = (safeVal * scale) / p.total // weight-based accumulation mode: calculate share of scale
+		share = (min(val, p.total) * scale) / p.total // weight-based accumulation mode: calculate share of scale
 	} else {
-		share = val                         // fractional path allocation mode: add the budget share directly
+		share = val                                   // fractional path allocation mode: add the budget share directly
 	}
-	p.current.Add(share)
+	if p.current.Add(share) > scale {
+		p.current.Store(scale)
+	}
 }
 
 // renderLoop periodically draws the progress line at ~60 FPS to ensure a smooth UI without impeding the processing logic.
@@ -161,6 +170,10 @@ func (p *Progress) renderLoop() {
 	tickerChan := p.clock.tick()
 	for {
 		select {
+		case <-p.resizeChan:
+			if f, ok := p.output.(*os.File); ok {
+				p.width = getWidth(f)
+			}
 		case <-tickerChan:
 			p.draw()
 		case <-p.stopChan:
@@ -175,24 +188,38 @@ func (p *Progress) renderLoop() {
 
 // draw clears the current terminal line and prints the formatted percentage and status string, truncating text as needed to fit within the terminal width.
 func (p *Progress) draw() {
-	currentVal := p.current.Load()
-	safeVal    := min(currentVal, scale)  // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
-	percent    := (safeVal * 100) / scale // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
-
-	status, _  := p.input.Load().(string)
-	if percent >= 100 { status = "done" }
-
 	defer func() {
 		if p.drawNotify != nil { // enables deterministic tests
 			p.drawNotify <- struct{}{}
 		}
 	}()
 
+	currentVal := p.current.Load()
+	status, _  := p.input.Load().(string)
+
+	if currentVal == p.lastDrawn.Load() && status == p.lastStatus { return } // skip redundant UI updates
+
+	safeVal := min(currentVal, scale)                      // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
+	percent := (float64(safeVal) * 100.0) / float64(scale) // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
+
+	if percent >= 100 { status = "done" }
+
 	if percent == 100 && status == "done" {
 		if p.drawnDone.Swap(true) { return }
 	}
 
-	prefix  := fmt.Sprintf("processing (%3d%%): ", percent)
+	var pStr string
+	switch { // sadly %3g%% doesn't quite work
+	case percent >= 100:
+		pStr = "100"
+	case percent >= 10:
+		pStr = fmt.Sprintf("%3.0f", percent)
+	case percent >= 1:
+		pStr = fmt.Sprintf("%3.1f", percent)
+	default:
+		pStr = fmt.Sprintf("%.1f", percent)
+	}
+	prefix  := fmt.Sprintf("processing (%s%%): ", pStr)
 	maxLen  := max(p.width - len(prefix), 0)
 	display := status
 
@@ -205,7 +232,14 @@ func (p *Progress) draw() {
 		display = display[:maxLen]
 	}
 
-	fmt.Fprintf(p.output, "\r\033[2K%s%s", prefix, display) // \033[2K clears the line, \r moves the cursor to the beginning of the line
+	p.buf = p.buf[:0]
+	p.buf = fmt.Appendf(p.buf, "\r\033[2K\r%s%s", prefix, display) // \033[2K clears the line, \r moves the cursor to the beginning of the line
+	_, err := p.output.Write(p.buf) // single, atomic system call to mitigate UI flicker (atomicity is not guaranteed by fmt.Fprintf)
+
+	if err == nil {
+		p.lastDrawn.Store(currentVal)
+		p.lastStatus = status
+	}
 }
 
 // restoreAndExit restores the cursor upon trapping a SIGINT or SIGTERM signal.
@@ -217,8 +251,9 @@ func (p *Progress) restoreAndExit() {
 // Close stops the background renderer, restores the terminal cursor, and blocks until the final "done" state is displayed.
 func (p *Progress) Close() {
 	p.closeOnce.Do(func() {
-		p.current.Store(scale) // force internal counter to 100%
-		p.input.Store("done")  // force status to "done"
+		p.current.Store(scale)       // force internal counter to 100%
+		p.input.Store("done")        // force status to "done"
+		time.Sleep(time.Millisecond) // allow a moment for the atomic stores to propagate
 		close(p.stopChan)
 		<-p.doneChan
 	})
