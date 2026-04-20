@@ -31,6 +31,16 @@ import (
 //             by storing more work completion status to obviate callers
 //             being required to track the status of work completion.
 
+const (
+	// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
+	// the choice of 1e12 balances high-precision fractional shares for deep recursion with sufficient
+	// uint64 headroom to prevent overflow in intermediate percentage calculations (currentVal * 100)
+	scale        uint64 = 1e12
+	// maxSafeUnits represents the maximum number of work units allowed
+	// before intermediate percentage calculations risk uint64 overflow
+	maxSafeUnits uint64 = math.MaxUint64 / scale
+)
+
 // Progress provides a concurrency-safe, high-precision status indicator for both fixed-batch and recursive workloads.
 type Progress struct {
 	total      uint64        // 0 for fractional path allocation; > 0 for weight-based accumulation
@@ -46,9 +56,6 @@ type Progress struct {
 	closeOnce  sync.Once     // closeOnce ensures that cursor restoration and cleanup logic are executed just once
 }
 
-// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
-const scale = 1e18
-
 // obviates sleeping in unit tests
 type clock interface { tick() <-chan time.Time }
 
@@ -63,13 +70,18 @@ func (f *fakeClock) tick() <-chan time.Time { return f.chn }
 //    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known a priori)
 //    pass totalUnits == 0 for fractional path allocation (when totalUnits is not known a priori)
 func NewProgress(totalUnits uint64, output io.Writer) *Progress {
+	safeTotal := totalUnits
+	if totalUnits > maxSafeUnits {
+		fmt.Fprintf(os.Stderr, "totalUnits %d exceeds max precision; falling back to %d\n", totalUnits, maxSafeUnits)
+		safeTotal = maxSafeUnits
+	}
 	w := 80
 	if f, ok := output.(*os.File); ok {
 		w = getWidth(f) // output is a real *os.File (and not, e.g., io.Discard, as the case may be for certain tests)
 	}
 
 	p := &Progress{
-		total:    uint64(totalUnits),
+		total:    safeTotal,
 		stopChan: make(chan struct{}),
 		doneChan: make(chan struct{}),
 		output:   output,
@@ -132,9 +144,10 @@ func (p *Progress) Report(val uint64, status string) {
 	if status != "" { p.input.Store(status) }
 	var share uint64
 	if p.total > 0 {
-		share = val * (scale / uint64(p.total)) // weight-based accumulation mode: calculate share of scale
+		safeVal := min(val, p.total)
+		share = (safeVal * scale) / p.total // weight-based accumulation mode: calculate share of scale
 	} else {
-		share = val                             // fractional path allocation mode: add the budget share directly
+		share = val                         // fractional path allocation mode: add the budget share directly
 	}
 	p.current.Add(share)
 }
@@ -158,9 +171,11 @@ func (p *Progress) renderLoop() {
 
 // draw clears the current terminal line and prints the formatted percentage and status string, truncating text as needed to fit the terminal width.
 func (p *Progress) draw() {
-	percent := min(p.current.Load() / (scale / 100), 100)
+	currentVal := p.current.Load()
+	safeVal    := min(currentVal, scale)  // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
+	percent    := (safeVal * 100) / scale // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
 
-	status, _ := p.input.Load().(string)
+	status, _  := p.input.Load().(string)
 	if percent >= 100 { status = "done" }
 
 	defer func() {
@@ -174,12 +189,15 @@ func (p *Progress) draw() {
 	}
 
 	prefix  := fmt.Sprintf("processing (%3d%%): ", percent)
-	maxLen  := p.width - len(prefix)
+	maxLen  := max(p.width - len(prefix), 0)
 	display := status
 
-	if len(display) > maxLen && maxLen > 3 {
+	switch {
+	case maxLen == 0:
+		display = ""
+	case len(display) > maxLen && maxLen > 3:
 		display = "..." + display[len(display)-maxLen+3:] // truncate from left to show most relevant portion (e.g., file basename)
-	} else if len(display) > maxLen {
+	case len(display) > maxLen:
 		display = display[:maxLen]
 	}
 

@@ -3,6 +3,7 @@ package progress
 import (
 	"bytes"
 	"io"
+	"math"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -44,13 +45,22 @@ func TestNewProgress(t *testing.T) {
 				width: 80,
 			},
 		},
+		{
+			name:  "verify overflow safety",
+			total: maxSafeUnits + 1000,
+			want:  &Progress{
+				total: maxSafeUnits,
+				clock: &realClock{ dur: 16 * time.Millisecond },
+				width: 80,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := NewProgress(tt.total, io.Discard)
+			t.Cleanup(got.Close)
 			tt.want.input.Store("")
-			defer got.Close()
 			if diff := cmp.Diff(tt.want, got, opts...); diff != "" {
 				t.Errorf("NewProgress(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
@@ -109,7 +119,7 @@ func TestInitialBudget(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := NewProgress(0, io.Discard)
-			defer p.Close()
+			t.Cleanup(p.Close)
 			got := p.InitialBudget()
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("InitialBudget(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -121,22 +131,117 @@ func TestInitialBudget(t *testing.T) {
 func TestReport(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
-		want uint64
+		name      string
+		total     uint64
+		unitsDone uint64
+		status    string
+		want      uint64
 	}{
 		{
-			name: "3 updates performed",
-			want: (scale / 100) * 3,
+			name:      "weight-based; standard increments",
+			total:     100,
+			unitsDone: 1,
+			status:    "completed 1 unit of work",
+			want:      (1 * scale / 100) * 3,
+		},
+		{
+			name:      "weight-based; high-precision boundary check",
+			total:     maxSafeUnits,
+			unitsDone: 1,
+			status:    "completed 1 unit of work",
+			want:      (1 * scale / maxSafeUnits) * 3,
+		},
+		{
+			name:      "weight-based; reported work done cannot exceed total work",
+			total:     100,
+			unitsDone: 150,       // 150% of 100% of work reported done
+			status:    "completed more work than budgeted",
+			want:      scale * 3, // each report adds 100% of scale
+		},
+		{
+			name:      "fractional path allocation; direct accumulation",
+			total:     0,
+			unitsDone: scale / 10,
+			status:    "1/10 of the total work done",
+			want:      (scale / 10) * 3,
+		},
+		{
+			name:      "fractional path allocation; verify accumulation safety",
+			total:     0,
+			unitsDone: math.MaxUint64 / 4,
+			status:    "large amount of work done",
+			want:      (math.MaxUint64 / 4) * 3,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			p := NewProgress(100, io.Discard)
-			defer p.Close()
-			for range 3 { p.Report(1, "updating") }
+			p := NewProgress(tt.total, io.Discard)
+			t.Cleanup(p.Close)
+			for range 3 { p.Report(tt.unitsDone, tt.status) }
 			if diff := cmp.Diff(tt.want, p.current.Load()); diff != "" {
 				t.Errorf("current progress was not updated (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestDraw(t *testing.T) {
+	ansiEscSeqLen := 5 // 5 chars: "\r" + "\033" + "[" + "2" + "K"
+	t.Parallel()
+	tests := []struct {
+		name    string
+		width   int
+		current uint64
+		status  string
+		wantLen int // the expected length of the message printed to the terminal
+	}{
+		{
+			name:    "standard width",
+			width:   80,
+			current: scale / 2,
+			status:  "working...",
+			wantLen: ansiEscSeqLen + len("processing (100%): ") + len("working..."),
+		},
+		{
+			name:    "narrow terminal; status truncated",
+			width:   30,
+			current: 0,
+			status:  "this status message is much too long to fit within the width of the terminal",
+			wantLen: ansiEscSeqLen + 30,
+		},
+		{
+			name:    "very narrow terminal; no status message emitted",
+			width:   10,
+			current: 0,
+			status:  "no room for status",
+			wantLen: ansiEscSeqLen + len("processing (  0%): "),
+		},
+		{
+			name:    "overflow protection",
+			width:   80,
+			current: math.MaxUint64,
+			status:  "massive amout of work",
+			wantLen: ansiEscSeqLen + len("processing (100%): ") + len("done"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := new(bytes.Buffer)
+			p := &Progress{
+				total:  100,
+				width:  tt.width,
+				output: got,
+			}
+			
+			p.current.Store(tt.current)
+			p.input.Store(tt.status)
+			
+			p.draw()
+
+			if diff := cmp.Diff(tt.wantLen, len(got.String())); diff != "" {
+				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
 	}
