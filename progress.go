@@ -15,10 +15,10 @@ import (
 	"golang.org/x/term"
 )
 
-// this package largely represents a personal experiment born of curiosity more
-// than a practical solution to a UX issue for its parent module, because the
-// main program already processes fairly substantial code bases like k8s within
-// < ~2 seconds on my 2020 first-gen M1 MacBook Air.
+// this package largely represents a personal experiment born of curiosity
+// more than a practical solution to a UX issue for its parent module,
+// because the main program already processes fairly substantial code bases
+// like k8s within < ~2 seconds on my 2020 first-gen M1 MacBook Air.
 //
 // it may evolve into a generic mini library if i can find a more sophisticated
 // method of accurately reporting progress status updates that are actually
