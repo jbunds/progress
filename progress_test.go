@@ -259,7 +259,7 @@ func TestDraw(t *testing.T) {
 func TestRenderLoop(t *testing.T) {
 	t.Parallel()
 
-	got := new(bytes.Buffer)
+	got         := new(bytes.Buffer)
 	tickTrigger := make(chan time.Time)
 	notify      := make(chan struct{}) // sync channel
 
