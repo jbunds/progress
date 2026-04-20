@@ -187,13 +187,15 @@ func TestReport(t *testing.T) {
 }
 
 func TestDraw(t *testing.T) {
-	ansiEscSeqLen := 5 // 5 chars: "\r" + "\033" + "[" + "2" + "K"
 	t.Parallel()
+	ansiEscSeq    := "\r\033[2K"
+	ansiEscSeqLen := len(ansiEscSeq)
 	tests := []struct {
 		name    string
 		width   int
 		current uint64
 		status  string
+		want    string
 		wantLen int // the expected length of the message printed to the terminal
 	}{
 		{
@@ -201,27 +203,31 @@ func TestDraw(t *testing.T) {
 			width:   80,
 			current: scale / 2,
 			status:  "working...",
-			wantLen: ansiEscSeqLen + len("processing (100%): ") + len("working..."),
+			want:    ansiEscSeq    +     "processing ( 50%): "  +     "working...",
+			wantLen: ansiEscSeqLen + len("processing ( 50%): ") + len("working..."),
 		},
 		{
 			name:    "narrow terminal; status truncated",
 			width:   30,
 			current: 0,
 			status:  "this status message is much too long to fit within the width of the terminal",
-			wantLen: ansiEscSeqLen + 30,
+			want:    ansiEscSeq    +     "processing (  0%): "  +     "...terminal",
+			wantLen: ansiEscSeqLen + len("processing (  0%): ") + len("...terminal"),
 		},
 		{
-			name:    "very narrow terminal; no status message emitted",
+			name:    "very narrow terminal; status omitted",
 			width:   10,
 			current: 0,
 			status:  "no room for status",
+			want:    ansiEscSeq    +     "processing (  0%): ",
 			wantLen: ansiEscSeqLen + len("processing (  0%): "),
 		},
 		{
-			name:    "overflow protection",
+			name:    "verify overflow protection",
 			width:   80,
 			current: math.MaxUint64,
 			status:  "massive amout of work",
+			want:    ansiEscSeq    +     "processing (100%): "  +     "done",
 			wantLen: ansiEscSeqLen + len("processing (100%): ") + len("done"),
 		},
 	}
@@ -240,6 +246,9 @@ func TestDraw(t *testing.T) {
 			
 			p.draw()
 
+			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
+				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
 			if diff := cmp.Diff(tt.wantLen, len(got.String())); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
