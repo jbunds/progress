@@ -12,13 +12,14 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
+var opts = []cmp.Option{
+	cmp.AllowUnexported(Progress{}, realClock{}),
+	cmpopts.EquateComparable(atomic.Uint64{}, atomic.Bool{}),
+	cmpopts.IgnoreFields(Progress{}, "stopChan", "doneChan", "input", "output", "closeOnce"), // non-trivial to compare
+}
+
 func TestNewProgress(t *testing.T) {
 	t.Parallel()
-	opts := []cmp.Option{
-		cmp.AllowUnexported(Progress{}, realClock{}),
-		cmpopts.EquateComparable(atomic.Uint64{}, atomic.Bool{}),
-		cmpopts.IgnoreFields(Progress{}, "stopChan", "doneChan", "input", "output", "closeOnce"), // non-trivial to compare
-	}
 	tests := []struct {
 		name   string
 		total  uint64
@@ -142,7 +143,7 @@ func TestReport(t *testing.T) {
 func TestRenderLoop(t *testing.T) {
 	t.Parallel()
 
-	var buf bytes.Buffer
+	got := new(bytes.Buffer)
 	tickTrigger := make(chan time.Time)
 	notify      := make(chan struct{}) // sync channel
 
@@ -155,7 +156,7 @@ func TestRenderLoop(t *testing.T) {
 		total:      100,
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
-		output:     &buf,
+		output:     got,
 		width:      80,
 		clock:      &fakeClock{ chn: tickTrigger },
 		drawNotify: notify,
@@ -181,7 +182,7 @@ func TestRenderLoop(t *testing.T) {
 	        "\r\033[2Kprocessing (100%): done"            + // tick 3 (Report(60, ...))
 	        "\033[2K\r\033[?25h"                            // cursor restoration
 
-	if diff := cmp.Diff(want, buf.String()); diff != "" {
+	if diff := cmp.Diff(want, got.String()); diff != "" {
 		t.Errorf("renderLoop mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -189,22 +190,32 @@ func TestRenderLoop(t *testing.T) {
 func TestClose(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
-		want string
+		name     string
+		wantOut  string
+		wantProg *Progress
 	}{
 		{
-			name: "succeeds",
-			want: "\033[?25l"                        + // hide the cursor
-			      "\r\033[2Kprocessing (100%): done" + // forcibly updated status
-			      "\033[2K\r\033[?25h",                // cursor restored
+			name:     "succeeds",
+			wantOut:  "\033[?25l"                        + // hide the cursor
+			          "\r\033[2Kprocessing (100%): done" + // forcibly updated status
+			          "\033[2K\r\033[?25h",                // cursor restored
+			wantProg: &Progress{
+				clock: &realClock{ dur: 16 * time.Millisecond },
+				width: 80,
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			buf := new(bytes.Buffer)
-			p   := NewProgress(0, buf)
+			tt.wantProg.current.Store(uint64(1_000_000_000_000_000_000))
+			tt.wantProg.drawnDone.Store(true)
+			got := new(bytes.Buffer)
+			p   := NewProgress(0, got)
 			p.Close()
-			if diff := cmp.Diff(tt.want, buf.String()); diff != "" {
+			if diff := cmp.Diff(tt.wantOut, got.String()); diff != "" {
+				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
+			if diff := cmp.Diff(tt.wantProg, p, opts...); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
