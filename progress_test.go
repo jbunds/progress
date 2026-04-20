@@ -102,7 +102,7 @@ func TestInitialBudget(t *testing.T) {
 	}{
 		{
 			name: "succeeds",
-			want: 1_000_000_000_000_000_000, // 1e18
+			want: scale,
 		},
 	}
 	for _, tt := range tests {
@@ -126,7 +126,7 @@ func TestReport(t *testing.T) {
 	}{
 		{
 			name: "3 updates performed",
-			want: 30_000_000_000_000_000, // (3 units / 100 total) * 1e18 == 3e16
+			want: (scale / 100) * 3,
 		},
 	}
 	for _, tt := range tests {
@@ -209,7 +209,7 @@ func TestClose(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.wantProg.current.Store(uint64(1_000_000_000_000_000_000))
+			tt.wantProg.current.Store(scale)
 			tt.wantProg.input.Store("done")
 			tt.wantProg.drawnDone.Store(true)
 			got := new(bytes.Buffer)

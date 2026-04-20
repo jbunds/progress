@@ -46,8 +46,8 @@ type Progress struct {
 	closeOnce  sync.Once     // closeOnce ensures that cursor restoration and cleanup logic are executed just once
 }
 
-// scale represents 100% as a large fixed-point integer (1e18) to support high-precision fractional updates.
-const scale = 1_000_000_000_000_000_000
+// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
+const scale = 1e18
 
 // obviates sleeping in unit tests
 type clock interface { tick() <-chan time.Time }
