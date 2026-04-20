@@ -33,10 +33,11 @@ import (
 //             responsible for tracking work completion status
 
 const (
-	// scale represents 100% as a large fixed-point integer to support high-precision fractional updates (sync/atomic provides no floating-point types).
+	// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
+	// (sync/atomic provides no floating-point types)
 	//
 	// the choice of 1e12 balances high-precision fractional shares in the context of deep recursion with sufficient
-	// uint64 headroom to prevent overflow in intermediate percentage calculations (currentVal * 100)
+	// uint64 headroom to prevent overflow when performing intermediate percentage calculations (currentVal * 100)
 	scale        uint64 = 1e12
 	// maxSafeUnits is the maximum number of work units allowed before intermediate percentage
 	// calculations risk uint64 overflow; some precision will be lost when totalUnits > maxSafeUnits
@@ -52,7 +53,7 @@ type Progress struct {
 	doneChan   chan struct{} // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
 	output     io.Writer     // destination writer for the terminal-formatted work progress status updates
 	clock      clock         // provides the timing source for throttled UI updates, allowing for fake clocks in tests
-	width      int           // width of the terminal window (set during construction, so resizing of the terminal window at runtime will not be properly handled)
+	width      int           // width of the terminal window (set during construction, so resizing of the terminal window at runtime is not properly handled)
 	drawNotify chan struct{} // optional channel used to signal completion of a draw cycle for deterministic testing
 	drawnDone  atomic.Bool   // drawnDone ensures the final completion frame is rendered just once to prevent status smearing
 	closeOnce  sync.Once     // closeOnce ensures that cursor restoration and cleanup logic are executed just once
@@ -216,8 +217,8 @@ func (p *Progress) restoreAndExit() {
 // Close stops the background renderer, restores the terminal cursor, and blocks until the final "done" state is displayed.
 func (p *Progress) Close() {
 	p.closeOnce.Do(func() {
-		p.input.Store("done") // force internal counter to 100% and status to "done"
-		p.current.Store(scale)
+		p.current.Store(scale) // force internal counter to 100%
+		p.input.Store("done")  // force status to "done"
 		close(p.stopChan)
 		<-p.doneChan
 	})
