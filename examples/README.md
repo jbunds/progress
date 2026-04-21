@@ -12,7 +12,7 @@ go run weight-based/main.go
 
 ### Fractional Path Allocation
 
-Simulates a recursively discovered workload (e.g., via filesystem traversal) using the `InitialBudget()` pattern:
+Simulates a recursively discovered workload via filesystem traversal using the `InitialBudget()` pattern:
 
 ```
 go run fractional/main.go
