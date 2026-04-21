@@ -19,11 +19,11 @@ func main() {
 	simulateDiscovery(prog, "root", totalBudget, 0)
 }
 
-func simulateDiscovery(p *progress.Progress, name string, budget uint64, depth int) {
+func simulateDiscovery(prog *progress.Progress, name string, budget uint64, depth int) {
 	if budget == 0 { return }
 
 	if depth > 2 {
-		processLeaf(p, name, budget)
+		processLeaf(prog, name, budget)
 		return
 	}
 
@@ -40,18 +40,18 @@ func simulateDiscovery(p *progress.Progress, name string, budget uint64, depth i
 
 		childName := fmt.Sprintf("%s/node_%d", name, i)
 		
-		p.Report(0, fmt.Sprintf("scanning %s...", childName))
+		prog.Report(0, fmt.Sprintf("scanning %s...", childName))
 		time.Sleep(300 * time.Millisecond) // simulate some discovery time
 
 		if rand.Float64() > 0.4 { // pseudorandomly dive deeper or finish by processing a leaf node
-			simulateDiscovery(p, childName, currentShare, depth + 1)
+			simulateDiscovery(prog, childName, currentShare, depth + 1)
 		} else {
-			processLeaf(p, childName, currentShare)
+			processLeaf(prog, childName, currentShare)
 		}
 	}
 }
 
-func processLeaf(p *progress.Progress, name string, budget uint64) {
+func processLeaf(prog *progress.Progress, name string, budget uint64) {
 	time.Sleep(500 * time.Millisecond) // simulate the work of processing a file
-	p.Report(budget, fmt.Sprintf("finished: %s", name))
+	prog.Report(budget, fmt.Sprintf("finished: %s", name))
 }
