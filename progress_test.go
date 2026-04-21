@@ -64,8 +64,9 @@ func TestNewProgress(t *testing.T) {
 			if diff := cmp.Diff(tt.want, got, opts...); diff != "" {
 				t.Errorf("NewProgress(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
-			if got.stopChan == nil { t.Errorf("stopChan was not initialized") }
-			if got.doneChan == nil { t.Errorf("doneChan was not initialized") }
+			if got.stopChan   == nil { t.Errorf("stopChan was not initialized"  ) }
+			if got.doneChan   == nil { t.Errorf("doneChan was not initialized"  ) }
+			if got.resizeChan == nil { t.Errorf("resizeChan was not initialized") }
 		})
 	}
 }

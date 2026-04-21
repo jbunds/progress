@@ -1,4 +1,4 @@
-// Package progress provides status updates for units of work being concurrently processed.
+// Package progress provides status updates for units of work being processed.
 package progress
 
 import (
@@ -34,17 +34,18 @@ import (
 
 const (
 	// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
-	// (sync/atomic provides no floating-point types)
+	// (the sync/atomic package provides no floating-point types)
 	//
-	// the choice of 1e12 balances high-precision fractional shares in the context of deep recursion with sufficient
-	// uint64 headroom to prevent overflow when performing intermediate percentage calculations (currentVal * 100)
+	// the choice of 1e12 balances high-precision fractional shares in the context
+	// of, e.g., deep recursion, with sufficient uint64 headroom to prevent overflow
+	// when performing intermediate percentage calculations (currentVal * 100)
 	scale        uint64 = 1e12
 	// maxSafeUnits is the maximum number of work units allowed before intermediate percentage
 	// calculations risk uint64 overflow; some precision will be lost when totalUnits > maxSafeUnits
 	maxSafeUnits uint64 = math.MaxUint64 / scale
 )
 
-// Progress provides a concurrency-safe, high-precision status indicator for both fixed-batch and recursive workloads.
+// Progress provides a throttled, concurrency-safe, high-precision status indicator for workloads.
 type Progress struct {
 	total      uint64         // 0 for fractional path allocation; > 0 for weight-based accumulation
 	buf        []byte         // reusable buffer for writing status messages to the terminal
@@ -57,35 +58,33 @@ type Progress struct {
 	doneChan   chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
 	resizeChan chan os.Signal // handles terminal window resizing
 	clock      clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
-	width      int            // width of the terminal window
-	drawNotify chan struct{}  // optional channel used to signal completion of a draw cycle for deterministic testing
-	drawnDone  atomic.Bool    // drawnDone ensures the final completion frame is rendered just once to prevent status smearing
-	closeOnce  sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed just once
+	width      int            // the width of the terminal window; updated by a syscall.SIGWINCH listener
+	drawNotify chan struct{}  // drawNotify is used in tests to signal the completion of a draw cycle
+	drawnDone  atomic.Bool    // drawnDone ensures the final completion frame is rendered only once
+	closeOnce  sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 }
 
-// obviates, e.g., sleeping in unit tests
-type clock interface { tick() <-chan time.Time }
+type clock interface { tick() <-chan time.Time } // enables dependency injection to facilitate testing
 
-type realClock struct { dur time.Duration }
+type realClock struct { dur time.Duration  }     // throttles UI updates
 func (r *realClock) tick() <-chan time.Time { return time.NewTicker(r.dur).C }
 
-type fakeClock struct { chn chan time.Time }
+type fakeClock struct { chn chan time.Time }     // simulates the passage of time in tests
 func (f *fakeClock) tick() <-chan time.Time { return f.chn }
 
-// NewProgress initializes a throttled, concurrency-safe work unit completion (progress)
-// tracker and starts a terminal work progress status rendering loop in the background.
+// NewProgress initializes a throttled, concurrency-safe, high-precision work progress
+// tracker and starts a work completion status rendering loop in the background.
+//
+// The value of the `totalUnits` parameter determines the accumulation mode used internally:
 //
 //    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known a priori)
 //    pass totalUnits == 0 for fractional path allocation (when totalUnits is not known a priori)
 func NewProgress(totalUnits uint64, output io.Writer) *Progress {
-	safeTotal := totalUnits
-	if totalUnits > maxSafeUnits {
-		fmt.Fprintf(os.Stderr, "totalUnits %d exceeds max precision; falling back to %d\n", totalUnits, maxSafeUnits)
-		safeTotal = maxSafeUnits
-	}
-	w := 80
+	safeTotal := min(totalUnits, maxSafeUnits) // fall back to maxSafeUnits if totalUnits exceeds max precision
+
+	terminalWidth := 80
 	if f, ok := output.(*os.File); ok {
-		w = getWidth(f) // output is a real *os.File (and not, e.g., io.Discard, as the case may be for certain tests)
+		terminalWidth = getWidth(f)
 	}
 
 	p := &Progress{
@@ -94,7 +93,7 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
 		resizeChan: make(chan os.Signal, 1),
-		width:      max(w, 80),
+		width:      max(terminalWidth, 80),
 		clock:      &realClock{ dur: 16 * time.Millisecond },
 	}
 
@@ -104,8 +103,7 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM) // trap SIGINT and SIGTERM so the hidden cursor can be restored
-
-	signal.Notify(p.resizeChan, syscall.SIGWINCH)
+	signal.Notify(p.resizeChan, syscall.SIGWINCH)         // trap SIGWINCH to handle the terminal window being resized
 
 	go func() {
 		defer signal.Stop(sigChan) // clean up signal listener
@@ -133,9 +131,9 @@ func getWidth(files ...*os.File) int {
 	}
 	for _, f := range files {
 		fd := f.Fd()
-		// although f.Fd() will certainly be 0 (os.Stdin), 1 (os.Stdout), or 2 (os.Stderr),
-		// the following check is performed to satisfy the gosec linter (otherwise
-		// gosec complains about possible integer overflow per the call to int())
+		// although f.Fd() is 0 (os.Stdin), 1 (os.Stdout), or 2 (os.Stderr), the
+		// following check is performed to satisfy the gosec linter (otherwise
+		// gosec complains about possible integer overflow in the call to int())
 		if fd > math.MaxInt { continue } // skip if FD is logically impossible for term.GetSize (really, just making gosec happy)
 		if w, _, err := term.GetSize(int(fd)); err == nil {
 			if w > width { width = w }
@@ -147,16 +145,16 @@ func getWidth(files ...*os.File) int {
 // InitialBudget returns the full internal scale (100%) to be used as the starting budget for tracking fractional progress.
 func (p *Progress) InitialBudget() uint64 { return scale }
 
-// Report records the completion of a unit of work, or a fractional share or work, and updates the status message.
+// Report updates the current progress and status.
 //
-//   if total >  0: 'val' is the weight of the completed unit
-//   if total == 0: 'val' is the scaled budget (portion of scale) for the branch
+//   if total >  0: val represents the relative weight of the work completed, and the progress percentage is calculated as val / totalUnits
+//   if total == 0: val represents the portion of the InitialBudget(), which must be divided among all sub-tasks by the caller
 func (p *Progress) Report(val uint64, status string) {
 	if status != "" { p.input.Store(status) }
 
 	var share uint64
 	if p.total > 0 {
-		share = (min(val, p.total) * scale) / p.total // weight-based accumulation mode: calculate share of scale
+		share = (min(val, p.total) * scale) / p.total // weight-based accumulation mode: calculate the share of the total
 	} else {
 		share = val                                   // fractional path allocation mode: add the budget share directly
 	}
@@ -165,7 +163,7 @@ func (p *Progress) Report(val uint64, status string) {
 	}
 }
 
-// renderLoop periodically draws the progress line at ~60 FPS to ensure a smooth UI without impeding the processing logic.
+// renderLoop periodically draws the progress line at ~60 FPS without impeding the processing logic.
 func (p *Progress) renderLoop() {
 	tickerChan := p.clock.tick()
 	for {
@@ -189,7 +187,7 @@ func (p *Progress) renderLoop() {
 // draw clears the current terminal line and prints the formatted percentage and status string, truncating text as needed to fit within the terminal width.
 func (p *Progress) draw() {
 	defer func() {
-		if p.drawNotify != nil { // enables deterministic tests
+		if p.drawNotify != nil { // enables fast and deterministic tests
 			p.drawNotify <- struct{}{}
 		}
 	}()
@@ -202,39 +200,35 @@ func (p *Progress) draw() {
 	safeVal := min(currentVal, scale)                      // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
 	percent := (float64(safeVal) * 100.0) / float64(scale) // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
 
-	if percent >= 100 { status = "done" }
+	if percent >= 100 {  status =  "done" }
+	if percent == 100 && status == "done" { if p.drawnDone.Swap(true) { return } }
 
-	if percent == 100 && status == "done" {
-		if p.drawnDone.Swap(true) { return }
-	}
-
-	var pStr string
+	var pctFmtSpecifier string
 	switch { // sadly %3g%% doesn't quite work
 	case percent >= 100:
-		pStr = "100"
+		pctFmtSpecifier = "100"
 	case percent >= 10:
-		pStr = fmt.Sprintf("%3.0f", percent)
+		pctFmtSpecifier = fmt.Sprintf("%3.0f", percent)
 	case percent >= 1:
-		pStr = fmt.Sprintf("%3.1f", percent)
+		pctFmtSpecifier = fmt.Sprintf("%3.1f", percent)
 	default:
-		pStr = fmt.Sprintf("%.1f", percent)
+		pctFmtSpecifier = fmt.Sprintf("%.1f", percent)
 	}
-	prefix  := fmt.Sprintf("processing (%s%%): ", pStr)
-	maxLen  := max(p.width - len(prefix), 0)
-	display := status
+	prefix := fmt.Sprintf("processing (%s%%): ", pctFmtSpecifier)
+	maxLen := max(p.width - len(prefix), 0)
 
 	switch {
 	case maxLen == 0:
-		display = ""
-	case len(display) > maxLen && maxLen > 3:
-		display = "..." + display[len(display)-maxLen+3:] // truncate from left to show most relevant portion (e.g., file basename)
-	case len(display) > maxLen:
-		display = display[:maxLen]
+		status = ""
+	case len(status) > maxLen && maxLen > 3:
+		status = "..." + status[len(status)-maxLen+3:] // truncate from left to show most relevant portion (e.g., file basename)
+	case len(status) > maxLen:
+		status = status[:maxLen]
 	}
 
 	p.buf = p.buf[:0]
-	p.buf = fmt.Appendf(p.buf, "\r\033[2K\r%s%s", prefix, display) // \033[2K clears the line, \r moves the cursor to the beginning of the line
-	_, err := p.output.Write(p.buf) // single, atomic system call to mitigate UI flicker (atomicity is not guaranteed by fmt.Fprintf)
+	p.buf = fmt.Appendf(p.buf, "\r\033[2K\r%s%s", prefix, status) // \033[2K clears the line, \r moves the cursor to the beginning of the line
+	_, err := p.output.Write(p.buf)                               // single, atomic system call (atomicity is not guaranteed by fmt.Fprintf)
 
 	if err == nil {
 		p.lastDrawn.Store(currentVal)
