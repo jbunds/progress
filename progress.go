@@ -195,13 +195,18 @@ func (p *Progress) draw() {
 	currentVal := p.current.Load()
 	status, _  := p.input.Load().(string)
 
-	if currentVal == p.lastDrawn.Load() && status == p.lastStatus { return } // skip redundant UI updates
+	if currentVal == p.lastDrawn.Load() &&
+	   status     == p.lastStatus { return } // skip redundant UI updates
 
 	safeVal := min(currentVal, scale)                      // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
 	percent := (float64(safeVal) * 100.0) / float64(scale) // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
 
 	if percent >= 100 {  status =  "done" }
-	if percent == 100 && status == "done" { if p.drawnDone.Swap(true) { return } }
+	if percent == 100 && status == "done" {
+		if p.drawnDone.Swap(true) { // progress complete, so don't render another progress frame
+			return
+		}
+	}
 
 	var pctFmtSpecifier string
 	switch { // sadly %3g%% doesn't quite work
@@ -212,7 +217,7 @@ func (p *Progress) draw() {
 	case percent >= 1:
 		pctFmtSpecifier = fmt.Sprintf("%3.1f", percent)
 	default:
-		pctFmtSpecifier = fmt.Sprintf("%.1f", percent)
+		pctFmtSpecifier = fmt.Sprintf( "%.1f", percent)
 	}
 	prefix := fmt.Sprintf("processing (%s%%): ", pctFmtSpecifier)
 	maxLen := max(p.width - len(prefix), 0)

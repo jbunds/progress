@@ -196,6 +196,7 @@ func TestDraw(t *testing.T) {
 		width   int
 		current uint64
 		status  string
+		redraws int
 		want    string
 		wantLen int // the expected length of the message printed to the terminal
 	}{
@@ -204,6 +205,7 @@ func TestDraw(t *testing.T) {
 			width:   80,
 			current: scale / 2,
 			status:  "working...",
+			redraws: 1,
 			want:    ansiEscSeq    +     "processing ( 50%): "  +     "working...",
 			wantLen: ansiEscSeqLen + len("processing ( 50%): ") + len("working..."),
 		},
@@ -212,6 +214,7 @@ func TestDraw(t *testing.T) {
 			width:   30,
 			current: 0,
 			status:  "this status message is much too long to fit within the width of the terminal",
+			redraws: 1,
 			want:    ansiEscSeq    +     "processing (0.0%): "  +     "...terminal",
 			wantLen: ansiEscSeqLen + len("processing (0.0%): ") + len("...terminal"),
 		},
@@ -220,6 +223,7 @@ func TestDraw(t *testing.T) {
 			width:   10,
 			current: 0,
 			status:  "no room for status",
+			redraws: 1,
 			want:    ansiEscSeq    +     "processing (0.0%): ",
 			wantLen: ansiEscSeqLen + len("processing (0.0%): "),
 		},
@@ -228,6 +232,25 @@ func TestDraw(t *testing.T) {
 			width:   80,
 			current: math.MaxUint64,
 			status:  "massive amout of work",
+			redraws: 1,
+			want:    ansiEscSeq    +     "processing (100%): "  +     "done",
+			wantLen: ansiEscSeqLen + len("processing (100%): ") + len("done"),
+		},
+		{
+			name:    "skip redundant redraws",
+			width:   80,
+			current: 0,
+			status:  "render this only once",
+			redraws: 3,
+			want:    ansiEscSeq    +     "processing (0.0%): "  +     "render this only once",
+			wantLen: ansiEscSeqLen + len("processing (0.0%): ") + len("render this only once"),
+		},
+		{
+			name:    "verify final completion frame is rendered only once",
+			width:   80,
+			current: scale,
+			status:  "done",
+			redraws: 3,
 			want:    ansiEscSeq    +     "processing (100%): "  +     "done",
 			wantLen: ansiEscSeqLen + len("processing (100%): ") + len("done"),
 		},
@@ -241,11 +264,13 @@ func TestDraw(t *testing.T) {
 				width:  tt.width,
 				output: got,
 			}
-			
+
 			p.current.Store(tt.current)
 			p.input.Store(tt.status)
 			
-			p.draw()
+			for i := 0; i < tt.redraws; i++ { // call p.draw() tt.redraws times
+				p.draw()
+			}
 
 			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
