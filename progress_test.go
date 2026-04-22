@@ -345,6 +345,8 @@ func TestClose(t *testing.T) {
 			wantProg: &Progress{
 				clock:      &realClock{ dur: 16 * time.Millisecond },
 				width:      80,
+				lastWidth:  80,
+				lastPct:    "100",
 				lastStatus: "done",
 			},
 		},

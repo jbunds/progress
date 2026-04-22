@@ -54,6 +54,8 @@ type Progress struct {
 	current    atomic.Uint64  // accumulates shares of scale
 	lastDrawn  atomic.Uint64  // the last drawn value (to skip redundant UI updates)
 	lastStatus string         // the last rendered status message (to skip redundant UI updates)
+	lastPct    string         // the last rendered percentage string (to skip redundant UI updates)
+	lastWidth  int            // the last terminal width used for drawing (to skip redundant UI updates)
 	stopChan   chan struct{}  // signals the background rendering loop to perform final cleanup and exit
 	doneChan   chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
 	resizeChan chan os.Signal // handles terminal window resizing
@@ -195,9 +197,6 @@ func (p *Progress) draw() {
 	currentVal := p.current.Load()
 	status, _  := p.input.Load().(string)
 
-	if currentVal == p.lastDrawn.Load() &&
-	   status     == p.lastStatus { return } // skip redundant UI updates
-
 	safeVal := min(currentVal, scale)                      // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
 	percent := (float64(safeVal) * 100.0) / float64(scale) // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
 
@@ -210,15 +209,14 @@ func (p *Progress) draw() {
 
 	var pctFmtSpecifier string
 	switch { // sadly %3g%% doesn't quite work
-	case percent >= 100:
+	case percent >= 99.95:
 		pctFmtSpecifier = "100"
-	case percent >= 10:
+	case percent >= 9.95:
 		pctFmtSpecifier = fmt.Sprintf("%3.0f", percent)
-	case percent >= 1:
-		pctFmtSpecifier = fmt.Sprintf("%3.1f", percent)
 	default:
-		pctFmtSpecifier = fmt.Sprintf( "%.1f", percent)
+		pctFmtSpecifier = fmt.Sprintf("%3.1f", percent)
 	}
+
 	prefix := fmt.Sprintf("processing (%s%%): ", pctFmtSpecifier)
 	maxLen := max(p.width - len(prefix), 0)
 
@@ -231,6 +229,12 @@ func (p *Progress) draw() {
 		status = status[:maxLen]
 	}
 
+	if p.width         == p.lastWidth  &&
+	   status          == p.lastStatus &&
+	   pctFmtSpecifier == p.lastPct {
+		return // skip redundant UI updates
+	}
+
 	p.buf = p.buf[:0]
 	p.buf = fmt.Appendf(p.buf, "\r\033[2K\r%s%s", prefix, status) // \033[2K clears the line, \r moves the cursor to the beginning of the line
 	_, err := p.output.Write(p.buf)                               // single, atomic system call (atomicity is not guaranteed by fmt.Fprintf)
@@ -238,6 +242,8 @@ func (p *Progress) draw() {
 	if err == nil {
 		p.lastDrawn.Store(currentVal)
 		p.lastStatus = status
+		p.lastPct    = pctFmtSpecifier
+		p.lastWidth  = p.width
 	}
 }
 
