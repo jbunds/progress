@@ -355,7 +355,6 @@ func TestClose(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.wantProg.current.Store(scale)
 			tt.wantProg.input.Store("done")
-			tt.wantProg.lastDrawn.Store(scale)
 			tt.wantProg.drawnDone.Store(true)
 			tt.wantProg.buf = []byte(status)
 			got := new(bytes.Buffer)

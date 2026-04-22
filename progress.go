@@ -52,10 +52,9 @@ type Progress struct {
 	output     io.Writer      // destination writer for the terminal-formatted work progress status updates
 	input      atomic.Value   // stores the latest unit of work being processed
 	current    atomic.Uint64  // accumulates shares of scale
-	lastDrawn  atomic.Uint64  // the last drawn value (to skip redundant UI updates)
-	lastStatus string         // the last rendered status message (to skip redundant UI updates)
-	lastPct    string         // the last rendered percentage string (to skip redundant UI updates)
-	lastWidth  int            // the last terminal width used for drawing (to skip redundant UI updates)
+	lastWidth  int            // the last terminal width used for drawing (used to skip redundant UI updates)
+	lastPct    string         // the last rendered percentage string      (used to skip redundant UI updates)
+	lastStatus string         // the last rendered status message         (used to skip redundant UI updates)
 	stopChan   chan struct{}  // signals the background rendering loop to perform final cleanup and exit
 	doneChan   chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
 	resizeChan chan os.Signal // handles terminal window resizing
@@ -197,41 +196,39 @@ func (p *Progress) draw() {
 	currentVal := p.current.Load()
 	status, _  := p.input.Load().(string)
 
-	safeVal := min(currentVal, scale)                      // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
-	percent := (float64(safeVal) * 100.0) / float64(scale) // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
+	safeVal    := min(currentVal, scale)                      // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
+	percent    := (float64(safeVal) * 100.0) / float64(scale) // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
 
 	if percent >= 100 {  status =  "done" }
-	if percent == 100 && status == "done" {
-		if p.drawnDone.Swap(true) { // progress complete, so don't render another progress frame
-			return
-		}
+	if percent == 100 && status == "done" { // progress complete...
+		if p.drawnDone.Swap(true) { return }  // ...so don't render another progress frame
 	}
 
-	var pctFmtSpecifier string
-	switch { // sadly %3g%% doesn't quite work
+	var pct string // formatted percentage (unfortunately %3g%% doesn't quite work)
+	switch {
 	case percent >= 99.95:
-		pctFmtSpecifier = "100"
-	case percent >= 9.95:
-		pctFmtSpecifier = fmt.Sprintf("%3.0f", percent)
+		pct = "100"
+	case percent >=  9.95:
+		pct = fmt.Sprintf("%3.0f", percent)
 	default:
-		pctFmtSpecifier = fmt.Sprintf("%3.1f", percent)
+		pct = fmt.Sprintf("%3.1f", percent)
 	}
 
-	prefix := fmt.Sprintf("processing (%s%%): ", pctFmtSpecifier)
+	prefix := fmt.Sprintf("processing (%s%%): ", pct)
 	maxLen := max(p.width - len(prefix), 0)
 
 	switch {
 	case maxLen == 0:
 		status = ""
 	case len(status) > maxLen && maxLen > 3:
-		status = "..." + status[len(status)-maxLen+3:] // truncate from left to show most relevant portion (e.g., file basename)
+		status = "..." + status[len(status) - maxLen + 3:] // truncate from left to show most relevant portion (e.g., file basename)
 	case len(status) > maxLen:
 		status = status[:maxLen]
 	}
 
-	if p.width         == p.lastWidth  &&
-	   status          == p.lastStatus &&
-	   pctFmtSpecifier == p.lastPct {
+	if p.width == p.lastWidth  &&
+	   pct     == p.lastPct    &&
+	   status  == p.lastStatus {
 		return // skip redundant UI updates
 	}
 
@@ -240,10 +237,9 @@ func (p *Progress) draw() {
 	_, err := p.output.Write(p.buf)                               // single, atomic system call (atomicity is not guaranteed by fmt.Fprintf)
 
 	if err == nil {
-		p.lastDrawn.Store(currentVal)
-		p.lastStatus = status
-		p.lastPct    = pctFmtSpecifier
 		p.lastWidth  = p.width
+		p.lastPct    = pct
+		p.lastStatus = status
 	}
 }
 
