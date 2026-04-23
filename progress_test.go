@@ -17,7 +17,7 @@ var opts = cmp.Options{
 	cmp.AllowUnexported(Progress{}, realClock{}),
 	cmp.Transformer("unwrapAtomic", func(v atomic.Value) any { return v.Load() }),
 	cmpopts.EquateComparable(atomic.Bool{}, atomic.Uint64{}),
-	cmpopts.IgnoreFields(Progress{}, "stopChan", "doneChan", "resizeChan", "output", "closeOnce"), // non-trivial to compare
+	cmpopts.IgnoreFields(Progress{}, "mu", "stopChan", "doneChan", "resizeChan", "output", "closeOnce"), // non-trivial to compare
 }
 
 func TestNewProgress(t *testing.T) {

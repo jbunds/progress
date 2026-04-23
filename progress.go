@@ -48,6 +48,7 @@ const (
 // Progress provides a throttled, concurrency-safe, high-precision status indicator for workloads.
 type Progress struct {
 	total      uint64         // 0 for fractional path allocation; > 0 for weight-based accumulation
+	mu         sync.Mutex     // synchronizes terminal I/O and UI state updates
 	buf        []byte         // reusable buffer for writing status messages to the terminal
 	output     io.Writer      // destination writer for the terminal-formatted work progress status updates
 	input      atomic.Value   // stores the latest unit of work being processed
@@ -142,6 +143,8 @@ func getWidth(files ...*os.File) int {
 	return max(width, 80) // fallback for pipes, redirects, and non-tty outputs
 }
 
+// write writes the provided data to p.output using the shared internal buffer to ensure an atomic system call.
+// callers must acquire p.mu before calling this method to protect the shared internal buffer and to ensure UI consistency.
 func (p *Progress) write(data ...any) error {
 	p.buf = p.buf[:0]
 	for _, v := range data {
@@ -196,14 +199,20 @@ func (p *Progress) renderLoop() {
 
 // draw clears the current terminal line and prints the formatted percentage and status string, truncating text as needed to fit within the terminal width.
 func (p *Progress) draw() {
+	p.mu.Lock()
+	currentVal := p.current.Load()
+	status, _  := p.input.Load().(string)
+	width      := p.width
+	lastWidth  := p.lastWidth
+	lastPct    := p.lastPct
+	lastStatus := p.lastStatus
+	p.mu.Unlock()
+
 	defer func() {
 		if p.drawNotify != nil { // enables fast and deterministic tests
 			p.drawNotify <- struct{}{}
 		}
 	}()
-
-	currentVal := p.current.Load()
-	status, _  := p.input.Load().(string)
 
 	safeVal    := min(currentVal, scale)                      // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
 	percent    := (float64(safeVal) * 100.0) / float64(scale) // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
@@ -232,16 +241,18 @@ func (p *Progress) draw() {
 		status = status[:maxLen]
 	}
 
-	if p.width == p.lastWidth  &&
-	   pct     == p.lastPct    &&
-	   status  == p.lastStatus {
+	if width  == lastWidth &&
+	   pct    == lastPct &&
+	   status == lastStatus {
 		return // skip redundant UI updates
 	}
 
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	err := p.write("\r\033[2K\r", prefix, status) // \033[2K clears the line, \r moves the cursor to the beginning of the line
 
 	if err == nil {
-		p.lastWidth  = p.width
+		p.lastWidth  = width
 		p.lastPct    = pct
 		p.lastStatus = status
 	}
@@ -249,7 +260,7 @@ func (p *Progress) draw() {
 
 // restoreAndExit restores the cursor upon trapping a SIGINT or SIGTERM signal.
 func (p *Progress) restoreAndExit() {
-	_ = p.write("\033[?25h") // restore the cursor
+	p.Close()
 	os.Exit(1)
 }
 
@@ -258,6 +269,8 @@ func (p *Progress) Close() {
 	p.closeOnce.Do(func() {
 		close(p.stopChan)                                          // stop the background renderLoop
 		<-p.doneChan                                               // block until renderLoop exits
+		p.mu.Lock()
+		defer p.mu.Unlock()
 		_ = p.write("\r\033[2K\rprocessing (100%): done\033[?25h") // render the final completion frame and restore the cursor
 		if f, ok := p.output.(*os.File); ok {
 			_ = f.Sync()                                           // immediately flush the final "done" message
