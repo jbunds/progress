@@ -31,7 +31,7 @@ func simulateDiscovery(prog *progress.Progress, name string, budget float64, dep
 
 	for i := range numChildren {
 		var currentShare float64
-		if i == numChildren-1 {
+		if i == numChildren - 1 {
 			currentShare = remaining
 		} else {
 			currentShare = childShare
