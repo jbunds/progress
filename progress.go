@@ -28,10 +28,6 @@ import (
 // source file) costs the same amount of computational resource is very crude
 // and naïve, and ultimately results in inaccurate progress status updates.
 
-// TODO(jeff): figure out how to simplify the interface to this package
-//             by storing more state to obviate callers being
-//             responsible for tracking work completion status
-
 const (
 	// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
 	// (the sync/atomic package provides no floating-point types)
