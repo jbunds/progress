@@ -61,7 +61,6 @@ type Progress struct {
 	clock      clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
 	width      int            // the width of the terminal window; updated by a syscall.SIGWINCH listener
 	drawNotify chan struct{}  // drawNotify is used in tests to signal the completion of a draw cycle
-	drawnDone  atomic.Bool    // drawnDone ensures the final completion frame is rendered only once
 	closeOnce  sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 }
 
@@ -100,7 +99,7 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 
 	p.input.Store("")
 
-	fmt.Fprint(p.output, "\033[?25l") // hide the cursor
+	_ = p.write("\033[?25l") // hide the cursor
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM) // trap SIGINT and SIGTERM so the hidden cursor can be restored
@@ -143,6 +142,19 @@ func getWidth(files ...*os.File) int {
 	return max(width, 80) // fallback for pipes, redirects, and non-tty outputs
 }
 
+func (p *Progress) write(data ...any) error {
+	p.buf = p.buf[:0]
+	for _, v := range data {
+		if s, ok := v.(string); ok {
+			p.buf = append(p.buf, s...)
+		} else {
+			p.buf = fmt.Append(p.buf, v)
+		}
+	}
+	_, err := p.output.Write(p.buf) // single, atomic system call (fmt.Fprintf makes no such guarantees)
+	return err
+}
+
 // InitialBudget returns the full internal scale (100%) to be used as the starting budget for tracking fractional progress.
 func (p *Progress) InitialBudget() uint64 { return scale }
 
@@ -176,9 +188,6 @@ func (p *Progress) renderLoop() {
 		case <-tickerChan:
 			p.draw()
 		case <-p.stopChan:
-			p.draw()
-			fmt.Fprint(p.output, "\033[2K\r") // clear the progress status line
-			fmt.Fprint(p.output, "\033[?25h") // restore the cursor
 			close(p.doneChan)
 			return
 		}
@@ -199,10 +208,7 @@ func (p *Progress) draw() {
 	safeVal    := min(currentVal, scale)                      // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
 	percent    := (float64(safeVal) * 100.0) / float64(scale) // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
 
-	if percent >= 100 {  status =  "done" }
-	if percent == 100 && status == "done" { // progress complete...
-		if p.drawnDone.Swap(true) { return }  // ...so don't render another progress frame
-	}
+	if percent >= 100 { return } // Close() renders the final completion frame
 
 	var pct string // formatted percentage (unfortunately %3g%% doesn't quite work)
 	switch {
@@ -232,9 +238,7 @@ func (p *Progress) draw() {
 		return // skip redundant UI updates
 	}
 
-	p.buf = p.buf[:0]
-	p.buf = fmt.Appendf(p.buf, "\r\033[2K\r%s%s", prefix, status) // \033[2K clears the line, \r moves the cursor to the beginning of the line
-	_, err := p.output.Write(p.buf)                               // single, atomic system call (atomicity is not guaranteed by fmt.Fprintf)
+	err := p.write("\r\033[2K\r", prefix, status) // \033[2K clears the line, \r moves the cursor to the beginning of the line
 
 	if err == nil {
 		p.lastWidth  = p.width
@@ -245,17 +249,18 @@ func (p *Progress) draw() {
 
 // restoreAndExit restores the cursor upon trapping a SIGINT or SIGTERM signal.
 func (p *Progress) restoreAndExit() {
-	fmt.Fprint(p.output, "\033[?25h\n") // restore the cursor
+	_ = p.write("\033[?25h") // restore the cursor
 	os.Exit(1)
 }
 
 // Close stops the background renderer, restores the terminal cursor, and blocks until the final "done" state is displayed.
 func (p *Progress) Close() {
 	p.closeOnce.Do(func() {
-		p.current.Store(scale)       // force internal counter to 100%
-		p.input.Store("done")        // force status to "done"
-		time.Sleep(time.Millisecond) // allow a moment for the atomic stores to propagate
-		close(p.stopChan)
-		<-p.doneChan
+		close(p.stopChan)                                          // stop the background renderLoop
+		<-p.doneChan                                               // block until renderLoop exits
+		_ = p.write("\r\033[2K\rprocessing (100%): done\033[?25h") // render the final completion frame and restore the cursor
+		if f, ok := p.output.(*os.File); ok {
+			_ = f.Sync()                                           // immediately flush the final "done" message
+		}
 	})
 }
