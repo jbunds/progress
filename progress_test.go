@@ -23,53 +23,45 @@ var opts = cmp.Options{
 func TestNewProgress(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name   string
-		total  uint64
-		want   *Progress
+		name       string
+		totalUnits uint64
+		wantTotal  uint64
+		wantBuf    []byte
 	}{
 		{
-			name:   "weight-based accumulation",
-			total:  uint64(100),
-			want:   &Progress{
-				total: uint64(100),
-				clock: &realClock{ dur: 16 * time.Millisecond },
-				width: 80,
-				buf:   []byte("\033[?25l"), // hide the cursor
-			},
+			name:       "weight-based accumulation",
+			totalUnits: 100,
+			wantTotal:  100,
+			wantBuf:    []byte("\033[?25l"), // hide the cursor
 		},
 		{
-			name:   "fractional path allocation",
-			total:  uint64(0),
-			want:   &Progress{
-				total: uint64(0),
-				clock: &realClock{ dur: 16 * time.Millisecond },
-				width: 80,
-				buf:   []byte("\033[?25l"), // hide the cursor
-			},
+			name:       "fractional path allocation",
+			totalUnits: 0,
+			wantTotal:  0,
+			wantBuf:    []byte("\033[?25l"), // hide the cursor
 		},
 		{
-			name:  "verify overflow safety",
-			total: maxSafeUnits + 1000,
-			want:  &Progress{
-				total: maxSafeUnits,
-				clock: &realClock{ dur: 16 * time.Millisecond },
-				width: 80,
-				buf:   []byte("\033[?25l"), // hide the cursor
-			},
+			name:       "verify overflow safety",
+			totalUnits: maxSafeUnits + 1000,
+			wantTotal:  maxSafeUnits,
+			wantBuf:    []byte("\033[?25l"), // hide the cursor
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := NewProgress(tt.total, io.Discard)
+			buf := new(bytes.Buffer)
+			got := NewProgress(tt.totalUnits, buf)
 			t.Cleanup(got.Close)
-			tt.want.input.Store("")
-			if diff := cmp.Diff(tt.want, got, opts...); diff != "" {
+			if diff := cmp.Diff(tt.wantTotal, got.total.Load(), opts...); diff != "" {
 				t.Errorf("NewProgress(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
-			if got.stopChan   == nil { t.Errorf("stopChan was not initialized"  ) }
-			if got.doneChan   == nil { t.Errorf("doneChan was not initialized"  ) }
-			if got.resizeChan == nil { t.Errorf("resizeChan was not initialized") }
+			if diff := cmp.Diff(tt.wantBuf, got.buf); diff != "" {
+				t.Errorf("NewProgress(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
+			if got.stopChan == nil || got.doneChan == nil || got.resizeChan == nil {
+				t.Errorf("one or more channels were not initialized")
+			}
 		})
 	}
 }
@@ -112,11 +104,11 @@ func TestInitialBudget(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
-		want uint64
+		want float64
 	}{
 		{
 			name: "succeeds",
-			want: scale,
+			want: float64(scale),
 		},
 	}
 	for _, tt := range tests {
@@ -137,7 +129,7 @@ func TestReport(t *testing.T) {
 	tests := []struct {
 		name      string
 		total     uint64
-		unitsDone uint64
+		unitsDone float64
 		status    string
 		want      uint64
 	}{
@@ -165,7 +157,7 @@ func TestReport(t *testing.T) {
 		{
 			name:      "fractional path allocation; direct accumulation",
 			total:     0,
-			unitsDone: scale / 10,
+			unitsDone: float64(scale) / 10,
 			status:    "1/10 of the total work done",
 			want:      (scale / 10) * 3,
 		},
@@ -255,7 +247,6 @@ func TestDraw(t *testing.T) {
 			t.Parallel()
 			got := new(bytes.Buffer)
 			p := &Progress{
-				total:  100,
 				width:  tt.width,
 				output: got,
 			}
@@ -287,7 +278,6 @@ func TestRenderLoop(t *testing.T) {
 	}
 
 	p := &Progress{
-		total:      100,
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
 		output:     got,
@@ -295,6 +285,8 @@ func TestRenderLoop(t *testing.T) {
 		clock:      &fakeClock{ chn: tickTrigger },
 		drawNotify: notify,
 	}
+	p.total.Store(100)
+	p.input.Store("")
 
 	go p.renderLoop()
 
@@ -321,8 +313,10 @@ func TestRenderLoop(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	t.Parallel()
+
 	output := "\r\033[2K\rprocessing (100%): done" + // final completion frame
 	          "\033[?25h"                            // restore the cursor
+
 	tests  := []struct {
 		name     string
 		wantOut  string

@@ -47,7 +47,7 @@ const (
 
 // Progress provides a throttled, concurrency-safe, high-precision status indicator for workloads.
 type Progress struct {
-	total      uint64         // 0 for fractional path allocation; > 0 for weight-based accumulation
+	total      atomic.Uint64  // 0 for fractional path allocation; > 0 for weight-based accumulation
 	mu         sync.Mutex     // synchronizes terminal I/O and UI state updates
 	buf        []byte         // reusable buffer for writing status messages to the terminal
 	output     io.Writer      // destination writer for the terminal-formatted work progress status updates
@@ -89,7 +89,6 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 	}
 
 	p := &Progress{
-		total:      safeTotal,
 		output:     output,
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
@@ -97,7 +96,7 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 		width:      max(terminalWidth, 80),
 		clock:      &realClock{ dur: 16 * time.Millisecond },
 	}
-
+	p.total.Store(safeTotal)
 	p.input.Store("")
 
 	_ = p.write("\033[?25l") // hide the cursor
@@ -159,22 +158,31 @@ func (p *Progress) write(data ...any) error {
 }
 
 // InitialBudget returns the full internal scale (100%) to be used as the starting budget for tracking fractional progress.
-func (p *Progress) InitialBudget() uint64 { return scale }
+func (p *Progress) InitialBudget() float64 { return float64(scale) }
+
+// AddTotal dynamically increases the total work budget as new tasks are discovered.
+// It is concurrency-safe and can be called concurrently with Report().
+func (p *Progress) AddTotal(n uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.total.Add(n)
+}
 
 // Report updates the current progress and status.
 //
-//   if total >  0: val represents the relative weight of the work completed, and the progress percentage is calculated as val / totalUnits
-//   if total == 0: val represents the portion of the InitialBudget(), which must be divided among all sub-tasks by the caller
-func (p *Progress) Report(val uint64, status string) {
-	if status != "" { p.input.Store(status) }
+//   if total >  0: n represents the relative weight of the work completed, and the progress percentage is calculated as n / totalUnits
+//   if total == 0: n represents the portion of the InitialBudget(), which must be divided among all sub-tasks by the caller
+func (p *Progress) Report(n float64, status string) {
+	p.input.Store(status)
 
+	total := p.total.Load()
 	var share uint64
-	if p.total > 0 {
-		share = (min(val, p.total) * scale) / p.total // weight-based accumulation mode: calculate the share of the total
+	if total > 0 {
+		share = uint64((n / float64(total)) * float64(scale)) // weight-based accumulation mode: calculate the share of the total
 	} else {
-		share = val                                   // fractional path allocation mode: add the budget share directly
+		share = uint64(n)                                     // fractional path allocation mode: add the budget share directly
 	}
-	if p.current.Add(share) > scale {
+	if p.current.Add(share) > scale { // cap at scale (100%)
 		p.current.Store(scale)
 	}
 }
@@ -199,8 +207,8 @@ func (p *Progress) renderLoop() {
 
 // draw clears the current terminal line and prints the formatted percentage and status string, truncating text as needed to fit within the terminal width.
 func (p *Progress) draw() {
-	p.mu.Lock()
 	currentVal := p.current.Load()
+	p.mu.Lock()
 	status, _  := p.input.Load().(string)
 	width      := p.width
 	lastWidth  := p.lastWidth
@@ -214,8 +222,7 @@ func (p *Progress) draw() {
 		}
 	}()
 
-	safeVal    := min(currentVal, scale)                      // prevent uint64 overflow in percentage calculations, and ensure the UI never reports > 100%
-	percent    := (float64(safeVal) * 100.0) / float64(scale) // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
+	percent := (float64(currentVal) * 100.0) / float64(scale) // multiply before dividing for precision; safe from uint64 overflow when currentVal <= ~1.8e17
 
 	if percent >= 100 { return } // Close() renders the final completion frame
 
