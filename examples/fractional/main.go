@@ -15,43 +15,42 @@ func main() {
 	defer prog.Close()
 
 	totalBudget := prog.InitialBudget()
-	
 	simulateDiscovery(prog, "root", totalBudget, 0)
 }
 
-func simulateDiscovery(prog *progress.Progress, name string, budget uint64, depth int) {
-	if budget == 0 { return }
-
+func simulateDiscovery(prog *progress.Progress, name string, budget float64, depth int) {
+	if budget < 1e-6 { return } // floating point "zero" check
 	if depth > 2 {
 		processLeaf(prog, name, budget)
 		return
 	}
 
-	numChildren := rand.IntN(4) + 2 // a task can have between 2 and 5 sub-tasks
-	
-	childShare := budget / uint64(numChildren) // base share among children
-	remainder  := budget % uint64(numChildren) // remainder
+	numChildren := rand.IntN(4) + 2
+	childShare  := budget / float64(numChildren)
+	remaining   := budget
 
 	for i := range numChildren {
-		currentShare := childShare
-		if i == numChildren - 1 {
-			currentShare += remainder // grant the remainder to the last child
+		var currentShare float64
+		if i == numChildren-1 {
+			currentShare = remaining
+		} else {
+			currentShare = childShare
+			remaining   -= currentShare
 		}
 
 		childName := fmt.Sprintf("%s/node_%d", name, i)
-		
 		prog.Report(0, fmt.Sprintf("scanning %s...", childName))
-		time.Sleep(300 * time.Millisecond) // simulate some discovery time
+		time.Sleep(200 * time.Millisecond)
 
-		if rand.Float64() > 0.4 { // pseudorandomly dive deeper or finish by processing a leaf node
-			simulateDiscovery(prog, childName, currentShare, depth + 1)
+		if rand.Float64() > 0.4 {
+			simulateDiscovery(prog, childName, currentShare, depth+1)
 		} else {
 			processLeaf(prog, childName, currentShare)
 		}
 	}
 }
 
-func processLeaf(prog *progress.Progress, name string, budget uint64) {
-	time.Sleep(500 * time.Millisecond) // simulate the work of processing a file
+func processLeaf(prog *progress.Progress, name string, budget float64) {
+	time.Sleep(500 * time.Millisecond)
 	prog.Report(budget, fmt.Sprintf("finished: %s", name))
 }

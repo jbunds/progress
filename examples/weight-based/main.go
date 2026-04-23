@@ -16,21 +16,27 @@ type task struct {
 }
 
 func main() {
-	totalUnits := uint64(1e3)
-	prog       := progress.NewProgress(totalUnits, os.Stderr)
+	prog := progress.NewProgress(0, os.Stderr)
 	defer prog.Close()
-	for i, t := range randWork(totalUnits) {
-		time.Sleep(t.delay)
-		prog.Report(t.weight, fmt.Sprintf("work unit %d of %d completed", i, totalUnits))
+
+	workload := randWork(100) // 100 random tasks
+
+	for _, task := range workload { // workload discovery
+		prog.AddTotal(task.weight)    // report to the progress tracker that a weighted task was discovered
+	}
+
+	for i, task := range workload { // workload processing
+		time.Sleep(task.delay)        // simulate work
+		prog.Report(float64(task.weight), fmt.Sprintf("task %d finished", i))
 	}
 }
 
-func randWork(n uint64) []*task {
+func randWork(n int) []*task {
 	tasks := make([]*task, n)
 	for i := range n {
 		tasks[i] = &task{
-			weight: 1,
-			delay:  rand.N(25 * time.Millisecond),
+			weight: uint64(rand.IntN(50) + 1), // tasks have non-uniform weights ranging from 1 to 50
+			delay:  rand.N(100 * time.Millisecond),
 		}
 	}
 	return tasks
