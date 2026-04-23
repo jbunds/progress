@@ -4,16 +4,16 @@ The `progress` package includes standalone work simulators to demonstrate UI beh
 
 ### Weight-Based Accumulation
 
-Simulates a fixed-batch workload where the total number of units is known a priori:
+Simulates a workload where the total number of units comprising the workload may be unknown, or their relative weights may be unknown, by using the `AddTotal` method to enable the progress tracker to refine its denominator as work is incrementally completed:
 
 ```
-go run weight-based/main.go
+go run -tags examples github.com/jbunds/coverage/progress/examples/weight-based
 ```
 
 ### Fractional Path Allocation
 
-Simulates a recursively discovered workload via filesystem traversal using the `InitialBudget()` pattern:
+Simulates a recursively-discovered workload (i.e., files to be processed) via filesystem traversal using the `InitialBudget()` pattern:
 
 ```
-go run fractional/main.go
+go run -tags examples github.com/jbunds/coverage/progress/examples/fractional
 ```

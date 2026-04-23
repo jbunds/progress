@@ -19,7 +19,7 @@ func main() {
 	prog := progress.NewProgress(0, os.Stderr)
 	defer prog.Close()
 
-	workload := randWork(100) // 100 random tasks
+	workload := randWork(100)       // 100 random tasks of varying weight
 
 	for _, task := range workload { // workload discovery
 		prog.AddTotal(task.weight)    // report to the progress tracker that a weighted task was discovered
@@ -36,7 +36,7 @@ func randWork(n int) []*task {
 	for i := range n {
 		tasks[i] = &task{
 			weight: uint64(rand.IntN(50) + 1), // tasks have non-uniform weights ranging from 1 to 50
-			delay:  rand.N(100 * time.Millisecond),
+			delay:  rand.N(250 * time.Millisecond),
 		}
 	}
 	return tasks

@@ -1,4 +1,4 @@
-// Package progress provides status updates for units of work being processed.
+// Package progress provides status updates to the terminal as units of work are incrementally completed.
 package progress
 
 import (
