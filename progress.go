@@ -262,13 +262,13 @@ func (p *Progress) restoreAndExit() {
 // Close stops the background renderer, restores the terminal cursor, and blocks until the final "done" state is displayed.
 func (p *Progress) Close() {
 	p.closeOnce.Do(func() {
-		close(p.stopChan)                                          // stop the background renderLoop
-		<-p.doneChan                                               // block until renderLoop exits
+		close(p.stopChan)                                            // stop the background renderLoop
+		<-p.doneChan                                                 // block until renderLoop exits
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		_ = p.write("\r\033[2K\rprocessing (100%): done\033[?25h") // render the final completion frame and restore the cursor
+		_ = p.write("\r\033[2K\rprocessing (100%): done\r\033[?25h") // render the final completion frame and restore the cursor
 		if f, ok := p.output.(*os.File); ok {
-			_ = f.Sync()                                           // immediately flush the final "done" message
+			_ = f.Sync()                                             // immediately flush the final "done" message
 		}
 	})
 }
