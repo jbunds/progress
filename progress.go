@@ -2,11 +2,11 @@
 package progress
 
 import (
-	"fmt"
 	"io"
 	"math"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -46,11 +46,15 @@ type Progress struct {
 	lastStatus string         // the last rendered status message         (used to skip redundant UI updates)
 	stopChan   chan struct{}  // signals the background rendering loop to perform final cleanup and exit
 	doneChan   chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
+	drawNotify chan struct{}  // drawNotify is used in tests to signal the completion of a draw cycle
 	resizeChan chan os.Signal // handles terminal window resizing
 	clock      clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
 	width      int            // the width of the terminal window; updated by a syscall.SIGWINCH listener
-	drawNotify chan struct{}  // drawNotify is used in tests to signal the completion of a draw cycle
 	closeOnce  sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
+	clearSeq   string         // ANSI escape sequence used to clear the current terminal line
+	doneSeq    string         // ANSI escape sequence used to restore the terminal cursor
+	lineTerm   string         // output line terminator
+	prefixLen  int            // length (number of characters) of the static prefix string ("processing (")
 }
 
 type clock interface { tick() <-chan time.Time } // enables dependency injection to facilitate testing
@@ -60,6 +64,11 @@ func (r *realClock) tick() <-chan time.Time { return time.NewTicker(r.dur).C }
 
 type fakeClock struct { chn chan time.Time }     // simulates the passage of time in tests
 func (f *fakeClock) tick() <-chan time.Time { return f.chn }
+
+const (
+	procPrefix = "processing ("
+	procSuffix = "%): "
+)
 
 // NewProgress initializes a throttled, concurrency-safe, high-precision work progress
 // tracker and starts a work completion status rendering loop in the background.
@@ -71,23 +80,45 @@ func (f *fakeClock) tick() <-chan time.Time { return f.chn }
 func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 	safeTotal := min(totalUnits, maxSafeUnits) // fall back to maxSafeUnits if totalUnits exceeds max precision
 
+	useANSI       := false
+	clearSeq      := ""
+	doneSeq       := "\n"
+	lineTerm      := "\n"
+	prefixLen     := 15
 	terminalWidth := 80
 	if f, ok := output.(*os.File); ok {
 		terminalWidth = getWidth(f)
+		fd := f.Fd()
+		if fd <= math.MaxInt {
+			if term.IsTerminal(int(fd)) {
+				useANSI   = true
+				clearSeq  = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
+				doneSeq   = "\r\033[?25h" // restores the cursor
+				prefixLen = 20            // len(ansiClear) + len(procPrefix) + len(procSuffix)
+				lineTerm  = ""
+			}
+		}
 	}
 
 	p := &Progress{
+		buf:        make([]byte, 0, 128), // pre-allocate to avoid heap growth during draw()
 		output:     output,
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
 		resizeChan: make(chan os.Signal, 1),
-		width:      max(terminalWidth, 80),
 		clock:      &realClock{ dur: 16 * time.Millisecond },
+		width:      max(terminalWidth, 80),
+		clearSeq:   clearSeq,
+		doneSeq:    doneSeq,
+		lineTerm:   lineTerm,
+		prefixLen:  prefixLen,
 	}
 	p.total.Store(safeTotal)
 	p.input.Store("")
 
-	_ = p.write("\033[?25l") // hide the cursor
+	if useANSI {
+		_, _ = io.WriteString(p.output, "\033[?25l") // hide the cursor
+	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM) // trap SIGINT and SIGTERM so the hidden cursor can be restored
@@ -130,18 +161,17 @@ func getWidth(files ...*os.File) int {
 	return max(width, 80) // fallback for pipes, redirects, and non-tty outputs
 }
 
-// write writes the provided data to p.output using the shared internal buffer to ensure an atomic system call.
-// callers must acquire p.mu before calling this method to protect the shared internal buffer and to ensure UI consistency.
-func (p *Progress) write(data ...any) error {
+// writeStatus writes the progress status to to p.output (nominally the terminal's stderr) using the shared internal buffer to ensure an atomic system call.
+// callers must acquire p.mu before calling writeStatus to protect the shared buffer and ensure UI consistency.
+func (p *Progress) writeStatus(percent, status string) error {
 	p.buf = p.buf[:0]
-	for _, v := range data {
-		if s, ok := v.(string); ok {
-			p.buf = append(p.buf, s...)
-		} else {
-			p.buf = fmt.Append(p.buf, v)
-		}
-	}
-	_, err := p.output.Write(p.buf) // single, atomic system call (fmt.Fprintf makes no such guarantees)
+	p.buf = append(p.buf, p.clearSeq...)
+	p.buf = append(p.buf, procPrefix...)
+	p.buf = append(p.buf, percent...)
+	p.buf = append(p.buf, procSuffix...)
+	p.buf = append(p.buf, status...)
+	p.buf = append(p.buf, p.lineTerm...)
+	_, err := p.output.Write(p.buf) // single, atomic system call
 	return err
 }
 
@@ -195,8 +225,8 @@ func (p *Progress) renderLoop() {
 
 // draw clears the current terminal line and prints the formatted percentage and status string, truncating text as needed to fit within the terminal width.
 func (p *Progress) draw() {
-	currentVal := p.current.Load()
 	p.mu.Lock()
+	currentVal := p.current.Load()
 	status, _  := p.input.Load().(string)
 	width      := p.width
 	lastWidth  := p.lastWidth
@@ -214,18 +244,24 @@ func (p *Progress) draw() {
 
 	if percent >= 100 { return } // Close() renders the final completion frame
 
-	var pct string // formatted percentage (unfortunately %3g%% doesn't quite work)
+	var pctBuf [8]byte // temporary small stack buffer for the float
+	var pctStr string  // formatted percentage (unfortunately %3g%% doesn't quite work)
 	switch {
 	case percent >= 99.95:
-		pct = "100"
+		pctStr = "100"
 	case percent >=  9.95:
-		pct = fmt.Sprintf("%3.0f", percent)
+		n := len(strconv.AppendFloat(pctBuf[1:1], percent, 'f', 0, 64))
+		if n < 3 {
+			pctBuf[0] = ' '
+			pctStr    = string(pctBuf[ :1 + n])
+		} else {
+			pctStr    = string(pctBuf[1:1 + n])
+		}
 	default:
-		pct = fmt.Sprintf("%3.1f", percent)
+		pctStr = string(strconv.AppendFloat(pctBuf[:0], percent, 'f', 1, 64))
 	}
 
-	prefix := fmt.Sprintf("processing (%s%%): ", pct)
-	maxLen := max(p.width - len(prefix), 0)
+	maxLen := max(width - (p.prefixLen + len(pctStr)), 0)
 
 	switch {
 	case maxLen == 0:
@@ -236,19 +272,25 @@ func (p *Progress) draw() {
 		status = status[:maxLen]
 	}
 
+	// TODO(jeff): move this check earlier in the body of this method to minimize unnecessary
+	//             work done in the case of a redundant UI update to make the hot path faster
+	//
+	//             perhaps by using functional analogues of pctStr (i.e., percent, but to the
+	//             number of significant digits printed to the terminal, not the float64 value)
+	//             and status (i.e., without the truncation)
 	if width  == lastWidth &&
-	   pct    == lastPct &&
+	   pctStr == lastPct   &&
 	   status == lastStatus {
 		return // skip redundant UI updates
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	err := p.write("\r\033[2K\r", prefix, status) // \033[2K clears the line, \r moves the cursor to the beginning of the line
+	err := p.writeStatus(pctStr, status)
 
 	if err == nil {
 		p.lastWidth  = width
-		p.lastPct    = pct
+		p.lastPct    = pctStr
 		p.lastStatus = status
 	}
 }
@@ -259,16 +301,13 @@ func (p *Progress) restoreAndExit() {
 	os.Exit(1)
 }
 
-// Close stops the background renderer, restores the terminal cursor, and blocks until the final "done" state is displayed.
+// Close stops the background renderer, writes the final completion frame, and restores the terminal cursor if needed.
 func (p *Progress) Close() {
 	p.closeOnce.Do(func() {
-		close(p.stopChan)                                            // stop the background renderLoop
-		<-p.doneChan                                                 // block until renderLoop exits
+		close(p.stopChan) // stop the background renderLoop
+		<-p.doneChan      // block until renderLoop exits
 		p.mu.Lock()
 		defer p.mu.Unlock()
-		_ = p.write("\r\033[2K\rprocessing (100%): done\r\033[?25h") // render the final completion frame and restore the cursor
-		if f, ok := p.output.(*os.File); ok {
-			_ = f.Sync()                                             // immediately flush the final "done" message
-		}
+		_, _ = io.WriteString(p.output, p.clearSeq + "processing (100%): done" + p.doneSeq)
 	})
 }

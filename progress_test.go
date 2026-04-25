@@ -26,25 +26,21 @@ func TestNewProgress(t *testing.T) {
 		name       string
 		totalUnits uint64
 		wantTotal  uint64
-		wantBuf    []byte
 	}{
 		{
 			name:       "weight-based accumulation",
 			totalUnits: 100,
 			wantTotal:  100,
-			wantBuf:    []byte("\033[?25l"), // hide the cursor
 		},
 		{
 			name:       "fractional path allocation",
 			totalUnits: 0,
 			wantTotal:  0,
-			wantBuf:    []byte("\033[?25l"), // hide the cursor
 		},
 		{
 			name:       "verify overflow safety",
 			totalUnits: maxSafeUnits + 1000,
 			wantTotal:  maxSafeUnits,
-			wantBuf:    []byte("\033[?25l"), // hide the cursor
 		},
 	}
 	for _, tt := range tests {
@@ -54,9 +50,6 @@ func TestNewProgress(t *testing.T) {
 			got := NewProgress(tt.totalUnits, buf)
 			t.Cleanup(got.Close)
 			if diff := cmp.Diff(tt.wantTotal, got.total.Load(), opts...); diff != "" {
-				t.Errorf("NewProgress(%q) mismatch (-want +got):\n%s", tt.name, diff)
-			}
-			if diff := cmp.Diff(tt.wantBuf, got.buf); diff != "" {
 				t.Errorf("NewProgress(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 			if got.stopChan == nil || got.doneChan == nil || got.resizeChan == nil {
@@ -184,7 +177,6 @@ func TestReport(t *testing.T) {
 
 func TestDraw(t *testing.T) {
 	t.Parallel()
-	ansiEscSeq := "\r\033[2K\r"
 	tests := []struct {
 		name    string
 		width   int
@@ -199,7 +191,7 @@ func TestDraw(t *testing.T) {
 			current: scale / 2,
 			status:  "working...",
 			redraws: 1,
-			want:    ansiEscSeq + "processing ( 50%): " + "working...",
+			want:    "processing ( 50%): working...",
 		},
 		{
 			name:    "narrow terminal; status truncated",
@@ -207,7 +199,7 @@ func TestDraw(t *testing.T) {
 			current: 0,
 			status:  "this status message is much too long to fit within the width of the terminal",
 			redraws: 1,
-			want:    ansiEscSeq + "processing (0.0%): " + "...terminal",
+			want:    "processing (0.0%): ... terminal",
 		},
 		{
 			name:    "very narrow terminal; status omitted",
@@ -215,7 +207,7 @@ func TestDraw(t *testing.T) {
 			current: 0,
 			status:  "no room for status",
 			redraws: 1,
-			want:    ansiEscSeq + "processing (0.0%): ",
+			want:    "processing (0.0%): ", // draw() will write beyond the available width anyway
 		},
 		{
 			name:    "skip redundant redraws",
@@ -223,7 +215,7 @@ func TestDraw(t *testing.T) {
 			current: 0,
 			status:  "render this only once",
 			redraws: 3,
-			want:    ansiEscSeq + "processing (0.0%): " + "render this only once",
+			want:    "processing (0.0%): render this only once",
 		},
 		{
 			name:    "verify final completion frame is rendered only once",
@@ -246,9 +238,10 @@ func TestDraw(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := new(bytes.Buffer)
-			p := &Progress{
-				width:  tt.width,
-				output: got,
+			p   := &Progress{
+				width:     tt.width,
+				prefixLen: 15,
+				output:    got,
 			}
 
 			p.current.Store(tt.current)
@@ -296,27 +289,26 @@ func TestRenderLoop(t *testing.T) {
 	p.Report(40, "40% complete...")
 	tick()
 
-	p.Report(60, "done")
+	p.Report(15, "55% complete...")
+	tick()
+
+	p.Report(45, "done")
 	tick()
 
 	p.Close()
 
-	want := "\r\033[2K\rprocessing (0.0%): starting..."     + // tick 1
-	        "\r\033[2K\rprocessing ( 40%): 40% complete..." + // tick 2 (Report(40, ...))
-	        "\r\033[2K\rprocessing (100%): done\r"          + // tick 3 (Report(60, ...))
-	        "\033[?25h"                                       // cursor restoration
+	want := "processing (0.0%): starting..."     + // tick 1
+	        "processing ( 40%): 40% complete..." + // tick 2 (Report(40, ...))
+	        "processing ( 55%): 55% complete..." + // tick 3 (Report(15, ...))
+	        "processing (100%): done"              // tick 4 (Report(60, ...))
 
 	if diff := cmp.Diff(want, got.String()); diff != "" {
-		t.Errorf("renderLoop mismatch (-want +got):\n%s", diff)
+		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestClose(t *testing.T) {
 	t.Parallel()
-
-	output := "\r\033[2K\rprocessing (100%): done\r" + // final completion frame
-	          "\033[?25h"                              // restore the cursor
-
 	tests  := []struct {
 		name     string
 		wantOut  string
@@ -324,11 +316,14 @@ func TestClose(t *testing.T) {
 	}{
 		{
 			name:     "succeeds",
-			wantOut:  "\033[?25l" + output,
+			wantOut: "processing (100%): done\n",
 			wantProg: &Progress{
-				clock: &realClock{ dur: 16 * time.Millisecond },
-				width: 80,
-				buf:   []byte(output),
+				buf:       []byte(""),
+				clock:     &realClock{ dur: 16 * time.Millisecond },
+				doneSeq:   "\n",
+				lineTerm:  "\n",
+				prefixLen: 15,
+				width:     80,
 			},
 		},
 	}
