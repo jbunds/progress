@@ -157,11 +157,11 @@ func (p *Progress) renderLoop(ctx context.Context, useANSI bool) {
 
 	for {
 		select {
-		case <-ctx.Done(): // parent context canceled
+		case <-ctx.Done():   // parent context canceled
 			return
-		case <-p.stopChan: // Close() called
+		case <-p.stopChan:   // Close() called
 			return
-		case <-tickerChan: // check for a status update
+		case <-tickerChan:   // check for a status update
 			p.sync()
 		case <-p.resizeChan: // SIGWINCH trapped
 			p.handleResize()
