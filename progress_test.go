@@ -30,7 +30,7 @@ var opts = cmp.Options{
 	),
 }
 
-func TestNewProgress(t *testing.T) {
+func TestNew(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name       string
@@ -57,10 +57,10 @@ func TestNewProgress(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			buf := new(bytes.Buffer)
-			got := NewProgress(tt.totalUnits, buf)
+			got := New(tt.totalUnits, buf)
 			t.Cleanup(got.Close)
 			if diff := cmp.Diff(tt.wantTotal, got.total.Load(), opts...); diff != "" {
-				t.Errorf("NewProgress(%q) mismatch (-want +got):\n%s", tt.name, diff)
+				t.Errorf("New(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 			if got.stopChan == nil || got.doneChan == nil || got.resizeChan == nil {
 				t.Errorf("one or more channels were not initialized")
@@ -117,7 +117,7 @@ func TestInitialBudget(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			p := NewProgress(0, io.Discard)
+			p := New(0, io.Discard)
 			t.Cleanup(p.Close)
 			got := p.InitialBudget()
 			if diff := cmp.Diff(tt.want, got); diff != "" {
@@ -175,7 +175,7 @@ func TestReport(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			p := NewProgress(tt.total, io.Discard)
+			p := New(tt.total, io.Discard)
 			t.Cleanup(p.Close)
 			for range 3 { p.Report(tt.unitsDone, tt.status) }
 			if diff := cmp.Diff(tt.want, p.current.Load()); diff != "" {
@@ -293,7 +293,7 @@ func TestClose(t *testing.T) {
 				termWidth: 80,
 			})
 			got := new(bytes.Buffer)
-			p   := NewProgress(0, got)
+			p   := New(0, got)
 			p.Close()
 			if diff := cmp.Diff(tt.wantOut, got.String()); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)

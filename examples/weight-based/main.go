@@ -16,7 +16,7 @@ type task struct {
 }
 
 func main() {
-	prog := progress.NewProgress(0, os.Stderr)
+	prog := progress.New(0, os.Stderr)
 	defer prog.Close()
 
 	workload := randWork(100)       // 100 random tasks of varying weight

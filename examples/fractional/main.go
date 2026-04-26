@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	prog := progress.NewProgress(0, os.Stderr)
+	prog := progress.New(0, os.Stderr)
 	defer prog.Close()
 
 	totalBudget := prog.InitialBudget()

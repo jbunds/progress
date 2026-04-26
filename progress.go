@@ -44,7 +44,7 @@ type Progress struct {
 	state       atomic.Pointer[snapshot] // stores an optimized representation of the progress status      (used to skip redundant UI updates)
 	lastState   atomic.Pointer[snapshot] // stores an optimized representation of the last rendered status (used to skip redundant UI updates)
 
-	// configuration (read-only after NewProgress)
+	// configuration (read-only after New)
 	buf         []byte         // reusable buffer for writing status messages to the terminal
 	output      io.Writer      // destination writer for the terminal-formatted work progress status updates
 	clock       clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
@@ -53,20 +53,20 @@ type Progress struct {
 	drawNotify  chan struct{}  // drawNotify is used in tests to signal the completion of a draw cycle
 	resizeChan  chan os.Signal // handles terminal window resizing
 	staticWidth int            // the static width reserved for the prefix prepended to each status message, e.g., "processing (7.4%): "
-	closeOnce   sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 	clearSeq    string         // ANSI escape sequence used to clear the current terminal line
 	doneSeq     string         // ANSI escape sequence used to restore the terminal cursor
 	lineTerm    string         // output line terminator
+	closeOnce   sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 }
 
-// NewProgress initializes a throttled, concurrency-safe, high-precision work progress
+// New initializes a throttled, concurrency-safe, high-precision work progress
 // tracker and starts a work completion status rendering loop in the background.
 //
 // The value of the `totalUnits` parameter determines the accumulation mode used internally:
 //
 //    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known a priori)
 //    pass totalUnits == 0 for fractional path allocation (when totalUnits is not known a priori)
-func NewProgress(totalUnits uint64, output io.Writer) *Progress {
+func New(totalUnits uint64, output io.Writer) *Progress {
 	useANSI   := false
 	clearSeq  := ""
 	doneSeq   := "\n"
