@@ -103,13 +103,13 @@ func NewProgress(totalUnits uint64, output io.Writer) *Progress {
 	})
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM) // trap SIGINT and SIGTERM so the hidden cursor can be restored
-	signal.Notify(p.resizeChan, syscall.SIGWINCH)         // trap SIGWINCH to handle the terminal window being resized
+	signal.Notify(sigChan,      syscall.SIGTERM, os.Interrupt) // trap SIGTERM and SIGINT so the hidden cursor can be restored
+	signal.Notify(p.resizeChan, syscall.SIGWINCH)              // trap SIGWINCH to handle the terminal window being resized
 
 	go func() {
 		defer signal.Stop(sigChan) // clean up signal listener
 		select {
-		case <-sigChan:            // SIGINT or SIGTERM trapped...
+		case <-sigChan:            // SIGTERM or SIGINT trapped...
 			p.restoreAndExit()     // ...restore the cursor before exiting
 		case <-p.stopChan:
 			return                 // normal exit triggered by Close()
@@ -262,7 +262,7 @@ func (p *Progress) writeStatus(digits uint16, status string) error {
 	return err
 }
 
-// restoreAndExit performs an orderly shutdown upon receiving a termination signal (SIGINT or SIGTERM),
+// restoreAndExit performs an orderly shutdown upon receiving a termination signal (SIGTERM or SIGINT),
 // calling p.Close() to synchronize with the renderer, ensuring the final state is
 // written to the terminal, and restoring the cursor (if necessary) before exiting.
 func (p *Progress) restoreAndExit() {
