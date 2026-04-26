@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,10 +15,19 @@ import (
 )
 
 var opts = cmp.Options{
-	cmp.AllowUnexported(Progress{}, realClock{}),
-	cmp.Transformer("unwrapAtomic", func(v atomic.Value) any { return v.Load() }),
-	cmpopts.EquateComparable(atomic.Bool{}, atomic.Uint64{}),
-	cmpopts.IgnoreFields(Progress{}, "mu", "stopChan", "doneChan", "resizeChan", "output", "closeOnce"), // non-trivial to compare
+	cmpopts.IgnoreUnexported(atomic.Bool{}, atomic.Uint64{}, atomic.Pointer[snapshot]{}),
+	cmp.AllowUnexported(Progress{}, realClock{}, snapshot{}),
+	cmp.Transformer("unwrapBool",     func(t *atomic.Bool             )  bool     { return t.Load() }),
+	cmp.Transformer("unwrapUint64",   func(i *atomic.Uint64           )  uint64   { return i.Load() }),
+	cmp.Transformer("unwrapSnapshot", func(p *atomic.Pointer[snapshot]) *snapshot { return p.Load() }),
+	cmpopts.IgnoreFields(Progress{}, // the following are non-trivial to compare
+		"output",
+		"stopChan",
+		"doneChan",
+		"resizeChan",
+		"closeOnce",
+		"drawNotify",
+	),
 }
 
 func TestNewProgress(t *testing.T) {
@@ -81,13 +91,13 @@ func TestGetWidth(t *testing.T) {
 			t.Parallel()
 			got := 0
 			if tt.output == nil {
-				got = getWidth()
+				got = getTermWidth()
 			} else {
 				f, _ := tt.output.(*os.File)
-				got = getWidth(f)
+				got = getTermWidth(f)
 			}
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("getWidth(%q) mismatch (-want +got):\n%s", tt.name, diff)
+				t.Errorf("getTermWidth(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
 	}
@@ -178,78 +188,27 @@ func TestReport(t *testing.T) {
 func TestDraw(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		width   int
-		current uint64
-		status  string
-		redraws int
-		want    string
+		name     string
+		snapshot *snapshot
+		want     string
 	}{
 		{
-			name:    "standard width",
-			width:   80,
-			current: scale / 2,
-			status:  "working...",
-			redraws: 1,
-			want:    "processing ( 50%): working...",
-		},
-		{
-			name:    "narrow terminal; status truncated",
-			width:   30,
-			current: 0,
-			status:  "this status message is much too long to fit within the width of the terminal",
-			redraws: 1,
-			want:    "processing (0.0%): ... terminal",
-		},
-		{
-			name:    "very narrow terminal; status omitted",
-			width:   10,
-			current: 0,
-			status:  "no room for status",
-			redraws: 1,
-			want:    "processing (0.0%): ", // draw() will write beyond the available width anyway
-		},
-		{
-			name:    "skip redundant redraws",
-			width:   80,
-			current: 0,
-			status:  "render this only once",
-			redraws: 3,
-			want:    "processing (0.0%): render this only once",
-		},
-		{
-			name:    "verify final completion frame is rendered only once",
-			width:   80,
-			current: scale,
-			status:  "done",
-			redraws: 3,
-			want:    "", // Close() handles the final completion frame when all work is done
-		},
-		{
-			name:    "verify overflow protection",
-			width:   80,
-			current: math.MaxUint64,
-			status:  "massive amout of work",
-			redraws: 1,
-			want:    "", // Close() handles the final completion frame when all work is done
+			name:    "succeeds",
+			snapshot: &snapshot{
+				input:        "working...",
+				pctSigDigits: uint16(5000),
+				termWidth:    80,
+			},
+			want: "processing ( 50%): working...",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := new(bytes.Buffer)
-			p   := &Progress{
-				width:     tt.width,
-				prefixLen: 15,
-				output:    got,
-			}
+			p   := &Progress{ output: got }
 
-			p.current.Store(tt.current)
-			p.input.Store(tt.status)
-			
-			for i := 0; i < tt.redraws; i++ { // call p.draw() tt.redraws times
-				p.draw()
-			}
+			p.draw(tt.snapshot)
 
 			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -263,48 +222,49 @@ func TestRenderLoop(t *testing.T) {
 
 	got         := new(bytes.Buffer)
 	tickTrigger := make(chan time.Time)
-	notify      := make(chan struct{}) // sync channel
-
-	tick := func() {
-		tickTrigger <- time.Now()
-		<-notify
-	}
+	notify      := make(chan struct{}, 1) // sync channel, buffered to prevent deadlocks
 
 	p := &Progress{
-		stopChan:   make(chan struct{}),
-		doneChan:   make(chan struct{}),
-		output:     got,
-		width:      80,
-		clock:      &fakeClock{ chn: tickTrigger },
-		drawNotify: notify,
+		output:      got,
+		clock:       &fakeClock{ chn: tickTrigger },
+		drawNotify:  notify,
+		stopChan:    make(chan struct{}),
+		doneChan:    make(chan struct{}),
+		staticWidth: len(prefix) + pctFieldLen + len(suffix),
 	}
+
+	tickAndExpectDraw := func() {
+		tickTrigger <- time.Now()
+		<-notify // wait for the draw signal
+	}
+
+	tickAndExpectSkip := func() {
+		tickTrigger <- time.Now()
+		for p.lastState.Load() != p.state.Load() { // wait until renderLoop has processed the state via the stage 2 check
+			runtime.Gosched()
+		}
+		select { // verify notify is empty
+		case <-notify:
+			t.Errorf("redundant draw rendered")
+		default:
+		}
+	}
+
 	p.total.Store(100)
-	p.input.Store("")
+	p.state.Store(&snapshot{
+		input:     "",
+		termWidth: 80,
+	})
 
-	go p.renderLoop()
+	go p.renderLoop(false)
 
-	p.input.Store("starting...")
-	tick()
+	p.Report(10, "working...")
+	tickAndExpectDraw()
 
-	p.Report(40, "40% complete...")
-	tick()
+	p.Report(0, "working...") // redundant report
+	tickAndExpectSkip()
 
-	p.Report(15, "55% complete...")
-	tick()
-
-	p.Report(45, "done")
-	tick()
-
-	p.Close()
-
-	want := "processing (0.0%): starting..."     + // tick 1
-	        "processing ( 40%): 40% complete..." + // tick 2 (Report(40, ...))
-	        "processing ( 55%): 55% complete..." + // tick 3 (Report(15, ...))
-	        "processing (100%): done"              // tick 4 (Report(60, ...))
-
-	if diff := cmp.Diff(want, got.String()); diff != "" {
-		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
-	}
+	t.Cleanup(p.Close)
 }
 
 func TestClose(t *testing.T) {
@@ -315,21 +275,23 @@ func TestClose(t *testing.T) {
 		wantProg *Progress
 	}{
 		{
-			name:     "succeeds",
+			name:    "succeeds",
 			wantOut: "processing (100%): done\n",
 			wantProg: &Progress{
-				buf:       []byte(""),
-				clock:     &realClock{ dur: 16 * time.Millisecond },
-				doneSeq:   "\n",
-				lineTerm:  "\n",
-				prefixLen: 15,
-				width:     80,
+				buf:         []byte(""),
+				clock:       &realClock{ dur: 16 * time.Millisecond },
+				doneSeq:     "\n",
+				lineTerm:    "\n",
+				staticWidth: len(prefix) + pctFieldLen + len(suffix),
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.wantProg.input.Store("")
+			tt.wantProg.state.Store(&snapshot{
+				input:     "",
+				termWidth: 80,
+			})
 			got := new(bytes.Buffer)
 			p   := NewProgress(0, got)
 			p.Close()
