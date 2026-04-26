@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -11,8 +12,9 @@ import (
 )
 
 func main() {
-	prog := progress.New(0, os.Stderr)
-	defer prog.Close()
+	ctx  := context.Background()
+	prog := progress.New(ctx, 0, os.Stderr)
+	defer prog.Close(ctx)
 
 	totalBudget := prog.InitialBudget()
 	simulateDiscovery(prog, "root", totalBudget, 0)

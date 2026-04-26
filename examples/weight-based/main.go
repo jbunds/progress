@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -16,8 +17,9 @@ type task struct {
 }
 
 func main() {
-	prog := progress.New(0, os.Stderr)
-	defer prog.Close()
+	ctx  := context.Background()
+	prog := progress.New(ctx, 0, os.Stderr)
+	defer prog.Close(ctx)
 
 	workload := randWork(100)       // 100 random tasks of varying weight
 
