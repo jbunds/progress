@@ -2,6 +2,8 @@ package progress
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"math"
 	"os"
@@ -56,9 +58,10 @@ func TestNew(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			ctx := t.Context()
 			buf := new(bytes.Buffer)
-			got := New(tt.totalUnits, buf)
-			t.Cleanup(got.Close)
+			got := New(ctx, tt.totalUnits, buf)
+			t.Cleanup(func() { got.Close(ctx) })
 			if diff := cmp.Diff(tt.wantTotal, got.total.Load(), opts...); diff != "" {
 				t.Errorf("New(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
@@ -117,8 +120,9 @@ func TestInitialBudget(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			p := New(0, io.Discard)
-			t.Cleanup(p.Close)
+			ctx := t.Context()
+			p   := New(ctx, 0, io.Discard)
+			t.Cleanup(func() { p.Close(ctx) })
 			got := p.InitialBudget()
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("InitialBudget(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -175,8 +179,9 @@ func TestReport(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			p := New(tt.total, io.Discard)
-			t.Cleanup(p.Close)
+			ctx := t.Context()
+			p   := New(ctx, tt.total, io.Discard)
+			t.Cleanup(func() { p.Close(ctx) })
 			for range 3 { p.Report(tt.unitsDone, tt.status) }
 			if diff := cmp.Diff(tt.want, p.current.Load()); diff != "" {
 				t.Errorf("current progress was not updated (-want +got):\n%s", diff)
@@ -256,7 +261,8 @@ func TestRenderLoop(t *testing.T) {
 		termWidth: 80,
 	})
 
-	go p.renderLoop(false)
+	ctx := t.Context()
+	go p.renderLoop(ctx, false)
 
 	p.Report(10, "working...")
 	tickAndExpectDraw()
@@ -264,13 +270,15 @@ func TestRenderLoop(t *testing.T) {
 	p.Report(0, "working...") // redundant report
 	tickAndExpectSkip()
 
-	t.Cleanup(p.Close)
+	t.Cleanup(func() { p.Close(ctx) })
 }
 
 func TestClose(t *testing.T) {
 	t.Parallel()
+	staticWidth := len(prefix) + pctFieldLen + len(suffix)
 	tests  := []struct {
 		name     string
+		err      error
 		wantOut  string
 		wantProg *Progress
 	}{
@@ -282,7 +290,19 @@ func TestClose(t *testing.T) {
 				clock:       &realClock{ dur: 16 * time.Millisecond },
 				doneSeq:     "\n",
 				lineTerm:    "\n",
-				staticWidth: len(prefix) + pctFieldLen + len(suffix),
+				staticWidth: staticWidth,
+			},
+		},
+		{
+			name:     "progress tracking was aborted",
+			err:      errors.New("aborted for some reason"),
+			wantOut:  "stopped (aborted for some reason)\n",
+			wantProg: &Progress{
+				buf:         []byte(""),
+				clock:       &realClock{ dur: 16 * time.Millisecond },
+				doneSeq:     "\n",
+				lineTerm:    "\n",
+				staticWidth: staticWidth,
 			},
 		},
 	}
@@ -292,9 +312,11 @@ func TestClose(t *testing.T) {
 				input:     "",
 				termWidth: 80,
 			})
+			ctx, cancel := context.WithCancelCause(t.Context())
 			got := new(bytes.Buffer)
-			p   := New(0, got)
-			p.Close()
+			p   := New(ctx, 100, got)
+			cancel(tt.err)
+			p.Close(ctx)
 			if diff := cmp.Diff(tt.wantOut, got.String()); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}

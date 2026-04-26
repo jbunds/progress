@@ -2,6 +2,8 @@
 package progress
 
 import (
+	"context"
+	"errors"
 	"io"
 	"math"
 	"os"
@@ -66,24 +68,7 @@ type Progress struct {
 //
 //    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known a priori)
 //    pass totalUnits == 0 for fractional path allocation (when totalUnits is not known a priori)
-func New(totalUnits uint64, output io.Writer) *Progress {
-	useANSI   := false
-	clearSeq  := ""
-	doneSeq   := "\n"
-	lineTerm  := "\n"
-	termWidth := 80
-	if f, ok := output.(*os.File); ok {
-		fd       := f.Fd()
-		termWidth = getTermWidth(f)
-		if fd <= math.MaxInt {
-			if term.IsTerminal(int(fd)) {
-				useANSI  = true
-				clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
-				doneSeq  = "\r\033[?25h" // restores the cursor
-				lineTerm = ""
-			}
-		}
-	}
+func New(ctx context.Context, totalUnits uint64, output io.Writer) *Progress {
 	p := &Progress{
 		output:      output,
 		buf:         make([]byte, 0, 128), // pre-allocate to avoid heap growth during draw() cycles
@@ -91,32 +76,23 @@ func New(totalUnits uint64, output io.Writer) *Progress {
 		doneChan:    make(chan struct{}),
 		resizeChan:  make(chan os.Signal, 1),
 		clock:       &realClock{ dur: 16 * time.Millisecond },
-		clearSeq:    clearSeq,
-		doneSeq:     doneSeq,
-		lineTerm:    lineTerm,
+		clearSeq:    "",
+		doneSeq:     "\n",
+		lineTerm:    "\n",
 		staticWidth: len(prefix) + pctFieldLen + len(suffix), // 12 + 3 + 4 == 19
 	}
+
+	termWidth, useANSI := p.detectTerminal()
+	if termWidth > math.MaxInt { termWidth = 80 } // satisfy gosec
 
 	p.total.Store(min(totalUnits, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
 	p.state.Store(&snapshot{
 		termWidth: uint16(max(termWidth, 80)),
 	})
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan,      syscall.SIGTERM, os.Interrupt) // trap SIGTERM and SIGINT so the hidden cursor can be restored
-	signal.Notify(p.resizeChan, syscall.SIGWINCH)              // trap SIGWINCH to handle the terminal window being resized
+	signal.Notify(p.resizeChan, syscall.SIGWINCH) // trap SIGWINCH to handle the terminal window being resized
 
-	go func() {
-		defer signal.Stop(sigChan) // clean up signal listener
-		select {
-		case <-sigChan:            // SIGTERM or SIGINT trapped...
-			p.restoreAndExit()     // ...restore the cursor before exiting
-		case <-p.stopChan:
-			return                 // normal exit triggered by Close()
-		}
-	}()
-
-	go p.renderLoop(useANSI)
+	go p.renderLoop(ctx, useANSI)
 	return p
 }
 
@@ -149,6 +125,9 @@ func (p *Progress) Report(n float64, status string) {
 	newSigDigits := uint16((newCurrent * 10000 + (scale / 2)) / scale)
 	for { // CAS loop to ensure termWidth is not overwritten by a concurrent update
 		oldState := p.state.Load()
+		// TODO(jeff): don't allocate a new *snapshot on every call, which could be very many
+		//             instead use atomic.Uint64 for the percentage
+		//             and atomic.Pointer only for the status string to reduce allocations and mitigate GC pressure
 		newState := &snapshot{
 			input:        status,
 			pctSigDigits: newSigDigits,
@@ -159,57 +138,50 @@ func (p *Progress) Report(n float64, status string) {
 }
 
 // Close stops the background renderer, writes the final completion frame, and restores the terminal cursor if needed.
-func (p *Progress) Close() {
+func (p *Progress) Close(ctx context.Context) {
 	p.closeOnce.Do(func() {
 		close(p.stopChan)      // stop the background renderLoop
 		<-p.doneChan           // block until renderLoop exits
-		output    := p.doneSeq // newline or cursor resotring ANSI escape sequence
-		lastState := p.lastState.Load()
-		if lastState              == nil    ||
-		   lastState.input        != "done" ||
-		   lastState.pctSigDigits <  10000  {
-			output = p.clearSeq + "processing (100%): done" + p.doneSeq
-		}
-		_, _ = io.WriteString(p.output, output)
+		p.finish(ctx)
 	})
 }
 
 // renderLoop periodically draws the progress line at ~60 FPS without impeding the processing logic.
-func (p *Progress) renderLoop(useANSI bool) {
+func (p *Progress) renderLoop(ctx context.Context, useANSI bool) {
 	if useANSI { _, _ = io.WriteString(p.output, "\033[?25l") } // hide the cursor
+
+	defer close(p.doneChan)
+	defer signal.Stop(p.resizeChan)
+
 	tickerChan := p.clock.tick()
+
 	for {
 		select {
-		case <-p.resizeChan:
-			if f, ok := p.output.(*os.File); ok {
-				width := getTermWidth(f)
-				if width > math.MaxInt { width = 80 }
-				newWidth := uint16(width)
-				for { // atomically update termWidth while preserving concurrent percentage or status changes
-					oldState          := p.state.Load()
-					newState          := *oldState // shallow copy existing data
-					newState.termWidth = newWidth
-					if p.state.CompareAndSwap(oldState, &newState) { break }
-				}
-			}
-		case <-tickerChan:
-			lastState    := p.lastState.Load()
-			currentState := p.state.Load()
-			if currentState == lastState { continue }
-			if lastState != nil                                    &&
-			   currentState.pctSigDigits == lastState.pctSigDigits &&
-			   currentState.input        == lastState.input        &&
-			   currentState.termWidth    == lastState.termWidth    {
-					 p.lastState.Store(currentState)
-					 continue
-			}
-			p.draw(currentState)
-			p.lastState.Store(currentState)
-		case <-p.stopChan:
-			close(p.doneChan)
+		case <-ctx.Done(): // parent context canceled
 			return
+		case <-p.stopChan: // Close() called
+			return
+		case <-tickerChan: // check for a status update
+			p.sync()
+		case <-p.resizeChan: // SIGWINCH trapped
+			p.handleResize()
 		}
 	}
+}
+
+func (p *Progress) sync() { // skips redundant redraws
+	lastState    := p.lastState.Load()
+	currentState := p.state.Load()
+	if currentState == lastState { return }
+	if lastState != nil                                    &&
+	   currentState.pctSigDigits == lastState.pctSigDigits &&
+	   currentState.input        == lastState.input        &&
+	   currentState.termWidth    == lastState.termWidth    {
+		p.lastState.Store(currentState)
+		return
+	}
+	p.draw(currentState)
+	p.lastState.Store(currentState)
 }
 
 // draw formats and renders the current progress status to the terminal, truncating text as needed to fit within the terminal width.
@@ -257,17 +229,63 @@ func (p *Progress) writeStatus(digits uint16, status string) error {
 	p.buf = append(p.buf, status...)
 	p.buf = append(p.buf, p.lineTerm...)
 
-	_, err := p.output.Write(p.buf) // single, atomic system call
+	_, err := p.output.Write(p.buf) // single, atomic system call when p.buf <= 4kB, which p.buf can be reasonably expected to never exceed
 
 	return err
 }
 
-// restoreAndExit performs an orderly shutdown upon receiving a termination signal (SIGTERM or SIGINT),
-// calling p.Close() to synchronize with the renderer, ensuring the final state is
-// written to the terminal, and restoring the cursor (if necessary) before exiting.
-func (p *Progress) restoreAndExit() {
-	p.Close()
-	os.Exit(1)
+func (p *Progress) detectTerminal() (int, bool) {
+	useANSI   := false
+	clearSeq  := ""
+	doneSeq   := "\n"
+	lineTerm  := "\n"
+	termWidth := 80
+	if f, ok := p.output.(*os.File); ok {
+		fd       := f.Fd()
+		termWidth = getTermWidth(f)
+		if fd <= math.MaxInt {
+			if term.IsTerminal(int(fd)) {
+				useANSI  = true
+				clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
+				doneSeq  = "\r\033[?25h" // restores the cursor
+				lineTerm = ""
+			}
+		}
+	}
+	p.clearSeq = clearSeq
+	p.doneSeq  = doneSeq
+	p.lineTerm = lineTerm
+	return max(termWidth, 80), useANSI
+}
+
+func (p *Progress) handleResize() {
+	if f, ok := p.output.(*os.File); ok {
+		width := getTermWidth(f)
+		if width > math.MaxInt { width = 80 }
+		newWidth := uint16(max(width, 80))
+		for { // atomically update termWidth while preserving concurrent percentage or status changes
+			oldState          := p.state.Load()
+			newState          := *oldState // shallow copy existing data
+			newState.termWidth = newWidth
+			if p.state.CompareAndSwap(oldState, &newState) { break }
+		}
+	}
+}
+
+func (p *Progress) finish(ctx context.Context) {
+	output := p.doneSeq // newline or cursor resotring ANSI escape sequence
+	cause  := context.Cause(ctx)
+	if cause != nil && !errors.Is(cause, context.Canceled) {
+		output = p.clearSeq + "stopped (" + cause.Error() + ")" + p.doneSeq
+	} else {
+		lastState := p.lastState.Load()
+		if lastState              == nil    ||
+		   lastState.input        != "done" ||
+		   lastState.pctSigDigits <  10000  {
+			output = p.clearSeq + "processing (100%): done" + p.doneSeq
+		}
+	}
+	_, _ = io.WriteString(p.output, output)
 }
 
 // snapshot represents an immutable, point-in-time state of the progress tracker.
@@ -288,22 +306,6 @@ func (r *realClock) tick() <-chan time.Time { return time.NewTicker(r.dur).C }
 
 type fakeClock struct { chn chan time.Time } // simulates the passage of time in tests
 func (f *fakeClock) tick() <-chan time.Time { return f.chn }
-
-// percentSigDigits returns the first four significant digits of the given value.
-// func percentSigDigits(val uint64) uint16 {
-//	if val == 0 { return 0 }
-//	v := val
-//	if v >= 1000 {
-//		for v >= 10000 {
-//			v /= 10
-//		}
-//	} else {
-//		for v < 1000 && v > 0 {
-//			v *= 10
-//		}
-//	}
-//	return uint16(v)
-// }
 
 // getTermWidth determines the width of the terminal window, which is used to format status messages.
 func getTermWidth(files ...*os.File) int {
