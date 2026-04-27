@@ -4,6 +4,8 @@ The `progress` package provides status updates to the terminal as units of work 
 
 Incremental calculations retain high-precision, while imposing minimal overhead upon callers.
 
+Features include:
+
 - context-aware
 - concurrency-safe:
   - uses `sync/atomic` to provide lock-free updates of internal state for highly-scaled concurrent workloads
@@ -15,8 +17,8 @@ Incremental calculations retain high-precision, while imposing minimal overhead 
 - supports two tracking modes:
   - weight-based accumulation: callers specify the total known amount of work (e.g., 100 tasks, known a prioi)
   - fractional allocation: callers add the relative share of the total budget as work is discovered (e.g., recursively walking a directory to process its contents)
-- limited to ~18.4 million units of work
 - transparently handles pipes, redirects, and non-TTY environments
+- limited to ~18.4 million units of work
 
 #### Example Usage
 
