@@ -31,7 +31,9 @@ const (
 	scale        uint64 = 1e12
 	// maxSafeUnits is the maximum allowable number of work units before intermediate percentage
 	// calculations risk uint64 overflow; some precision will be lost when totalUnits > maxSafeUnits
-	maxSafeUnits uint64 = math.MaxUint64 / scale
+	// TODO(jeff): remove the artificial cap in favor of a superior approach to
+	//             internal calculations which remain safe from underflow & overflow
+	maxSafeUnits uint64 = math.MaxUint64 / scale // ~18.4M
 
 	pctFieldLen = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
 	prefix      = "processing (" // prepended to each progress status line rendered to the terminal
@@ -101,6 +103,7 @@ func (p *Progress) InitialBudget() float64 { return float64(scale) }
 
 // AddTotal dynamically increases the total work budget as new tasks are discovered.
 // It is concurrency-safe and can be called concurrently with Report().
+// TODO(jeff): update AddTotal so it respects the maxSafeUnits cap
 func (p *Progress) AddTotal(n uint64) { p.total.Add(n) }
 
 // Report updates the current progress and status.
@@ -125,9 +128,10 @@ func (p *Progress) Report(n float64, status string) {
 	newSigDigits := uint16((newCurrent * 10000 + (scale / 2)) / scale)
 	for { // CAS loop to ensure termWidth is not overwritten by a concurrent update
 		oldState := p.state.Load()
-		// TODO(jeff): don't allocate a new *snapshot on every call, which could be very many
-		//             instead use atomic.Uint64 for the percentage
-		//             and atomic.Pointer only for the status string to reduce allocations and mitigate GC pressure
+		// TODO(jeff): don't allocate a new *snapshot on every call, which could be very many.
+		//             instead use a packed atomic.Uint64 to store pctSigDigits and termWidth together,
+		//             and use atomic.Pointer (or a `unique.Handle` to de-dupe status strings)
+		//             for the status string to reduce allocations and mitigate GC pressure
 		newState := &snapshot{
 			input:        status,
 			pctSigDigits: newSigDigits,
@@ -187,6 +191,8 @@ func (p *Progress) sync() { // skips redundant redraws
 
 // draw formats and renders the current progress status to the terminal, truncating text as needed to fit within the terminal width.
 func (p *Progress) draw(s *snapshot) {
+	// TODO(jeff): correctly handle utf-8 multibyte unicode characters
+	//             i.e., prevent slicing in the middle of a rune
 	pctSigDigits := s.pctSigDigits
 	status       := s.input
 	maxLen       := max(int(s.termWidth) - p.staticWidth, 0)
