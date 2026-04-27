@@ -9,7 +9,7 @@ Incremental calculations retain high-precision, while imposing minimal overhead 
   - uses `sync/atomic` to provide lock-free updates of internal state for highly-scaled concurrent workloads
 - very efficient:
   - throttles status updates at ~60 FPS
-  - uses `atomic.Uint32` and `atomic.Pointer[string]` to minimize memory allocation and impose minimal GC overhead
+  - uses `atomic.Uint32` and `atomic.Pointer` to minimize memory allocation and impose minimal GC overhead
   - optimized to minimize CPU consumption
 - correctly handles UTF-8 strings passed by callers to provide status updates
 - supports two tracking modes:
