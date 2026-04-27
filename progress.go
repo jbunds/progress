@@ -43,24 +43,24 @@ type Progress struct {
 	// shared state (atomic)
 	total          atomic.Uint64          // 0 for fractional path allocation; > 0 for weight-based accumulation
 	current        atomic.Uint64          // accumulates shares of scale
-	state          atomic.Uint32          // bit-packed word: upper 16 bits the terminal width; lower 16 bits for progress percentage significant digits
+	state          atomic.Uint32          // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
 	lastState      atomic.Uint32          // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
 	statusText     atomic.Pointer[string] // pointer to the current status message rendered to the terminal
 	lastStatusText atomic.Pointer[string] // pointer to the previous status message, used to determine if the text content changed since the last render cycle
 
-	// configuration (read-only after New)
-	buf         []byte         // reusable buffer for writing status messages to the terminal
-	output      io.Writer      // destination writer for the terminal-formatted work progress status updates
-	clock       clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
-	stopChan    chan struct{}  // signals the background rendering loop to perform final cleanup and exit
-	doneChan    chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
-	drawNotify  chan struct{}  // drawNotify is used in tests to signal the completion of a draw cycle
-	resizeChan  chan os.Signal // handles terminal window resizing
-	staticWidth int            // the static width reserved for the prefix prepended to each status message, e.g., "processing (7.4%): "
-	clearSeq    string         // ANSI escape sequence used to clear the current terminal line
-	doneSeq     string         // ANSI escape sequence used to restore the terminal cursor
-	lineTerm    string         // output line terminator
-	closeOnce   sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
+	// configuration (read-only after construction)
+	buf            []byte                 // reusable buffer for writing status messages to the terminal
+	output         io.Writer              // destination writer for the terminal-formatted work progress status updates
+	clock          clock                  // provides the timing source for throttled UI updates, allowing for fake clocks in tests
+	stopChan       chan struct{}          // signals the background rendering loop to perform final cleanup
+	doneChan       chan struct{}          // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
+	drawNotify     chan struct{}          // used in tests to signal the completion of a draw cycle
+	resizeChan     chan os.Signal         // handles terminal window resizing
+	staticWidth    int                    // the static width reserved for the prefix prepended to each status message, e.g., "processing (7.4%): "
+	clearSeq       string                 // ANSI escape sequence used to clear the current terminal line
+	doneSeq        string                 // ANSI escape sequence used to restore the terminal cursor
+	lineTerm       string                 // output line terminator
+	closeOnce      sync.Once              // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress
@@ -218,19 +218,19 @@ func (p *Progress) draw(state uint32, statusTextPtr *string) {
 }
 
 // writeStatus writes the progress status to to p.output (nominally the terminal's stderr) using the shared internal buffer to ensure an atomic system call.
-func (p *Progress) writeStatus(digits uint16, status string) error {
+func (p *Progress) writeStatus(pctSigDigits uint16, status string) error {
 	p.buf = p.buf[:0]
 	p.buf = append(p.buf, p.clearSeq...)
 	p.buf = append(p.buf, prefix...)
 
 	switch {
-	case digits >= 9995:
+	case pctSigDigits >= 9995:
 		p.buf = append(p.buf, "100"...)
-	case digits >=  995:
-		val  := digits / 100
-		p.buf = append(p.buf, ' ', byte('0' + (val    / 10  )),      byte('0' + (val           % 10))) // " xy"
+	case pctSigDigits >=  995:
+		val  := pctSigDigits / 100
+		p.buf = append(p.buf, ' ', byte('0' + (val          / 10  )),      byte('0' + (val                 % 10))) // " xy"
 	default:
-		p.buf = append(p.buf,      byte('0' + (digits / 1000)), '.', byte('0' + (digits / 100) % 10))  // "x.y"
+		p.buf = append(p.buf,      byte('0' + (pctSigDigits / 1000)), '.', byte('0' + (pctSigDigits / 100) % 10))  // "x.y"
 	}
 
 	p.buf = append(p.buf, suffix...)
