@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jbunds/coverage/progress"
+	"github.com/jbunds/progress"
 )
 
 func main() {
