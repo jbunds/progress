@@ -20,4 +20,4 @@ Incremental calculations retain high-precision, while imposing minimal overhead 
 
 #### Example Usage
 
-See the [`examples`][tree/main/examples] directory for examples of the modal API.
+See the [`examples`](tree/main/examples) directory for examples of the modal API.
