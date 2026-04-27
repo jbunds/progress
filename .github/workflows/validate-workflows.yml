@@ -1,0 +1,20 @@
+name: validate workflows
+
+on:
+  workflow_dispatch: # allows this workflow to be manually triggered from the UI
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/*.yml'
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v6
+    - name: action-validator
+      uses: mpalmer/action-validator@v0.9.0
+      with:
+        patterns: |
+          .github/workflows/*.yml

@@ -12,6 +12,10 @@ repos:
     hooks:
       - id:    golangci-lint
         entry: golangci-lint run --verbose            # or `go run github.com/golangci/golangci-lint/cmd/golangci-lint run`
+  - repo: https://github.com/mpalmer/action-validator # https://github.com/mpalmer/action-validator#using-pre-commit
+    rev:  v0.9.0
+    hooks:
+      - id: action-validator
   - repo: local
     hooks:
       - language:       system
