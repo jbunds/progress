@@ -17,11 +17,28 @@ import (
 )
 
 var opts = cmp.Options{
-	cmpopts.IgnoreUnexported(atomic.Bool{}, atomic.Uint64{}, atomic.Pointer[snapshot]{}),
-	cmp.AllowUnexported(Progress{}, realClock{}, snapshot{}),
-	cmp.Transformer("unwrapBool",     func(t *atomic.Bool             )  bool     { return t.Load() }),
-	cmp.Transformer("unwrapUint64",   func(i *atomic.Uint64           )  uint64   { return i.Load() }),
-	cmp.Transformer("unwrapSnapshot", func(p *atomic.Pointer[snapshot]) *snapshot { return p.Load() }),
+	cmp.AllowUnexported(Progress{}, realClock{}),
+	cmp.Transformer("unwrapBool",      func(t *atomic.Bool  ) bool   { return t.Load() }),
+	cmp.Transformer("unwrapUint64",    func(i *atomic.Uint64) uint64 { return i.Load() }),
+	cmp.Transformer("flattenProgress", func(p *Progress) struct {
+		Total      uint64
+		State      uint32
+		StatusText string
+	} {
+		return struct {
+			Total      uint64
+			State      uint32
+			StatusText string
+		}{
+			Total: p.total.Load(),
+			State: p.state.Load(),
+			StatusText: func() string {
+				if s := p.statusText.Load(); s != nil { return *s }
+				return ""
+			}(),
+		}
+	}),
+	cmpopts.EquateComparable(atomic.Uint32{}, atomic.Uint64{}),
 	cmpopts.IgnoreFields(Progress{}, // the following are non-trivial to compare
 		"output",
 		"stopChan",
@@ -221,21 +238,23 @@ func TestReport(t *testing.T) {
 	}
 }
 
+func pack(termWidth, pctSigDigits uint16) uint32 {
+	return uint32(termWidth) << 16 | uint32(pctSigDigits)
+}
+
 func TestDraw(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name     string
-		snapshot *snapshot
-		want     string
+		name       string
+		state      uint32
+		statusText *string
+		want       string
 	}{
 		{
-			name:    "succeeds",
-			snapshot: &snapshot{
-				input:        "working...",
-				pctSigDigits: uint16(5000),
-				termWidth:    80,
-			},
-			want: "processing ( 50%): working...",
+			name:       "succeeds",
+			state:      pack(80, 5000),
+			statusText: new("working..."),
+			want:       "processing ( 50%): working...",
 		},
 	}
 	for _, tt := range tests {
@@ -244,7 +263,7 @@ func TestDraw(t *testing.T) {
 			got := new(bytes.Buffer)
 			p   := &Progress{ output: got }
 
-			p.draw(tt.snapshot)
+			p.draw(tt.state, tt.statusText)
 
 			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -288,10 +307,7 @@ func TestRenderLoop(t *testing.T) {
 	}
 
 	p.total.Store(100)
-	p.state.Store(&snapshot{
-		input:     "",
-		termWidth: 80,
-	})
+	p.state.Store(pack(80, 0))
 
 	ctx := t.Context()
 	go p.renderLoop(ctx, false)
@@ -310,12 +326,14 @@ func TestClose(t *testing.T) {
 	staticWidth := len(prefix) + pctFieldLen + len(suffix)
 	tests  := []struct {
 		name     string
+		total    uint64
 		err      error
 		wantOut  string
 		wantProg *Progress
 	}{
 		{
 			name:    "succeeds",
+			total:   100,
 			wantOut: "processing (100%): done\n",
 			wantProg: &Progress{
 				buf:         []byte(""),
@@ -327,6 +345,7 @@ func TestClose(t *testing.T) {
 		},
 		{
 			name:     "progress tracking was aborted",
+			total:    200,
 			err:      errors.New("aborted for some reason"),
 			wantOut:  "stopped (aborted for some reason)\n",
 			wantProg: &Progress{
@@ -340,13 +359,12 @@ func TestClose(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.wantProg.state.Store(&snapshot{
-				input:     "",
-				termWidth: 80,
-			})
+			tt.wantProg.total.Store(tt.total)
+			tt.wantProg.state.Store(pack(80, 0))
+			tt.wantProg.statusText.Store(new(""))
 			ctx, cancel := context.WithCancelCause(t.Context())
-			got := new(bytes.Buffer)
-			p   := New(ctx, 100, got)
+			got         := new(bytes.Buffer)
+			p           := New(ctx, tt.total, got)
 			cancel(tt.err)
 			p.Close(ctx)
 			if diff := cmp.Diff(tt.wantOut, got.String()); diff != "" {

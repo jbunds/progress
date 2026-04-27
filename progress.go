@@ -46,10 +46,12 @@ const (
 // Progress provides a throttled, concurrency-safe, high-precision status indicator for workloads.
 type Progress struct {
 	// shared state (atomic)
-	total       atomic.Uint64            // 0 for fractional path allocation; > 0 for weight-based accumulation
-	current     atomic.Uint64            // accumulates shares of scale
-	state       atomic.Pointer[snapshot] // stores an optimized representation of the progress status      (used to skip redundant UI updates)
-	lastState   atomic.Pointer[snapshot] // stores an optimized representation of the last rendered status (used to skip redundant UI updates)
+	total          atomic.Uint64          // 0 for fractional path allocation; > 0 for weight-based accumulation
+	current        atomic.Uint64          // accumulates shares of scale
+	state          atomic.Uint32          // bit-packed word: upper 16 bits the terminal width; lower 16 bits for progress percentage significant digits
+	lastState      atomic.Uint32          // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
+	statusText     atomic.Pointer[string] // pointer to the current status message rendered to the terminal
+	lastStatusText atomic.Pointer[string] // pointer to the previous status message, used to determine if the text content changed since the last render cycle
 
 	// configuration (read-only after New)
 	buf         []byte         // reusable buffer for writing status messages to the terminal
@@ -90,7 +92,8 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer) *Progress {
 	termWidth, useANSI := p.detectTerminal()
 
 	p.total.Store(min(totalUnits, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
-	p.state.Store(&snapshot{ termWidth: termWidth })
+	p.state.Store(uint32(termWidth) << 16)
+	p.statusText.Store(new(""))
 
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // trap SIGWINCH to handle the terminal window being resized
 
@@ -114,6 +117,7 @@ func (p *Progress) AddTotal(n uint64) {
 //   if total == 0: n represents the portion of the InitialBudget(), which must be divided among all sub-tasks by the caller
 func (p *Progress) Report(n float64, status string) {
 	total := p.total.Load()
+
 	var share uint64
 	if total > 0 {
 		share = uint64((n / float64(total)) * float64(scale)) //  weight-based accumulation mode: calculate the share of the total
@@ -125,21 +129,19 @@ func (p *Progress) Report(n float64, status string) {
 		newCurrent = scale
 		p.current.Store(scale)
 	}
+
+	// update numeric state values while avoiding new memory allocations to mitigate GC pressure
+	//
 	// ((newCurrent * 10000 + (scale / 2)) / scale) converts the 1e12 scale to 4 significant digits (1e4).
 	// adding half of the total scale (the divisor) ensures precise rounding to avoid floor truncation during integer division.
 	newSigDigits := uint16((newCurrent * 10000 + (scale / 2)) / scale)
-	for { // CAS loop to ensure termWidth is not overwritten by a concurrent update
-		oldState := p.state.Load()
-		// TODO(jeff): don't allocate a new *snapshot on every call, which could be very many.
-		//             instead use a packed atomic.Uint64 to store pctSigDigits and termWidth together,
-		//             and use atomic.Pointer (or a `unique.Handle` to de-dupe status strings)
-		//             for the status string to reduce allocations and mitigate GC pressure
-		newState := &snapshot{
-			input:        status,
-			pctSigDigits: newSigDigits,
-			termWidth:    oldState.termWidth,
-		}
-		if p.state.CompareAndSwap(oldState, newState) { break }
+	oldState     := p.state.Load()
+	currentWidth := uint16(oldState >> 16) // preserve termWidth while updating state
+	p.state.Store(uint32(currentWidth) << 16 | uint32(newSigDigits))
+
+	// update the status string, allocating only if its content changes
+	if oldStatusText := p.statusText.Load(); oldStatusText == nil || *oldStatusText != status {
+		p.statusText.Store(&status)
 	}
 }
 
@@ -170,36 +172,41 @@ func (p *Progress) renderLoop(ctx context.Context, useANSI bool) {
 			return
 		case <-ticker.ch():  // check for a status update
 			p.sync()
-		case <-p.resizeChan: // SIGWINCH trapped
+		case <-p.resizeChan: // SIGWINCH received
 			p.handleResize()
 		}
 	}
 }
 
+// sync compares the current progress and status text against the last rendered values to skip redundant redraws
 func (p *Progress) sync() { // skips redundant redraws
-	lastState    := p.lastState.Load()
-	currentState := p.state.Load()
-	if currentState == lastState { return }
+	lastState         := p.lastState.Load()
+	lastStatusText    := p.lastStatusText.Load()
+	currentState      := p.state.Load()
+	currentStatusText := p.statusText.Load()
+	if currentState      == lastState &&
+	   currentStatusText == lastStatusText { return }
 
-	if lastState != nil                                    &&
-	   currentState.pctSigDigits == lastState.pctSigDigits &&
-	   currentState.input        == lastState.input        &&
-	   currentState.termWidth    == lastState.termWidth    {
-		p.lastState.Store(currentState)
-		return
+	if currentState      == lastState && (
+	   currentStatusText != nil &&
+	   lastStatusText    != nil &&
+	   *currentStatusText == *lastStatusText) {
+		p.lastStatusText.Store(currentStatusText)
 	}
 
-	p.draw(currentState)
+	p.draw(currentState, currentStatusText)
 	p.lastState.Store(currentState)
+	p.lastStatusText.Store(currentStatusText)
 }
 
 // draw formats and renders the current progress status to the terminal, truncating text as needed to fit within the terminal width.
-func (p *Progress) draw(s *snapshot) {
+func (p *Progress) draw(state uint32, statusTextPtr *string) {
 	// TODO(jeff): correctly handle utf-8 multibyte unicode characters
 	//             i.e., prevent slicing within a rune
-	pctSigDigits := s.pctSigDigits
-	status       := s.input
-	maxLen       := max(int(s.termWidth) - p.staticWidth, 0)
+	termWidth    := uint16(state >> 16)
+	maxLen       := max(int(termWidth) - p.staticWidth, 0)
+	status       := ""
+	if statusTextPtr != nil { status = *statusTextPtr }
 
 	switch {
 	case maxLen == 0:
@@ -210,7 +217,7 @@ func (p *Progress) draw(s *snapshot) {
 		status = status[:maxLen]
 	}
 
-	err := p.writeStatus(pctSigDigits, status)
+	err := p.writeStatus(uint16(state & 0xFFFF), status)
 
 	if err == nil && p.drawNotify != nil {
 		select {
@@ -269,39 +276,30 @@ func (p *Progress) handleResize() {
 	newWidth := getTermWidth(f)
 
 	for { // atomically update termWidth while preserving concurrent percentage or status changes
-		oldState          := p.state.Load()
-		if oldState.termWidth == newWidth { break }
-		newState          := *oldState // shallow copy existing data
-		newState.termWidth = newWidth
-		if p.state.CompareAndSwap(oldState, &newState) { break }
+		oldState     := p.state.Load()
+		curSigDigits :=  uint16(oldState & 0xFFFF)                      // drop upper 16 bits (old termWidth), and preserve lower 16 bits (pctSigDigits)
+		newState     := (uint32(newWidth) << 16) | uint32(curSigDigits) // pack newWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
+		if p.state.CompareAndSwap(oldState, newState) { break }
 	}
 }
 
 func (p *Progress) finish(ctx context.Context) {
 	output := p.doneSeq // newline or cursor resotring ANSI escape sequence
 	cause  := context.Cause(ctx)
+
 	if cause != nil && !errors.Is(cause, context.Canceled) {
 		output = p.clearSeq + "stopped (" + cause.Error() + ")" + p.doneSeq
 	} else {
-		lastState := p.lastState.Load()
-		if lastState              == nil    ||
-		   lastState.input        != "done" ||
-		   lastState.pctSigDigits <  10000  {
+		state      := p.state.Load()
+		statusText := p.statusText.Load()
+		pct        := uint16(state & 0xFFFF) // unpack pctSigDigits from the lower 16 bits
+		if statusText == nil ||
+		  *statusText != "done" ||
+		   pct        <  10000 {
 			output = p.clearSeq + "processing (100%): done" + p.doneSeq
 		}
 	}
 	_, _ = io.WriteString(p.output, output)
-}
-
-// snapshot represents an immutable, point-in-time state of the progress tracker.
-// It is designed for lock-free pointer swapping via atomic.Pointer.
-// On 64-bit systems, this fits within 24 bytes (16 for string, 4 for the two
-// integers, plus 4 bytes of unused memory), ensuring it resides within a single
-// CPU cache line to minimize memory latency during high-frequency comparisons.
-type snapshot struct {
-	input        string // the latest status message
-	pctSigDigits uint16 // the first 4 significant digits (e.g., 1234 for 12.34%)
-	termWidth    uint16 // the width of the terminal at the time of the snapshot
 }
 
 type ticker interface {
