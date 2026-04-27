@@ -251,17 +251,32 @@ func TestDraw(t *testing.T) {
 		want       string
 	}{
 		{
-			name:       "succeeds",
-			state:      pack(80, 5000),
-			statusText: new("working..."),
-			want:       "processing ( 50%): working...",
+			name:       "nominal terminal width of 80",
+			state:      pack(80, 5000), // 80 - len("processing (100%): ") == 61
+			statusText: new("just a small fish in a big sea"),
+			want:       "processing ( 50%): just a small fish in a big sea",
+		},
+		{
+			name:       "status message truncated from the left and prepended with an ellipsis",
+			state:      pack(40, 5000), // 40 - len("processing (100%): ") == 21
+			statusText: new("this is a very long status message that must be truncated"),
+			want:       "processing ( 50%): ... must be truncated",
+		},
+		{
+			name:       "status message truncated from the left with no ellipsis prepended (terminal too narrow)",
+			state:      pack(22, 5000), // 22 - len("processing (100%): ") == 3
+			statusText: new("short message"),
+			want:       "processing ( 50%): age",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := new(bytes.Buffer)
-			p   := &Progress{ output: got }
+			p   := &Progress{
+				output:      got,
+				staticWidth: len(prefix) + pctFieldLen + len(suffix),
+			}
 
 			p.draw(tt.state, tt.statusText)
 

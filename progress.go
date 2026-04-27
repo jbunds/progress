@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -179,15 +180,9 @@ func (p *Progress) sync() { // skips redundant redraws
 	lastStatusText    := p.lastStatusText.Load()
 	currentState      := p.state.Load()
 	currentStatusText := p.statusText.Load()
+
 	if currentState      == lastState &&
 	   currentStatusText == lastStatusText { return }
-
-	if currentState      == lastState && (
-	   currentStatusText != nil &&
-	   lastStatusText    != nil &&
-	   *currentStatusText == *lastStatusText) {
-		p.lastStatusText.Store(currentStatusText)
-	}
 
 	p.draw(currentState, currentStatusText)
 	p.lastState.Store(currentState)
@@ -201,13 +196,14 @@ func (p *Progress) draw(state uint32, statusTextPtr *string) {
 	status       := ""
 	if statusTextPtr != nil { status = *statusTextPtr }
 
+	truncated := false
 	if maxLen == 0 {
 		status = ""
 	} else {
-		status = truncateFromLeft(status, maxLen) // truncate from left to show most relevant portion (e.g., file basename)
+		status, truncated = truncateFromLeft(status, maxLen) // truncate from left to show most relevant portion (e.g., file basename)
 	}
 
-	err := p.writeStatus(uint16(state & 0xFFFF), status)
+	err := p.writeStatus(uint16(state & 0xFFFF), status, truncated)
 
 	if err == nil && p.drawNotify != nil {
 		select {
@@ -218,7 +214,7 @@ func (p *Progress) draw(state uint32, statusTextPtr *string) {
 }
 
 // writeStatus writes the progress status to to p.output (nominally the terminal's stderr) using the shared internal buffer to ensure an atomic system call.
-func (p *Progress) writeStatus(pctSigDigits uint16, status string) error {
+func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated bool) error {
 	p.buf = p.buf[:0]
 	p.buf = append(p.buf, p.clearSeq...)
 	p.buf = append(p.buf, prefix...)
@@ -234,6 +230,7 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string) error {
 	}
 
 	p.buf = append(p.buf, suffix...)
+	if truncated { p.buf = append(p.buf, "..."...) }
 	p.buf = append(p.buf, status...)
 	p.buf = append(p.buf, p.lineTerm...)
 
@@ -243,11 +240,20 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string) error {
 }
 
 // truncateFromLeft constrains the length of progress status messages rendered to the terminal, properly handling utf-8 strings.
-func truncateFromLeft(s string, maxLen int) string {
-	runes := []rune(s)
-	if len(runes) <= maxLen { return s }
-	if maxLen <= 3 { return string(runes[len(runes) -  maxLen     :]) } // too small to render an ellipsis
-	return "..."   +        string(runes[len(runes) - (maxLen - 3):])
+func truncateFromLeft(s string, maxLen int) (string, bool) {
+	runeCount := utf8.RuneCountInString(s)
+	if runeCount <= maxLen { return s, false }
+
+	skip := runeCount - maxLen
+	if maxLen > 3 { skip = runeCount - (maxLen - 3) }
+
+	i := 0
+	for range skip {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+	}
+
+	return s[i:], maxLen > 3
 }
 
 // detectTerminal determines if p.output has been piped or redirected to transparently handle those cases.
