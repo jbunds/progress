@@ -1,3 +1,9 @@
+[![Go Version](https://img.shields.io/badge/go-%20v1.26.2-blue?logo=go)](https://github.com/jbunds/progress/blob/main/go.mod) &nbsp;
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit) &nbsp;
+[![tests](https://github.com/jbunds/progress/actions/workflows/test-go.yml/badge.svg)](https://github.com/jbunds/progress/actions/workflows/test-go.yml) &nbsp;
+[![lint](https://github.com/jbunds/progress/actions/workflows/lint-go.yml/badge.svg)](https://github.com/jbunds/progress/actions/workflows/lint-go.yml) &nbsp;
+[![coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/jbunds/75dfc308f6a4adc36db4340cc020c713/raw/coverage.json)](https://github.com/jbunds/coverage/actions/workflows/test-go.yml)
+
 #### Simple Terminal Progress Tracker
 
 The `progress` package provides status updates to the terminal as units of work are incrementally completed.
