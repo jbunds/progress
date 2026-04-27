@@ -13,7 +13,7 @@ on:
 jobs:
   deploy-coverage-report:
     permissions: # required permissions for the GITHUB_TOKEN to deploy to GitHub Pages
-      contents: read
-      pages:    write
-      id-token: write
+      contents: write # allows pushing git notes (i.e. `git push origin refs/notes/gocoverage`)
+      pages:    write # allows the workflow to manage the lifecycle of GitHub Pages
+      id-token: write # required by actions/deploy-pages
     uses: jbunds/coverage/.github/workflows/pages.yml@v1
