@@ -26,10 +26,11 @@ const (
 	// when performing intermediate percentage calculations (currentVal * 100)
 	scale        uint64 = 1e12
 
-	// maxSafeUnits is the maximum allowable number of work units before intermediate percentage
-	// calculations risk uint64 overflow; some precision will be lost when totalUnits > maxSafeUnits
 	// TODO(jeff): remove the artificial cap in favor of a superior approach to
 	//             internal calculations which remain safe from underflow & overflow
+
+	// maxSafeUnits is the maximum allowable number of work units before intermediate percentage
+	// calculations risk uint64 overflow; some precision will be lost when totalUnits > maxSafeUnits
 	maxSafeUnits uint64 = math.MaxUint64 / scale // ~18.4M
 
 	minWidth     uint16 = 80     // fallback for pipes, redirects, and non-tty outputs
@@ -134,6 +135,10 @@ func (p *Progress) Report(n float64, status string) {
 	oldState     := p.state.Load()
 	currentWidth := uint16(oldState >> 16) // preserve termWidth while updating state
 	p.state.Store(uint32(currentWidth) << 16 | uint32(newSigDigits))
+
+	// TODO(jeff): investigate Go's unique package to see if it allows a more streamlined and / or
+	//             performant solution to efficiently detecting status changes by canonicalizing
+	//             status strings to make the atomic.Pointer comparisons even more efficient.
 
 	// update the status string, allocating only if its content changes
 	if oldStatusText := p.statusText.Load(); oldStatusText == nil || *oldStatusText != status {
