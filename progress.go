@@ -16,11 +16,6 @@ import (
 	"golang.org/x/term"
 )
 
-// This package largely represents a personal experiment born of curiosity
-// more than a practical solution to a UX issue for its parent module,
-// because the main program already processes fairly substantial codebases
-// like k8s within < ~1 second on my 2020 first-generation M1 MacBook Air.
-
 const (
 	// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
 	// (the sync/atomic package provides no floating-point types)
