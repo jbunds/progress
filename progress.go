@@ -104,8 +104,9 @@ func (p *Progress) InitialBudget() float64 { return float64(scale) }
 
 // AddTotal dynamically increases the total work budget as new tasks are discovered.
 // It is concurrency-safe and can be called concurrently with Report().
-// TODO(jeff): update AddTotal so it respects the maxSafeUnits cap
-func (p *Progress) AddTotal(n uint64) { p.total.Add(n) }
+func (p *Progress) AddTotal(n uint64) {
+	p.total.Add(min(n, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
+}
 
 // Report updates the current progress and status.
 //
@@ -251,7 +252,7 @@ func (p *Progress) detectTerminal() (uint16, bool) {
 	termWidth := getTermWidth(f)
 	useANSI   := false
 
-	if fd := f.Fd(); fd <= math.MaxInt && term.IsTerminal(int(fd)) {
+	if fd := f.Fd(); fd <= math.MaxInt && term.IsTerminal(int(fd)) { // fd <= math.MaxInt satisfies gosec
 		useANSI    = true
 		p.clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
 		p.doneSeq  = "\r\033[?25h" // restores the cursor

@@ -131,6 +131,37 @@ func TestInitialBudget(t *testing.T) {
 	}
 }
 
+func TestAddTotal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		units uint64
+		want  uint64
+	}{
+		{
+			name:  "less than maxSafeUnits added",
+			units: 100,
+			want:  100,
+		},
+		{
+			name:  "more than maxSafeUnits added, total capped at maxSafeUnits",
+			units: maxSafeUnits + 100,
+			want:  maxSafeUnits,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			p   := New(ctx, 0, io.Discard)
+			p.AddTotal(tt.units)
+			t.Cleanup(func() { p.Close(ctx) })
+			if diff := cmp.Diff(tt.want, p.total.Load()); diff != "" {
+				t.Errorf("AddTotal(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
 func TestReport(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
