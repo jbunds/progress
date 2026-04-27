@@ -12,4 +12,8 @@ on:
 
 jobs:
   deploy-coverage-report:
+    permissions: # required permissions for the GITHUB_TOKEN to deploy to GitHub Pages
+      contents: read
+      pages:    write
+      id-token: write
     uses: jbunds/coverage/.github/workflows/pages.yml@v1
