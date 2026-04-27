@@ -1,0 +1,23 @@
+name: deploy coverage report to Pages
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**/*.go'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**/*.go'
+  workflow_dispatch: # allows this workflow to be manually triggered from the UI
+
+jobs:
+  deploy:
+    runs-on: macos-latest # https://docs.github.com/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for--private-repositories
+    steps:
+    - uses: actions/checkout@v6 # http://github.com/actions/checkout
+      with:
+        fetch-depth: 10         # https://github.com/gwatts/go-coverage-action#example-workflow
+    - uses: actions/setup-go@v6 # http://github.com/actions/setup-go
+      with:
+        go-version: '1.26.2'    # https://github.com/marketplace/actions/setup-go-environment#supported-version-syntax
+    - uses: jbunds/coverage/.github/workflows/pages.yml@v1

@@ -1,0 +1,23 @@
+# https://pre-commit.com
+# https://github.com/pre-commit/pre-commit-hooks
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev:  v6.0.0
+    hooks:
+      - id:    check-yaml                             # https://github.com/pre-commit/pre-commit-hooks#check-yaml
+        files: \.ya?ml$
+  - repo: https://github.com/golangci/golangci-lint   # https://github.com/golangci/golangci-lint/blob/main/.pre-commit-hooks.yaml
+    rev:  v2.11.4
+    hooks:
+      - id:    golangci-lint
+        entry: golangci-lint run --verbose            # or `go run github.com/golangci/golangci-lint/cmd/golangci-lint run`
+  - repo: local
+    hooks:
+      - language:       system
+        id:             go-test
+        name:           go test
+        entry:          go test -v -race ./...
+        files:          \.go$|^go\.(?:mod|sum)$
+        pass_filenames: false
+        require_serial: true
