@@ -201,20 +201,15 @@ func (p *Progress) sync() { // skips redundant redraws
 
 // draw formats and renders the current progress status to the terminal, truncating text as needed to fit within the terminal width.
 func (p *Progress) draw(state uint32, statusTextPtr *string) {
-	// TODO(jeff): correctly handle utf-8 multibyte unicode characters
-	//             i.e., prevent slicing within a rune
 	termWidth    := uint16(state >> 16)
 	maxLen       := max(int(termWidth) - p.staticWidth, 0)
 	status       := ""
 	if statusTextPtr != nil { status = *statusTextPtr }
 
-	switch {
-	case maxLen == 0:
+	if maxLen == 0 {
 		status = ""
-	case len(status) > maxLen && maxLen > 3:
-		status = "..." + status[len(status) - maxLen + 3:] // truncate from left to show most relevant portion (e.g., file basename)
-	case len(status) > maxLen:
-		status = status[:maxLen]
+	} else {
+		status = truncateFromLeft(status, maxLen) // truncate from left to show most relevant portion (e.g., file basename)
 	}
 
 	err := p.writeStatus(uint16(state & 0xFFFF), status)
@@ -252,6 +247,15 @@ func (p *Progress) writeStatus(digits uint16, status string) error {
 	return err
 }
 
+// truncateFromLeft constrains the length of progress status messages rendered to the terminal, properly handling utf-8 strings.
+func truncateFromLeft(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen { return s }
+	if maxLen <= 3 { return string(runes[len(runes) -  maxLen     :]) } // too small to render an ellipsis
+	return "..."   +        string(runes[len(runes) - (maxLen - 3):])
+}
+
+// detectTerminal determines if p.output has been piped or redirected to transparently handle those cases.
 func (p *Progress) detectTerminal() (uint16, bool) {
 	f, ok := p.output.(*os.File)
 	if !ok { return minWidth, false }
@@ -269,6 +273,7 @@ func (p *Progress) detectTerminal() (uint16, bool) {
 	return termWidth, useANSI
 }
 
+// handleResize records the new terminal width to be respected by subsequent render cycles.
 func (p *Progress) handleResize() {
 	f, ok := p.output.(*os.File)
 	if !ok { return }
@@ -283,6 +288,7 @@ func (p *Progress) handleResize() {
 	}
 }
 
+// finish renders the final progress frame to the terminal.
 func (p *Progress) finish(ctx context.Context) {
 	output := p.doneSeq // newline or cursor resotring ANSI escape sequence
 	cause  := context.Cause(ctx)
@@ -293,9 +299,9 @@ func (p *Progress) finish(ctx context.Context) {
 		state      := p.state.Load()
 		statusText := p.statusText.Load()
 		pct        := uint16(state & 0xFFFF) // unpack pctSigDigits from the lower 16 bits
-		if statusText == nil ||
+		if statusText == nil    ||
 		  *statusText != "done" ||
-		   pct        <  10000 {
+		   pct        <  10000  {
 			output = p.clearSeq + "processing (100%): done" + p.doneSeq
 		}
 	}
