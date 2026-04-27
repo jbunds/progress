@@ -1,0 +1,35 @@
+# https://github.com/golangci/golangci-lint-action#how-to-use
+# https://github.com/golangci/golangci-lint/blob/HEAD/.golangci.reference.yml
+
+name: Go lint
+
+on:
+  push:
+    branches: [ 'main' ]
+    paths:
+      - '**/*.go'
+  pull_request:
+    branches: [ 'main' ]
+    paths:
+      - '**/*.go'
+  workflow_dispatch: # allows this workflow to be manually triggered from the UI
+
+permissions: # https://docs.github.com/actions/reference/workflows-and-actions/workflow-syntax#permissions
+  contents: read
+
+jobs:
+  golangci:               # TODO: consolidate all linters (golangci-lint and stylelint) into a single GitHub Actions workflow called linters.yml
+    runs-on: macos-latest # https://docs.github.com/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for--private-repositories
+    steps:
+
+      - uses: actions/checkout@v6 # http://github.com/actions/checkout
+
+      - uses: actions/setup-go@v6 # http://github.com/actions/setup-go
+        with:
+          go-version: '1.26.2'    # https://github.com/marketplace/actions/setup-go-environment#supported-version-syntax
+
+      - name: golangci-lint                    # https://golangci-lint.run/docs/
+        uses: golangci/golangci-lint-action@v9 # https://github.com/golangci/golangci-lint-action
+        with:
+          version: latest                      # https://github.com/golangci/golangci-lint-action#version
+          args:    --verbose                   # --verbose is a global golangci-lint flag, not a "run" subcommand flag, so it must be specified here
