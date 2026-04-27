@@ -150,10 +150,11 @@ func (p *Progress) Close(ctx context.Context) {
 func (p *Progress) renderLoop(ctx context.Context, useANSI bool) {
 	if useANSI { _, _ = io.WriteString(p.output, "\033[?25l") } // hide the cursor
 
+	ticker := p.clock.tick()
+	defer ticker.Stop()
+
 	defer close(p.doneChan)
 	defer signal.Stop(p.resizeChan)
-
-	tickerChan := p.clock.tick()
 
 	for {
 		select {
@@ -161,7 +162,7 @@ func (p *Progress) renderLoop(ctx context.Context, useANSI bool) {
 			return
 		case <-p.stopChan:   // Close() called
 			return
-		case <-tickerChan:   // check for a status update
+		case <-ticker.ch():  // check for a status update
 			p.sync()
 		case <-p.resizeChan: // SIGWINCH trapped
 			p.handleResize()
@@ -299,13 +300,26 @@ type snapshot struct {
 	termWidth    uint16 // the width of the terminal at the time of the snapshot
 }
 
-type clock interface { tick() <-chan time.Time } // enables dependency injection to facilitate testing
+type ticker interface {
+	ch() <-chan time.Time
+	Stop()
+}
 
-type realClock struct { dur time.Duration  } // throttles UI updates
-func (r *realClock) tick() <-chan time.Time { return time.NewTicker(r.dur).C }
+type clock   interface { tick() ticker     } // enables dependency injection to facilitate testing
 
-type fakeClock struct { chn chan time.Time } // simulates the passage of time in tests
-func (f *fakeClock) tick() <-chan time.Time { return f.chn }
+type realTicker struct { *time.Ticker      }
+type fakeTicker struct { c  chan time.Time }
+
+type realClock  struct { dur time.Duration } // throttles UI updates
+type fakeClock  struct { c  chan time.Time } // simulates the passage of time in tests
+
+func (r *realTicker) ch() <-chan time.Time { return r.C }
+func (f *fakeTicker) ch() <-chan time.Time { return f.c }
+
+func (r *realClock ) tick() ticker { return &realTicker{ Ticker: time.NewTicker(r.dur) }}
+func (f *fakeClock ) tick() ticker { return &fakeTicker{ c:      f.c                   }}
+
+func (f *fakeTicker) Stop() {}
 
 // getTermWidth determines the width of the terminal window, which is used to format status messages.
 func getTermWidth(files ...*os.File) int {

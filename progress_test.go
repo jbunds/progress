@@ -226,12 +226,12 @@ func TestRenderLoop(t *testing.T) {
 	t.Parallel()
 
 	got         := new(bytes.Buffer)
-	tickTrigger := make(chan time.Time)
+	tickTrigger := make(chan time.Time, 1)
 	notify      := make(chan struct{}, 1) // sync channel, buffered to prevent deadlocks
 
 	p := &Progress{
 		output:      got,
-		clock:       &fakeClock{ chn: tickTrigger },
+		clock:       &fakeClock{ c: tickTrigger },
 		drawNotify:  notify,
 		stopChan:    make(chan struct{}),
 		doneChan:    make(chan struct{}),
