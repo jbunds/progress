@@ -29,11 +29,14 @@ const (
 	// of, e.g., deep recursion, with sufficient uint64 headroom to prevent overflow
 	// when performing intermediate percentage calculations (currentVal * 100)
 	scale        uint64 = 1e12
+
 	// maxSafeUnits is the maximum allowable number of work units before intermediate percentage
 	// calculations risk uint64 overflow; some precision will be lost when totalUnits > maxSafeUnits
 	// TODO(jeff): remove the artificial cap in favor of a superior approach to
 	//             internal calculations which remain safe from underflow & overflow
 	maxSafeUnits uint64 = math.MaxUint64 / scale // ~18.4M
+
+	minWidth     uint16 = 80     // fallback for pipes, redirects, and non-tty outputs
 
 	pctFieldLen = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
 	prefix      = "processing (" // prepended to each progress status line rendered to the terminal
@@ -85,16 +88,14 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer) *Progress {
 	}
 
 	termWidth, useANSI := p.detectTerminal()
-	if termWidth > math.MaxInt { termWidth = 80 } // satisfy gosec
 
 	p.total.Store(min(totalUnits, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
-	p.state.Store(&snapshot{
-		termWidth: uint16(max(termWidth, 80)),
-	})
+	p.state.Store(&snapshot{ termWidth: termWidth })
 
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // trap SIGWINCH to handle the terminal window being resized
 
 	go p.renderLoop(ctx, useANSI)
+
 	return p
 }
 
@@ -144,8 +145,8 @@ func (p *Progress) Report(n float64, status string) {
 // Close stops the background renderer, writes the final completion frame, and restores the terminal cursor if needed.
 func (p *Progress) Close(ctx context.Context) {
 	p.closeOnce.Do(func() {
-		close(p.stopChan)      // stop the background renderLoop
-		<-p.doneChan           // block until renderLoop exits
+		close(p.stopChan) // stop the background renderLoop
+		<-p.doneChan      // block until renderLoop exits
 		p.finish(ctx)
 	})
 }
@@ -178,6 +179,7 @@ func (p *Progress) sync() { // skips redundant redraws
 	lastState    := p.lastState.Load()
 	currentState := p.state.Load()
 	if currentState == lastState { return }
+
 	if lastState != nil                                    &&
 	   currentState.pctSigDigits == lastState.pctSigDigits &&
 	   currentState.input        == lastState.input        &&
@@ -185,6 +187,7 @@ func (p *Progress) sync() { // skips redundant redraws
 		p.lastState.Store(currentState)
 		return
 	}
+
 	p.draw(currentState)
 	p.lastState.Store(currentState)
 }
@@ -192,7 +195,7 @@ func (p *Progress) sync() { // skips redundant redraws
 // draw formats and renders the current progress status to the terminal, truncating text as needed to fit within the terminal width.
 func (p *Progress) draw(s *snapshot) {
 	// TODO(jeff): correctly handle utf-8 multibyte unicode characters
-	//             i.e., prevent slicing in the middle of a rune
+	//             i.e., prevent slicing within a rune
 	pctSigDigits := s.pctSigDigits
 	status       := s.input
 	maxLen       := max(int(s.termWidth) - p.staticWidth, 0)
@@ -210,7 +213,7 @@ func (p *Progress) draw(s *snapshot) {
 
 	if err == nil && p.drawNotify != nil {
 		select {
-		case p.drawNotify <- struct{}{}:
+		case p.drawNotify <- struct{}{}: // ensures deterministic tests by signaling the completion of a draw cycle
 		default:
 		}
 	}
@@ -241,41 +244,35 @@ func (p *Progress) writeStatus(digits uint16, status string) error {
 	return err
 }
 
-func (p *Progress) detectTerminal() (int, bool) {
+func (p *Progress) detectTerminal() (uint16, bool) {
+	f, ok := p.output.(*os.File)
+	if !ok { return minWidth, false }
+
+	termWidth := getTermWidth(f)
 	useANSI   := false
-	clearSeq  := ""
-	doneSeq   := "\n"
-	lineTerm  := "\n"
-	termWidth := 80
-	if f, ok := p.output.(*os.File); ok {
-		fd       := f.Fd()
-		termWidth = getTermWidth(f)
-		if fd <= math.MaxInt {
-			if term.IsTerminal(int(fd)) {
-				useANSI  = true
-				clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
-				doneSeq  = "\r\033[?25h" // restores the cursor
-				lineTerm = ""
-			}
-		}
+
+	if fd := f.Fd(); fd <= math.MaxInt && term.IsTerminal(int(fd)) {
+		useANSI    = true
+		p.clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
+		p.doneSeq  = "\r\033[?25h" // restores the cursor
+		p.lineTerm = ""
 	}
-	p.clearSeq = clearSeq
-	p.doneSeq  = doneSeq
-	p.lineTerm = lineTerm
-	return max(termWidth, 80), useANSI
+
+	return termWidth, useANSI
 }
 
 func (p *Progress) handleResize() {
-	if f, ok := p.output.(*os.File); ok {
-		width := getTermWidth(f)
-		if width > math.MaxInt { width = 80 }
-		newWidth := uint16(max(width, 80))
-		for { // atomically update termWidth while preserving concurrent percentage or status changes
-			oldState          := p.state.Load()
-			newState          := *oldState // shallow copy existing data
-			newState.termWidth = newWidth
-			if p.state.CompareAndSwap(oldState, &newState) { break }
-		}
+	f, ok := p.output.(*os.File)
+	if !ok { return }
+
+	newWidth := getTermWidth(f)
+
+	for { // atomically update termWidth while preserving concurrent percentage or status changes
+		oldState          := p.state.Load()
+		if oldState.termWidth == newWidth { break }
+		newState          := *oldState // shallow copy existing data
+		newState.termWidth = newWidth
+		if p.state.CompareAndSwap(oldState, &newState) { break }
 	}
 }
 
@@ -328,8 +325,7 @@ func (f *fakeClock ) tick() ticker { return &fakeTicker{ c:      f.c            
 func (f *fakeTicker) Stop() {}
 
 // getTermWidth determines the width of the terminal window, which is used to format status messages.
-func getTermWidth(files ...*os.File) int {
-	width := 80
+func getTermWidth(files ...*os.File) uint16 {
 	if len(files) == 0 {
 		files = []*os.File{
 			os.Stdout, // Fd() == 1
@@ -337,15 +333,16 @@ func getTermWidth(files ...*os.File) int {
 			os.Stdin,  // Fd() == 0
 		}
 	}
+	width := int(minWidth)
 	for _, f := range files {
-		fd := f.Fd()
 		// although f.Fd() is 0 (os.Stdin), 1 (os.Stdout), or 2 (os.Stderr), the
 		// following check is performed to satisfy the gosec linter (otherwise
 		// gosec complains about possible integer overflow in the call to int())
-		if fd > math.MaxInt { continue } // skip if FD is logically impossible for term.GetSize (really, just making gosec happy)
-		if w, _, err := term.GetSize(int(fd)); err == nil {
-			if w > width { width = w }
+		if fd := f.Fd(); fd <= math.MaxInt {
+			if w, _, err := term.GetSize(int(fd)); err == nil {
+				width = max(width, w)
+			}
 		}
 	}
-	return max(width, 80) // fallback for pipes, redirects, and non-tty outputs
+	return uint16(width)
 }

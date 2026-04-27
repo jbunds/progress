@@ -77,7 +77,7 @@ func TestGetWidth(t *testing.T) {
 	tests := []struct {
 		name   string
 		output io.Writer
-		want   int
+		want   uint16
 	}{
 		{
 			name: "output file omitted",
@@ -92,7 +92,7 @@ func TestGetWidth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := 0
+			var got uint16
 			if tt.output == nil {
 				got = getTermWidth()
 			} else {
@@ -223,11 +223,12 @@ func TestDraw(t *testing.T) {
 }
 
 func TestRenderLoop(t *testing.T) {
+	// TODO(jeff): improve this test
 	t.Parallel()
 
 	got         := new(bytes.Buffer)
 	tickTrigger := make(chan time.Time, 1)
-	notify      := make(chan struct{}, 1) // sync channel, buffered to prevent deadlocks
+	notify      := make(chan struct{}, 1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
 
 	p := &Progress{
 		output:      got,
@@ -240,7 +241,7 @@ func TestRenderLoop(t *testing.T) {
 
 	tickAndExpectDraw := func() {
 		tickTrigger <- time.Now()
-		<-notify // wait for the draw signal
+		<-notify // draw() cycle completed
 	}
 
 	tickAndExpectSkip := func() {
@@ -248,8 +249,8 @@ func TestRenderLoop(t *testing.T) {
 		for p.lastState.Load() != p.state.Load() { // wait until renderLoop has processed the state via the stage 2 check
 			runtime.Gosched()
 		}
-		select { // verify notify is empty
-		case <-notify:
+		select {       // verify that the notify channel is empty
+		case <-notify: // unexpected draw() cycle completed
 			t.Errorf("redundant draw rendered")
 		default:
 		}
