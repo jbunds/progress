@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"testing"
 	"time"
 	"unicode/utf8"
 
@@ -86,15 +87,15 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer) *Progress {
 		staticWidth: len(prefix) + pctFieldLen + len(suffix), // 12 + 3 + 4 == 19
 	}
 
-	termWidth, useANSI := p.detectTerminal()
 
+	p.configureTerminal()
 	p.total.Store(min(totalUnits, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
-	p.state.Store(uint32(termWidth) << 16)
+	p.state.Store(uint32(max(getTermWidth(), minWidth)) << 16)
 	p.statusText.Store(new(""))
 
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // trap SIGWINCH to handle the terminal window being resized
 
-	go p.renderLoop(ctx, useANSI)
+	go p.renderLoop(ctx)
 
 	return p
 }
@@ -156,8 +157,8 @@ func (p *Progress) Close(ctx context.Context) {
 }
 
 // renderLoop periodically draws the progress line at ~60 FPS without impeding the processing logic.
-func (p *Progress) renderLoop(ctx context.Context, useANSI bool) {
-	if useANSI { _, _ = io.WriteString(p.output, "\033[?25l") } // hide the cursor
+func (p *Progress) renderLoop(ctx context.Context) {
+	if isTerminal(p.output) { _, _ = io.WriteString(p.output, "\033[?25l") } // hide the cursor
 
 	ticker := p.clock.tick()
 	defer ticker.Stop()
@@ -196,9 +197,9 @@ func (p *Progress) sync() { // skips redundant redraws
 
 // draw formats and renders the current progress status to the terminal, truncating text as needed to fit within the terminal width.
 func (p *Progress) draw(state uint32, statusTextPtr *string) {
-	termWidth    := uint16(state >> 16)
-	maxLen       := max(int(termWidth) - p.staticWidth, 0)
-	status       := ""
+	termWidth := uint16(state >> 16)
+	maxLen    := max(int(termWidth) - p.staticWidth, 0)
+	status    := ""
 	if statusTextPtr != nil { status = *statusTextPtr }
 
 	truncated := false
@@ -261,22 +262,13 @@ func truncateFromLeft(s string, maxLen int) (string, bool) {
 	return s[i:], maxLen > 3
 }
 
-// detectTerminal determines if p.output has been piped or redirected to transparently handle those cases.
-func (p *Progress) detectTerminal() (uint16, bool) {
-	f, ok := p.output.(*os.File)
-	if !ok { return minWidth, false }
-
-	termWidth := getTermWidth(f)
-	useANSI   := false
-
-	if fd := f.Fd(); fd <= math.MaxInt && term.IsTerminal(int(fd)) { // fd <= math.MaxInt satisfies gosec
-		useANSI    = true
+// configureTerminal sets the line terminator character and ANSI escape sequences to be used when p.output (nominally os.Stderr) has not been piped or redirected.
+func (p *Progress) configureTerminal() {
+	if isTerminal(p.output) {
 		p.clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
 		p.doneSeq  = "\r\033[?25h" // restores the cursor
 		p.lineTerm = ""
 	}
-
-	return termWidth, useANSI
 }
 
 // handleResize records the new terminal width to be respected by subsequent render cycles.
@@ -296,20 +288,13 @@ func (p *Progress) handleResize() {
 
 // finish renders the final progress frame to the terminal.
 func (p *Progress) finish(ctx context.Context) {
-	output := p.doneSeq // newline or cursor resotring ANSI escape sequence
-	cause  := context.Cause(ctx)
+	cause := context.Cause(ctx)
 
+	var output string
 	if cause != nil && !errors.Is(cause, context.Canceled) {
 		output = p.clearSeq + "stopped (" + cause.Error() + ")" + p.doneSeq
 	} else {
-		state      := p.state.Load()
-		statusText := p.statusText.Load()
-		pct        := uint16(state & 0xFFFF) // unpack pctSigDigits from the lower 16 bits
-		if statusText == nil    ||
-		  *statusText != "done" ||
-		   pct        <  10000  {
-			output = p.clearSeq + "processing (100%): done" + p.doneSeq
-		}
+		output = p.clearSeq + "processing (100%): done" + p.doneSeq
 	}
 	_, _ = io.WriteString(p.output, output)
 }
@@ -335,21 +320,24 @@ func (f *fakeClock ) tick() ticker { return &fakeTicker{ c:      f.c            
 
 func (f *fakeTicker) Stop() {}
 
-// getTermWidth determines the width of the terminal window, which is used to format status messages.
-func getTermWidth(files ...*os.File) uint16 {
-	if len(files) == 0 {
-		files = []*os.File{
-			os.Stdout, // Fd() == 1
-			os.Stderr, // Fd() == 2
-			os.Stdin,  // Fd() == 0
+// isTerminal determines if the specified writer is connected to a terminal.
+func isTerminal(w io.Writer) bool {
+	if f, ok := w.(*os.File); ok {
+		if fd := f.Fd(); fd <= math.MaxInt && term.IsTerminal(int(fd)) && !testing.Testing() { // fd <= math.MaxInt satisfies gosec
+			return true
 		}
 	}
+	return false
+}
+
+// getTermWidth determines the width of the terminal window, which is used to format status messages.
+func getTermWidth(files ...*os.File) uint16 {
+	if len(files) == 0 { files = []*os.File{ os.Stderr } }
 	width := int(minWidth)
 	for _, f := range files {
-		// although f.Fd() is 0 (os.Stdin), 1 (os.Stdout), or 2 (os.Stderr), the
-		// following check is performed to satisfy the gosec linter (otherwise
-		// gosec complains about possible integer overflow in the call to int())
-		if fd := f.Fd(); fd <= math.MaxInt {
+		// although f.Fd() for os.Stderr == 2, the following check is performed to satisfy the gosec
+		// linter (otherwise gosec complains about possible integer overflow in the call to int(fd))
+		if fd := f.Fd(); fd <= math.MaxInt && !testing.Testing() {
 			if w, _, err := term.GetSize(int(fd)); err == nil {
 				width = max(width, w)
 			}

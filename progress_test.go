@@ -20,7 +20,7 @@ var opts = cmp.Options{
 	cmp.AllowUnexported(Progress{}, realClock{}),
 	cmp.Transformer("unwrapBool",      func(t *atomic.Bool  ) bool   { return t.Load() }),
 	cmp.Transformer("unwrapUint64",    func(i *atomic.Uint64) uint64 { return i.Load() }),
-	cmp.Transformer("flattenProgress", func(p *Progress) struct {
+	cmp.Transformer("flattenProgress", func(p *Progress) struct { // TODO(jeff): clean this mess up!
 		Total      uint64
 		State      uint32
 		StatusText string
@@ -89,7 +89,7 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestGetWidth(t *testing.T) {
+func TestGetTermWidth(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name   string
@@ -325,7 +325,7 @@ func TestRenderLoop(t *testing.T) {
 	p.state.Store(pack(80, 0))
 
 	ctx := t.Context()
-	go p.renderLoop(ctx, false)
+	go p.renderLoop(ctx)
 
 	p.Report(10, "working...")
 	tickAndExpectDraw()
