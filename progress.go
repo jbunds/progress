@@ -240,13 +240,14 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 	p.buf = append(p.buf, prefix...)
 
 	switch {
-	case pctSigDigits >= 9995:
+	case pctSigDigits >= 9950: // 99.5% < pctSigDigits >  100% => "100%"
 		p.buf = append(p.buf, "100"...)
-	case pctSigDigits >=  995:
-		val  := pctSigDigits / 100
-		p.buf = append(p.buf, ' ', byte('0' + (val          / 10  )),      byte('0' + (val                 % 10))) // " xy"
-	default:
-		p.buf = append(p.buf,      byte('0' + (pctSigDigits / 1000)), '.', byte('0' + (pctSigDigits / 100) % 10))  // "x.y"
+	case pctSigDigits >=  995: // 9.95% < pctSigDigits > 99.4% => " 10%" - " 99%"
+		val := (pctSigDigits + 50) / 100 // round to the nearest 1% (995 -> 10; 9949 -> 99)
+		p.buf = append(p.buf, ' ', byte('0' + (val / 10)),      byte('0' + (val % 10)))
+	default:                   // 0.00% < pctSigDigits > 9.94% => "0.1%" - "9.9%"
+		val := (pctSigDigits + 5) / 10 // round to the nearest 0.1% (994 -> 9.9; 0 -> 0.0)
+		p.buf = append(p.buf,      byte('0' + (val / 10)), '.', byte('0' + (val % 10)))
 	}
 
 	p.buf = append(p.buf, p.suffix...)
