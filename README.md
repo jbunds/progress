@@ -12,19 +12,35 @@ Incremental calculations retain high-precision, while imposing minimal overhead 
 
 Features include:
 
-- context-aware
-- concurrency-safe:
+- context-aware:
+  - correctly handles cancellation of the parent context, ensuring a clean exit under reasonable circumstances
+- concurrency-safe and well-suited to highly-scaled concurrent processing systems:
   - uses `sync/atomic` to provide lock-free updates of internal state for highly-scaled concurrent workloads
+  - optionally supports an implementation via the `unique` package to reduce the memory footprint for suitable workloads (repetitive status updates)
 - very efficient:
-  - throttles status updates at ~60 FPS
-  - uses `atomic.Uint32` and `atomic.Pointer` to minimize memory allocation and impose minimal GC overhead
-  - optimized to minimize CPU consumption
-- correctly handles UTF-8 strings passed by callers to provide status updates
+  - throttles status updates at ~60 FPS, decoupling the progress status tracker from the caller program processing the workload
+  - uses packed `atomic.Uint32` types and bitwise operations to further reduce memory allocation and efficiently handle updates of internal state
+  - uses `atomic.Uint64` and `atomic.Pointer` types to:
+    - minimize memory allocation
+    - impose minimal GC overhead
+    - enable fast comparisons via pointers
+    - obviate mutex contention
+  - optimized to minimize CPU resource consumption
 - supports two tracking modes:
   - weight-based accumulation: callers specify the total known amount of work (e.g., 100 tasks, known a prioi)
   - fractional allocation: callers add the relative share of the total budget as work is discovered (e.g., recursively walking a directory to process its contents)
+- supports multiple progress status tracking implementations which are well-suited to different sets of inputs:
+  - `progress.Standard`: suitable for mostly unique status updates
+  - `progress.Unique`:   suitable for mostly repetitive status updates
+- supports multiple progress status formats:
+  - `progress.Percent`:  writes only the percentage calculation to the terminal
+  - `progress.Fraction`: writes progress status as a proper fraction (x/y) given a prescribed fixed total units of work (y)
 - transparently handles pipes, redirects, and non-TTY environments
-- limited to ~18.4 million units of work
+- correctly handles UTF-8 strings passed by callers to provide status updates
+
+Limitations:
+
+- the precision of percentage calculations starts to progressively degrade at ~18.4 million units of work
 
 #### Example Usage
 
