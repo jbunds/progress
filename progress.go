@@ -88,7 +88,7 @@ type Progress struct {
 //    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known a priori)
 //    pass totalUnits == 0 for fractional path allocation (when totalUnits is not known a priori)
 func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Option) *Progress {
-	p      := &Progress{
+	p := &Progress{
 		tracker:     &standardTracker{},
 		output:      output,
 		buf:         make([]byte, 0, 128), // pre-allocate to avoid heap growth during draw() cycles

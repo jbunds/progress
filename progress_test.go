@@ -322,38 +322,40 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	notify      := make(chan struct{}, 1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
 
 	p := &Progress{
-		tracker:     &fractionTracker{total: "100"},
+		tracker:     &fractionTracker{ total: "73" },
 		output:      got,
-		clock:       &fakeClock{c: tickTrigger},
+		clock:       &fakeClock{ c: tickTrigger },
 		drawNotify:  notify,
 		stopChan:    make(chan struct{}),
 		doneChan:    make(chan struct{}),
+		suffix:      defaultSuffix,
 		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
 	}
 
+	p.total.Store(73)
 	p.state.Store(pack(minWidth, 0))
 
 	go p.renderLoop(t.Context())
 	defer p.Close(t.Context())
 
-	p.Report(10, "completed 10 units of work") // first report: 10/100
+	p.Report(11, "completed 11 units of work") // first report: 11/73
 	tickTrigger <- time.Now()
 	<-notify
 
-	want := []byte("10/100")
-	if !bytes.HasSuffix(got.Bytes(), want) {
-		t.Errorf("renderLoop() mismatch; expected %q; got %q", want, got)
+	want := "processing ( 15%): 11/73"
+	if diff := cmp.Diff(want, got.String()); diff != "" {
+		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
 	}
 
 	got.Reset()
 
-	p.Report(5, "completed another 5 units of work") // second report: 15/100
+	p.Report(34, "completed another 34 units of work") // second report: 19/73
 	tickTrigger <- time.Now()
 	<-notify
 
-	want = []byte("15/100")
-	if !bytes.HasSuffix(got.Bytes(), want) {
-		t.Errorf("renderLoop() mismatch; expected %q; got %q", want, got)
+	want = "processing ( 62%): 45/73"
+	if diff := cmp.Diff(want, got.String()); diff != "" {
+		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
 	}
 }
 
