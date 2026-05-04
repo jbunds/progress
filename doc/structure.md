@@ -4,17 +4,22 @@
 │   ├── code_stats.md
 │   └── structure.md
 ├── examples
+│   ├── README.md
 │   ├── fractional
 │   │   └── main.go
-│   ├── README.md
 │   └── weight-based
 │       └── main.go
+├── LICENSE
+├── README.md
+├── fraction.go
 ├── go.mod
 ├── go.sum
-├── LICENSE
+├── percent.go
 ├── progress_test.go
 ├── progress.go
-└── README.md
+├── standard.go
+├── tracker.go
+└── unique.go
 
-5 directories, 12 files
+5 directories, 16 files
 ```
