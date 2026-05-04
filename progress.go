@@ -38,32 +38,46 @@ const (
 
 	pctFieldLen = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
 	prefix      = "processing (" // prepended to each progress status line rendered to the terminal
+	// TODO(jeff): don't print ": " if tracker == progress.Percent
 	suffix      = "%): "         // appended to each percentage status calculation rendered to the terminal
 )
+
+// Option defines a functional configuration for Progress
+// (exported to allow callers to create []*progress.Option to pass to New)
+type Option func(*Progress)
+
+// WithTracker allows callers to explicitly specify a status tracker, e.g.:
+//   progress.New(ctx, 100, os.Stderr, progress.WithTracker(progress.Fraction, 100))
+func WithTracker(s strategy, totalUnits uint64) Option {
+	return func(p *Progress) {
+		p.tracker = getTracker(s, totalUnits)
+	}
+}
 
 // Progress provides a throttled, concurrency-safe, high-precision status indicator for workloads.
 type Progress struct {
 	// shared state (atomic)
-	total          atomic.Uint64          // 0 for fractional path allocation; > 0 for weight-based accumulation
-	current        atomic.Uint64          // accumulates shares of scale
-	state          atomic.Uint32          // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
-	lastState      atomic.Uint32          // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
-	statusText     atomic.Pointer[string] // pointer to the current status message rendered to the terminal
-	lastStatusText atomic.Pointer[string] // pointer to the previous status message, used to determine if the text content changed since the last render cycle
+	tracker       statusTracker  // tracks the current progress value
+	unitsDone     atomic.Uint64  // stores the numerator of the fraction tracker
+	total         atomic.Uint64  // 0 for fractional path allocation; > 0 for weight-based accumulation
+	current       atomic.Uint64  // accumulates shares of scale
+	state         atomic.Uint32  // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
+	lastState     atomic.Uint32  // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
+	lastStatusVal atomic.Value   // stores the result of the last tracker.Load()
 
 	// configuration (read-only after construction)
-	buf            []byte                 // reusable buffer for writing status messages to the terminal
-	output         io.Writer              // destination writer for the terminal-formatted work progress status updates
-	clock          clock                  // provides the timing source for throttled UI updates, allowing for fake clocks in tests
-	stopChan       chan struct{}          // signals the background rendering loop to perform final cleanup
-	doneChan       chan struct{}          // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
-	drawNotify     chan struct{}          // used in tests to signal the completion of a draw cycle
-	resizeChan     chan os.Signal         // handles terminal window resizing
-	staticWidth    int                    // the static width reserved for the prefix prepended to each status message, e.g., "processing (7.4%): "
-	clearSeq       string                 // ANSI escape sequence used to clear the current terminal line
-	doneSeq        string                 // ANSI escape sequence used to restore the terminal cursor
-	lineTerm       string                 // output line terminator
-	closeOnce      sync.Once              // closeOnce ensures that cursor restoration and cleanup logic are executed only once
+	buf           []byte         // reusable buffer for writing status messages to the terminal
+	output        io.Writer      // destination writer for the terminal-formatted work progress status updates
+	clock         clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
+	stopChan      chan struct{}  // signals the background rendering loop to perform final cleanup
+	doneChan      chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
+	drawNotify    chan struct{}  // used in tests to signal the completion of a draw cycle
+	resizeChan    chan os.Signal // handles terminal window resizing
+	staticWidth   int            // the static width reserved for the prefix prepended to each status message, e.g., "processing (7.4%): "
+	clearSeq      string         // ANSI escape sequence used to clear the current terminal line
+	doneSeq       string         // ANSI escape sequence used to restore the terminal cursor
+	lineTerm      string         // output line terminator
+	closeOnce     sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress
@@ -73,8 +87,9 @@ type Progress struct {
 //
 //    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known a priori)
 //    pass totalUnits == 0 for fractional path allocation (when totalUnits is not known a priori)
-func New(ctx context.Context, totalUnits uint64, output io.Writer) *Progress {
+func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Option) *Progress {
 	p := &Progress{
+		tracker:     &standardTracker{},
 		output:      output,
 		buf:         make([]byte, 0, 128), // pre-allocate to avoid heap growth during draw() cycles
 		stopChan:    make(chan struct{}),
@@ -87,11 +102,11 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer) *Progress {
 		staticWidth: len(prefix) + pctFieldLen + len(suffix), // 12 + 3 + 4 == 19
 	}
 
+	for _, opt := range opts { opt(p) }
 
-	p.configureTerminal()
+	p.prepareTerminal()
 	p.total.Store(min(totalUnits, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
 	p.state.Store(uint32(max(getTermWidth(), minWidth)) << 16)
-	p.statusText.Store(new(""))
 
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // trap SIGWINCH to handle the terminal window being resized
 
@@ -114,6 +129,8 @@ func (p *Progress) AddTotal(n uint64) {
 //   if total >  0: n represents the relative weight of the work completed, and the progress percentage is calculated as n / totalUnits
 //   if total == 0: n represents the portion of the InitialBudget(), which must be divided among all sub-tasks by the caller
 func (p *Progress) Report(n float64, status string) {
+	p.tracker.store(float64(p.unitsDone.Add(uint64(n))), status)
+
 	total := p.total.Load()
 
 	var share uint64
@@ -136,15 +153,6 @@ func (p *Progress) Report(n float64, status string) {
 	oldState     := p.state.Load()
 	currentWidth := uint16(oldState >> 16) // preserve termWidth while updating state
 	p.state.Store(uint32(currentWidth) << 16 | uint32(newSigDigits))
-
-	// TODO(jeff): investigate Go's unique package to see if it allows a more streamlined and / or
-	//             performant solution to efficiently detecting status changes by canonicalizing
-	//             status strings to make the atomic.Pointer comparisons even more efficient.
-
-	// update the status string, allocating only if its content changes
-	if oldStatusText := p.statusText.Load(); oldStatusText == nil || *oldStatusText != status {
-		p.statusText.Store(&status)
-	}
 }
 
 // Close stops the background renderer, writes the final completion frame, and restores the terminal cursor if needed.
@@ -182,25 +190,25 @@ func (p *Progress) renderLoop(ctx context.Context) {
 
 // sync compares the current progress and status text against the last rendered values to skip redundant redraws
 func (p *Progress) sync() { // skips redundant redraws
-	lastState         := p.lastState.Load()
-	lastStatusText    := p.lastStatusText.Load()
-	currentState      := p.state.Load()
-	currentStatusText := p.statusText.Load()
+	currentState := p.state.Load()
+	currentVal   := p.tracker.load()
+	lastState    := p.lastState.Load()
+	lastVal      := p.lastStatusVal.Load()
 
-	if currentState      == lastState &&
-	   currentStatusText == lastStatusText { return }
+	if currentState == lastState &&
+	   currentVal   == lastVal { return }
 
-	p.draw(currentState, currentStatusText)
+	p.draw(currentState, currentVal)
+
 	p.lastState.Store(currentState)
-	p.lastStatusText.Store(currentStatusText)
+	if currentVal != nil { p.lastStatusVal.Store(currentVal) }
 }
 
 // draw formats and renders the current progress status to the terminal, truncating text as needed to fit within the terminal width.
-func (p *Progress) draw(state uint32, statusTextPtr *string) {
+func (p *Progress) draw(state uint32, val any) {
 	termWidth := uint16(state >> 16)
 	maxLen    := max(int(termWidth) - p.staticWidth, 0)
-	status    := ""
-	if statusTextPtr != nil { status = *statusTextPtr }
+	status    := p.tracker.value(val)
 
 	truncated := false
 	if maxLen == 0 {
@@ -262,8 +270,8 @@ func truncateFromLeft(s string, maxLen int) (string, bool) {
 	return s[i:], maxLen > 3
 }
 
-// configureTerminal sets the line terminator character and ANSI escape sequences to be used when p.output (nominally os.Stderr) has not been piped or redirected.
-func (p *Progress) configureTerminal() {
+// prepareTerminal sets the line terminator character and ANSI escape sequences to be used when p.output (nominally os.Stderr) has not been piped or redirected.
+func (p *Progress) prepareTerminal() {
 	if isTerminal(p.output) {
 		p.clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
 		p.doneSeq  = "\r\033[?25h" // restores the cursor

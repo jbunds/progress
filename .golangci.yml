@@ -15,3 +15,8 @@ linters:
     - godoclint
     - gosec
     - revive
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprintln

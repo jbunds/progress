@@ -17,36 +17,11 @@ import (
 )
 
 var opts = cmp.Options{
-	cmp.AllowUnexported(Progress{}, realClock{}),
-	cmp.Transformer("unwrapBool",      func(t *atomic.Bool  ) bool   { return t.Load() }),
-	cmp.Transformer("unwrapUint64",    func(i *atomic.Uint64) uint64 { return i.Load() }),
-	cmp.Transformer("flattenProgress", func(p *Progress) struct { // TODO(jeff): clean this mess up!
-		Total      uint64
-		State      uint32
-		StatusText string
-	} {
-		return struct {
-			Total      uint64
-			State      uint32
-			StatusText string
-		}{
-			Total: p.total.Load(),
-			State: p.state.Load(),
-			StatusText: func() string {
-				if s := p.statusText.Load(); s != nil { return *s }
-				return ""
-			}(),
-		}
-	}),
-	cmpopts.EquateComparable(atomic.Uint32{}, atomic.Uint64{}),
-	cmpopts.IgnoreFields(Progress{}, // the following are non-trivial to compare
-		"output",
-		"stopChan",
-		"doneChan",
-		"resizeChan",
-		"closeOnce",
-		"drawNotify",
-	),
+	cmp.AllowUnexported(Progress{}, standardTracker{}, uniqueTracker{}, percentTracker{}, fractionTracker{}, realClock{}),
+	cmp.Transformer("unwrapBool",   func(t *atomic.Bool  ) bool   { return t.Load() }),
+	cmp.Transformer("unwrapUint64", func(i *atomic.Uint64) uint64 { return i.Load() }),
+	cmpopts.EquateComparable(atomic.Uint32{}, atomic.Uint64{}, atomic.Value{}, atomic.Pointer[string]{}),
+	cmpopts.IgnoreFields(Progress{}, "output", "stopChan", "doneChan", "resizeChan", "closeOnce", "drawNotify"), // non-trivial to compare
 }
 
 func TestNew(t *testing.T) {
@@ -98,12 +73,12 @@ func TestGetTermWidth(t *testing.T) {
 	}{
 		{
 			name: "output file omitted",
-			want: 80,
+			want: minWidth,
 		},
 		{
 			name:   "output to os.Stderr",
 			output: os.Stderr,
-			want:   80,
+			want:   minWidth,
 		},
 	}
 	for _, tt := range tests {
@@ -251,8 +226,8 @@ func TestDraw(t *testing.T) {
 		want       string
 	}{
 		{
-			name:       "nominal terminal width of 80",
-			state:      pack(80, 5000), // 80 - len("processing (100%): ") == 61
+			name:       "nominal terminal width of 80", // minWidth == 80
+			state:      pack(80, 5000),                 // 80 - len("processing (100%): ") == 61
 			statusText: new("just a small fish in a big sea"),
 			want:       "processing ( 50%): just a small fish in a big sea",
 		},
@@ -274,6 +249,7 @@ func TestDraw(t *testing.T) {
 			t.Parallel()
 			got := new(bytes.Buffer)
 			p   := &Progress{
+				tracker:     &standardTracker{},
 				output:      got,
 				staticWidth: len(prefix) + pctFieldLen + len(suffix),
 			}
@@ -296,6 +272,7 @@ func TestRenderLoop(t *testing.T) {
 	notify      := make(chan struct{}, 1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
 
 	p := &Progress{
+		tracker:     &standardTracker{},
 		output:      got,
 		clock:       &fakeClock{ c: tickTrigger },
 		drawNotify:  notify,
@@ -322,7 +299,7 @@ func TestRenderLoop(t *testing.T) {
 	}
 
 	p.total.Store(100)
-	p.state.Store(pack(80, 0))
+	p.state.Store(pack(minWidth, 0))
 
 	ctx := t.Context()
 	go p.renderLoop(ctx)
@@ -334,6 +311,49 @@ func TestRenderLoop(t *testing.T) {
 	tickAndExpectSkip()
 
 	t.Cleanup(func() { p.Close(ctx) })
+}
+
+func TestFractionTrackerRedraw(t *testing.T) {
+	t.Parallel()
+
+	got         := new(bytes.Buffer)
+	tickTrigger := make(chan time.Time, 1)
+	notify      := make(chan struct{}, 1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
+
+	p := &Progress{
+		tracker:     &fractionTracker{total: "100"},
+		output:      got,
+		clock:       &fakeClock{c: tickTrigger},
+		drawNotify:  notify,
+		stopChan:    make(chan struct{}),
+		doneChan:    make(chan struct{}),
+		staticWidth: len(prefix) + pctFieldLen + len(suffix),
+	}
+
+	p.state.Store(pack(minWidth, 0))
+
+	go p.renderLoop(t.Context())
+	defer p.Close(t.Context())
+
+	p.Report(10, "completed 10 units of work") // first report: 10/100
+	tickTrigger <- time.Now()
+	<-notify
+
+	want := []byte("10/100")
+	if !bytes.HasSuffix(got.Bytes(), want) {
+		t.Errorf("renderLoop() mismatch; expected %q; got %q", want, got)
+	}
+
+	got.Reset()
+
+	p.Report(5, "completed another 5 units of work") // second report: 15/100
+	tickTrigger <- time.Now()
+	<-notify
+
+	want = []byte("15/100")
+	if !bytes.HasSuffix(got.Bytes(), want) {
+		t.Errorf("renderLoop() mismatch; expected %q; got %q", want, got)
+	}
 }
 
 func TestClose(t *testing.T) {
@@ -351,6 +371,7 @@ func TestClose(t *testing.T) {
 			total:   100,
 			wantOut: "processing (100%): done\n",
 			wantProg: &Progress{
+				tracker:     &standardTracker{},
 				buf:         []byte(""),
 				clock:       &realClock{ dur: 16 * time.Millisecond },
 				doneSeq:     "\n",
@@ -364,6 +385,7 @@ func TestClose(t *testing.T) {
 			err:      errors.New("aborted for some reason"),
 			wantOut:  "stopped (aborted for some reason)\n",
 			wantProg: &Progress{
+				tracker:     &standardTracker{},
 				buf:         []byte(""),
 				clock:       &realClock{ dur: 16 * time.Millisecond },
 				doneSeq:     "\n",
@@ -375,8 +397,7 @@ func TestClose(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.wantProg.total.Store(tt.total)
-			tt.wantProg.state.Store(pack(80, 0))
-			tt.wantProg.statusText.Store(new(""))
+			tt.wantProg.state.Store(pack(minWidth, 0))
 			ctx, cancel := context.WithCancelCause(t.Context())
 			got         := new(bytes.Buffer)
 			p           := New(ctx, tt.total, got)
