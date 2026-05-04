@@ -42,6 +42,8 @@ Limitations:
 
 - the precision of percentage calculations starts to progressively degrade at ~18.4 million units of work
 
+---
+
 #### Example Usage
 
 See the [`examples`](./examples) directory for examples of the modal API.
