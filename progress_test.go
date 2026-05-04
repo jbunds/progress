@@ -251,7 +251,8 @@ func TestDraw(t *testing.T) {
 			p   := &Progress{
 				tracker:     &standardTracker{},
 				output:      got,
-				staticWidth: len(prefix) + pctFieldLen + len(suffix),
+				suffix:      defaultSuffix,
+				staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
 			}
 
 			p.draw(tt.state, tt.statusText)
@@ -278,7 +279,7 @@ func TestRenderLoop(t *testing.T) {
 		drawNotify:  notify,
 		stopChan:    make(chan struct{}),
 		doneChan:    make(chan struct{}),
-		staticWidth: len(prefix) + pctFieldLen + len(suffix),
+		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
 	}
 
 	tickAndExpectDraw := func() {
@@ -327,7 +328,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 		drawNotify:  notify,
 		stopChan:    make(chan struct{}),
 		doneChan:    make(chan struct{}),
-		staticWidth: len(prefix) + pctFieldLen + len(suffix),
+		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
 	}
 
 	p.state.Store(pack(minWidth, 0))
@@ -358,7 +359,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	t.Parallel()
-	staticWidth := len(prefix) + pctFieldLen + len(suffix)
+	staticWidth := len(prefix) + pctFieldLen + len(defaultSuffix)
 	tests  := []struct {
 		name     string
 		total    uint64
@@ -376,6 +377,7 @@ func TestClose(t *testing.T) {
 				clock:       &realClock{ dur: 16 * time.Millisecond },
 				doneSeq:     "\n",
 				lineTerm:    "\n",
+				suffix:      defaultSuffix,
 				staticWidth: staticWidth,
 			},
 		},
@@ -390,6 +392,7 @@ func TestClose(t *testing.T) {
 				clock:       &realClock{ dur: 16 * time.Millisecond },
 				doneSeq:     "\n",
 				lineTerm:    "\n",
+				suffix:      defaultSuffix,
 				staticWidth: staticWidth,
 			},
 		},

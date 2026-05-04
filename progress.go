@@ -34,15 +34,14 @@ const (
 	// calculations risk uint64 overflow; some precision will be lost when totalUnits > maxSafeUnits
 	maxSafeUnits uint64 = math.MaxUint64 / scale // ~18.4M
 
-	minWidth     uint16 = 80     // fallback for pipes, redirects, and non-tty outputs
+	minWidth     uint16 = 80       // fallback for pipes, redirects, and non-tty outputs
 
-	pctFieldLen = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
-	prefix      = "processing (" // prepended to each progress status line rendered to the terminal
-	// TODO(jeff): don't print ": " if tracker == progress.Percent
-	suffix      = "%): "         // appended to each percentage status calculation rendered to the terminal
+	pctFieldLen   = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
+	prefix        = "processing (" // prepended to each progress status line rendered to the terminal
+	defaultSuffix = "%): "         // appended to each percentage status calculation rendered to the terminal
 )
 
-// Option defines a functional configuration for Progress
+// Option defines a functional configuration for Progress.
 // (exported to allow callers to create []*progress.Option to pass to New)
 type Option func(*Progress)
 
@@ -78,6 +77,7 @@ type Progress struct {
 	doneSeq       string         // ANSI escape sequence used to restore the terminal cursor
 	lineTerm      string         // output line terminator
 	closeOnce     sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
+	suffix        string         // appended to each percentage status calculation rendered to the terminal
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress
@@ -88,7 +88,7 @@ type Progress struct {
 //    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known a priori)
 //    pass totalUnits == 0 for fractional path allocation (when totalUnits is not known a priori)
 func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Option) *Progress {
-	p := &Progress{
+	p      := &Progress{
 		tracker:     &standardTracker{},
 		output:      output,
 		buf:         make([]byte, 0, 128), // pre-allocate to avoid heap growth during draw() cycles
@@ -99,10 +99,16 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		clearSeq:    "",
 		doneSeq:     "\n",
 		lineTerm:    "\n",
-		staticWidth: len(prefix) + pctFieldLen + len(suffix), // 12 + 3 + 4 == 19
+		suffix:      defaultSuffix,
+		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix), // 12 + 3 + 4 == 19
 	}
 
-	for _, opt := range opts { opt(p) }
+	for _, opt := range opts { opt(p) } // allows callers to override the default status tracker via the WithTracker Option
+
+	if _, ok := p.tracker.(*percentTracker); ok {
+		p.suffix      = "%)"
+		p.staticWidth = len(prefix) + pctFieldLen + len(p.suffix) // 12 + 3 + 2 == 17
+	}
 
 	p.prepareTerminal()
 	p.total.Store(min(totalUnits, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
@@ -243,7 +249,7 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 		p.buf = append(p.buf,      byte('0' + (pctSigDigits / 1000)), '.', byte('0' + (pctSigDigits / 100) % 10))  // "x.y"
 	}
 
-	p.buf = append(p.buf, suffix...)
+	p.buf = append(p.buf, p.suffix...)
 	if truncated { p.buf = append(p.buf, "..."...) }
 	p.buf = append(p.buf, status...)
 	p.buf = append(p.buf, p.lineTerm...)
