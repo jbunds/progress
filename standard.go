@@ -10,7 +10,7 @@ func (s *standardTracker) store(_ float64, status string) {
 	s.ptr.Store(&status)
 }
 
-func (s *standardTracker) load () any { return s.ptr.Load() }
+func (s *standardTracker) load() any { return s.ptr.Load() }
 
 func (s *standardTracker) value(v any) string {
 	if p, ok := v.(*string); ok && p != nil { return *p }
