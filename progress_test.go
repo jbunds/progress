@@ -43,8 +43,8 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name:       "verify overflow safety",
-			totalUnits: maxSafeUnits + 1000,
-			wantTotal:  maxSafeUnits,
+			totalUnits: scale + 1000,
+			wantTotal:  scale,
 		},
 	}
 	for _, tt := range tests {
@@ -131,14 +131,14 @@ func TestAddTotal(t *testing.T) {
 		want  uint64
 	}{
 		{
-			name:  "less than maxSafeUnits added",
+			name:  "less than scale added",
 			units: 100,
 			want:  100,
 		},
 		{
-			name:  "more than maxSafeUnits added, total capped at maxSafeUnits",
-			units: maxSafeUnits + 100,
-			want:  maxSafeUnits,
+			name:  "more than scale added; total capped at scale",
+			units: scale + 1000,
+			want:  scale,
 		},
 	}
 	for _, tt := range tests {
@@ -172,10 +172,10 @@ func TestReport(t *testing.T) {
 		},
 		{
 			name:      "weight-based; high-precision boundary check",
-			total:     maxSafeUnits,
+			total:     scale,
 			unitsDone: 1,
 			status:    "completed 1 unit of work",
-			want:      (1 * scale / maxSafeUnits) * 3,
+			want:      (1 * scale / scale) * 3,
 		},
 		{
 			name:      "weight-based; reported work done cannot exceed total work",

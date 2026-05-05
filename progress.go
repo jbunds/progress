@@ -22,19 +22,14 @@ const (
 	// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
 	// (the sync/atomic package provides no floating-point types)
 	//
-	// the choice of 1e12 balances high-precision fractional shares in the context
+	// the choice of 1e15 balances high-precision fractional shares in the context
 	// of, e.g., deep recursion, with sufficient uint64 headroom to prevent overflow
-	// when performing intermediate percentage calculations (currentVal * 100)
-	scale        uint64 = 1e12
-
-	// TODO(jeff): remove the artificial cap in favor of a superior approach to
-	//             internal calculations which remain safe from underflow & overflow
-
-	// maxSafeUnits is the maximum allowable number of work units before intermediate percentage
-	// calculations risk uint64 overflow; some precision will be lost when totalUnits > maxSafeUnits
-	maxSafeUnits uint64 = math.MaxUint64 / scale // ~18.4M
-
-	minWidth     uint16 = 80       // fallback for pipes, redirects, and non-tty outputs
+	// when performing intermediate percentage calculations (newCurrent * 10000)
+	//
+	// precision starts to degrade as the total number of work units approaches scale,
+	// but even at this limit, each unit of work represents at least 1 unit of scale
+	scale    uint64 = 1e15
+	minWidth uint16 = 80           // fallback for pipes, redirects, and non-tty outputs
 
 	pctFieldLen   = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
 	prefix        = "processing (" // prepended to each progress status line rendered to the terminal
@@ -104,7 +99,7 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 	}
 
 	p.prepareTerminal()
-	p.total.Store(min(totalUnits, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
+	p.total.Store(min(totalUnits, scale)) // fall back to scale if totalUnits exceeds max precision
 	p.state.Store(uint32(max(getTermWidth(), minWidth)) << 16)
 
 	for _, opt := range opts { opt(p) } // allows callers to override the default status tracker via the WithTracker Option
@@ -127,7 +122,7 @@ func (p *Progress) InitialBudget() float64 { return float64(scale) }
 // AddTotal dynamically increases the total work budget as new tasks are discovered.
 // It is concurrency-safe and can be called concurrently with Report().
 func (p *Progress) AddTotal(n uint64) {
-	p.total.Add(min(n, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
+	p.total.Add(min(n, scale)) // fall back to scale if total exceeds max precision
 }
 
 // Report updates the current progress and status.
@@ -152,11 +147,24 @@ func (p *Progress) Report(n float64, status string) {
 		p.current.Store(scale)
 	}
 
-	// update numeric state values while avoiding new memory allocations to mitigate GC pressure
+	// capture 5 significant digits of the newCurrent value to be stored in the bit-packed p.state
+	// field (atomic.Uint32) while avoiding new memory allocations to mitigate GC pressure
 	//
-	// ((newCurrent * 10000 + (scale / 2)) / scale) converts the 1e12 scale to 4 significant digits (1e4).
-	// adding half of the total scale (the divisor) ensures precise rounding to avoid floor truncation during integer division.
-	newSigDigits := uint16((newCurrent * 10000 + (scale / 2)) / scale)
+	// ((newCurrent * 10000 + (scale / 2)) / scale) converts the 1e15 scale to 5 significant
+	// digits (1e4) per the "res64" uint64-typed variable to prevent overflow
+	//
+	// adding half of the total scale (the divisor) ensures precise
+	// rounding to avoid floor truncation during integer division
+	//
+	// however, the gosec linter is oblivious to the fact that newCurrent is capped
+	// at scale (1e15) above, so we must perform a little dance to reassure gosec...
+	//
+	// with scale == 1e15 and newCurrent capped at 1e15, the maximum value of the numerator
+	// is ~1e19, which cleanly fits into a uint64 (math.MaxUint64 =~ 1.84e19)
+
+	res64 := (newCurrent * 10000 + (scale / 2)) / scale
+
+	newSigDigits := uint16(min(res64, math.MaxUint16))
 	oldState     := p.state.Load()
 	currentWidth := uint16(oldState >> 16) // preserve termWidth while updating state
 	p.state.Store(uint32(currentWidth) << 16 | uint32(newSigDigits))
