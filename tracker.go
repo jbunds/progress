@@ -4,17 +4,17 @@ import "strconv"
 
 // statusTracker tracks the current work completion progress status.
 type statusTracker interface {
-  store(float64, string) // handles interning / storage of the current status
-  load()     any         // returns the comparable value (e.g., *string or Handle)
-  value(any) string      // converts the loaded value back to a string for display in the UI
+  store(uint64, string) // handles interning / storage of the current status
+  load()     any        // returns the comparable value (e.g., *string or Handle)
+  value(any) string     // converts the loaded value back to a string for display in the UI
 }
 
 type strategy int
 
 const (
-	// Standard is the default tracker, and is suitable for tracking mostly unique inputs.
+	// Standard is the default tracker, and is suitable for tracking mostly unique status updates.
 	Standard strategy = iota
-	// Unique is suitable for tracking repetitive inputs.
+	// Unique is suitable for tracking repetitive status updates.
 	Unique
 	// Fraction renders status updates to the UI as a proper fraction (x/y).
 	Fraction

@@ -227,21 +227,21 @@ func TestDraw(t *testing.T) {
 	}{
 		{
 			name:       "nominal terminal width of 80", // minWidth == 80
-			state:      pack(80, 5000),                 // 80 - len("processing (100%): ") == 61
+			state:      pack(80, 4700),                 // 80 - len("processing (100%): ") == 61
 			statusText: new("just a small fish in a big sea"),
-			want:       "processing ( 50%): just a small fish in a big sea",
+			want:       "processing ( 47%): just a small fish in a big sea",
 		},
 		{
 			name:       "status message truncated from the left and prepended with an ellipsis",
-			state:      pack(40, 5000), // 40 - len("processing (100%): ") == 21
+			state:      pack(40, 7100), // 40 - len("processing (100%): ") == 21
 			statusText: new("this is a very long status message that must be truncated"),
-			want:       "processing ( 50%): ... must be truncated",
+			want:       "processing ( 71%): ... must be truncated",
 		},
 		{
 			name:       "status message truncated from the left with no ellipsis prepended (terminal too narrow)",
-			state:      pack(22, 5000), // 22 - len("processing (100%): ") == 3
+			state:      pack(22, 9300), // 22 - len("processing (100%): ") == 3
 			statusText: new("short message"),
-			want:       "processing ( 50%): age",
+			want:       "processing ( 93%): age",
 		},
 	}
 	for _, tt := range tests {
