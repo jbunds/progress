@@ -20,7 +20,7 @@ Features include:
   - optionally supports an implementation via the `unique` package to reduce the memory footprint for suitable workloads (repetitive status updates)
 - very efficient:
   - throttles status updates at ~60 FPS, decoupling the progress status tracker from the caller program processing the workload
-  - uses packed `atomic.Uint32` types and bitwise operations to further reduce memory allocation and efficiently handle updates of internal state
+  - uses bit-packed `atomic.Uint32` types and bitwise operations to further reduce memory allocation and efficiently handle updates of internal state
   - uses `atomic.Uint64` and `atomic.Pointer` types to:
     - minimize memory allocation
     - impose minimal GC overhead
