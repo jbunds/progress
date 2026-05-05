@@ -46,10 +46,10 @@ const (
 type Option func(*Progress)
 
 // WithTracker allows callers to explicitly specify a status tracker, e.g.:
-//   progress.New(ctx, 100, os.Stderr, progress.WithTracker(progress.Fraction, 100))
-func WithTracker(s strategy, totalUnits uint64) Option {
+//   progress.New(ctx, 100, os.Stderr, progress.WithTracker(progress.Fraction))
+func WithTracker(s strategy) Option {
 	return func(p *Progress) {
-		p.tracker = getTracker(s, totalUnits)
+		p.tracker = getTracker(s, p.total.Load())
 	}
 }
 
@@ -103,16 +103,16 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix), // 12 + 3 + 4 == 19
 	}
 
+	p.prepareTerminal()
+	p.total.Store(min(totalUnits, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
+	p.state.Store(uint32(max(getTermWidth(), minWidth)) << 16)
+
 	for _, opt := range opts { opt(p) } // allows callers to override the default status tracker via the WithTracker Option
 
 	if _, ok := p.tracker.(*percentTracker); ok {
 		p.suffix      = "%)"
 		p.staticWidth = len(prefix) + pctFieldLen + len(p.suffix) // 12 + 3 + 2 == 17
 	}
-
-	p.prepareTerminal()
-	p.total.Store(min(totalUnits, maxSafeUnits)) // fall back to maxSafeUnits if totalUnits exceeds max precision
-	p.state.Store(uint32(max(getTermWidth(), minWidth)) << 16)
 
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // trap SIGWINCH to handle the terminal window being resized
 
