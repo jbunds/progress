@@ -43,6 +43,8 @@ Limitations:
 
 - the precision of percentage calculations starts to progressively degrade at ~18.4 million units of work
 
+See [![Go Reference](https://pkg.go.dev/badge/github.com/jbunds/progress.svg)](https://pkg.go.dev/github.com/jbunds/progress) for API documentation and [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jbunds/progress) for technical internal implementation details.
+
 ---
 
 #### Example Usage
