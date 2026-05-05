@@ -162,11 +162,12 @@ func (p *Progress) Report(n float64, status string) {
 	// with scale == 1e15 and newCurrent capped at 1e15, the maximum value of the numerator
 	// is ~1e19, which cleanly fits into a uint64 (math.MaxUint64 =~ 1.84e19)
 
-	res64 := (newCurrent * 10000 + (scale / 2)) / scale
+	res64        := (newCurrent * 10000 + (scale / 2)) / scale
 
 	newSigDigits := uint16(min(res64, math.MaxUint16))
 	oldState     := p.state.Load()
 	currentWidth := uint16(oldState >> 16) // preserve termWidth while updating state
+
 	p.state.Store(uint32(currentWidth) << 16 | uint32(newSigDigits))
 }
 
