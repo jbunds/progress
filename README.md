@@ -30,7 +30,7 @@ Features include:
   - uses `atomic.Uint64` and `atomic.Pointer` types to:
     - minimize memory allocation
     - impose minimal GC overhead
-    - enable fast and efficient UI synchronization via comparisons of string pointers (`atomic.Pointer[string]`), string handles (`unique.Handle[string]`), or `atomic.Uint64` values
+    - enable fast and efficient UI synchronization via comparisons of string pointers (`atomic.Pointer[string]`), string handles (`unique.Handle[string]`), and `atomic.Uint64` values
     - obviate mutex contention
 - supports two tracking modes:
   - weight-based accumulation: callers specify the total known amount of work (e.g., 100 tasks, known a prioi)
