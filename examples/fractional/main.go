@@ -16,8 +16,7 @@ func main() {
 	prog := progress.New(ctx, 0, os.Stderr)
 	defer prog.Close(ctx)
 
-	totalBudget := prog.InitialBudget()
-	simulateDiscovery(prog, "root", totalBudget, 0)
+	simulateDiscovery(prog, "root", prog.InitialBudget(), 0)
 }
 
 func simulateDiscovery(prog *progress.Progress, name string, budget float64, depth int) {
@@ -45,7 +44,7 @@ func simulateDiscovery(prog *progress.Progress, name string, budget float64, dep
 		time.Sleep(200 * time.Millisecond)
 
 		if rand.Float64() > 0.4 {
-			simulateDiscovery(prog, childName, currentShare, depth+1)
+			simulateDiscovery(prog, childName, currentShare, depth + 1)
 		} else {
 			processLeaf(prog, childName, currentShare)
 		}
