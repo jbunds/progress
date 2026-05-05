@@ -194,7 +194,7 @@ func TestReport(t *testing.T) {
 		{
 			name:      "fractional path allocation; verify safe accumulation of a very large amount of work",
 			total:     0,
-			unitsDone: math.MaxUint64 / 4, // ~4.6 million times larger than scale
+			unitsDone: math.MaxUint64 / 4, // ~4612 times larger than scale (1e15)
 			status:    "very large amount of work done",
 			want:      scale,              // budget not exceeded
 		},
