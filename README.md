@@ -42,7 +42,7 @@ Features include:
   - `progress.Percent`:  writes only the percentage calculation to the terminal
   - `progress.Fraction`: writes progress status as a proper fraction (x/y) given a prescribed fixed total units of work (y)
 - transparently handles pipes, redirections, and non-TTY environments
-- correctly handles UTF-8 strings passed by callers to provide status updates
+- correctly handles UTF-8 strings passed by callers
 
 Limitations:
 
