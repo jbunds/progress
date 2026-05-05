@@ -19,14 +19,19 @@ Features include:
   - uses `sync/atomic` to provide lock-free updates of internal state for highly-scaled concurrent workloads
   - optionally supports an implementation via the `unique` package to reduce the memory footprint for suitable workloads (repetitive status updates)
 - very efficient:
-  - throttles status updates at ~60 FPS, decoupling the progress status tracker from the caller program processing the workload
+  - optimized for low CPU usage, even at refresh rates beyond human perception
+  - the use of a background rendering loop throttled at ~60 FPS combined with `atomic` types:
+    - decouples the progress status tracker from the workers processing the workload
+    - allows workers to report progress updates to the tracker asynchronously
+    - ensures that UI rendering (which involves I/O and syscalls) never blocks the workers
+  - condenses all I/O operations into a single, atomic system call per frame, minimizing I/O latency
+  - skips redundant UI redraws, further minimizing I/O and ensuring the terminal is never overwhelmed
   - uses bit-packed `atomic.Uint32` types and bitwise operations to further reduce memory allocation and efficiently handle updates of internal state
   - uses `atomic.Uint64` and `atomic.Pointer` types to:
     - minimize memory allocation
     - impose minimal GC overhead
-    - enable fast comparisons via pointers
+    - enable fast and efficient UI synchronization via comparisons of string pointers (`atomic.Pointer[string]`), string handles (`unique.Handle[string]`), or `atomic.Uint64` values
     - obviate mutex contention
-  - optimized to minimize CPU resource consumption
 - supports two tracking modes:
   - weight-based accumulation: callers specify the total known amount of work (e.g., 100 tasks, known a prioi)
   - fractional allocation: callers add the relative share of the total budget as work is discovered (e.g., recursively walking a directory to process its contents)
