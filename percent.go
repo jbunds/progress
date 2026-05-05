@@ -1,10 +1,13 @@
 package progress
 
-import "sync/atomic"
-
 // (no-op) tracker for cases where status strings are not needed
-type percentTracker struct { current atomic.Uint64 }
+type percentTracker struct {}
 
-func (p *percentTracker) store(n float64, _ string) { p.current.Store(uint64(n)) }
-func (p *percentTracker) load()  any                { return p.current.Load()    }
-func (p *percentTracker) value(_ any)       string  { return ""                  }
+// TODO(jeff): ensure redundant redraws are skipped when new shares of scale
+//             are added to *Progress.current (resulting in a subsequent update
+//             to *Progress.state) per Report calls, but the very low-precision
+//             percentage rendered to the terminal does not change
+
+func (p *percentTracker) store(_ float64, _ string) {}
+func (p *percentTracker) load()  any                { return nil }
+func (p *percentTracker) value(_ any)       string  { return ""  }

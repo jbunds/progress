@@ -145,6 +145,7 @@ func (p *Progress) Report(n float64, status string) {
 	} else {
 		share = uint64(n)                                     // fractional path allocation mode: add the budget share directly
 	}
+
 	newCurrent := p.current.Add(share)
 	if newCurrent > scale { // cap at scale (100%)
 		newCurrent = scale
