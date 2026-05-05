@@ -11,9 +11,9 @@ type fractionTracker struct {
 	total   string        // denominator (static)
 }
 
-func (f *fractionTracker) store(n uint64, _ string) { f.current.Store(n)      } // stores  the numerator
-func (f *fractionTracker) load()  any               { return f.current.Load() } // returns the numerator
-func (f *fractionTracker) value(v any)      string  {
+func (f *fractionTracker) store(n float64, _ string) { f.current.Store(uint64(n)) } // stores  the numerator
+func (f *fractionTracker) load()  any                { return f.current.Load()    } // returns the numerator
+func (f *fractionTracker) value(v any)      string   {
 	if n, ok := v.(uint64); ok {
 		return strconv.FormatUint(n, 10) + "/" + f.total
 	}

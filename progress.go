@@ -135,7 +135,7 @@ func (p *Progress) AddTotal(n uint64) {
 //   if total >  0: n represents the relative weight of the work completed, and the progress percentage is calculated as n / totalUnits
 //   if total == 0: n represents the portion of the InitialBudget(), which must be divided among all sub-tasks by the caller
 func (p *Progress) Report(n float64, status string) {
-	p.tracker.store(p.unitsDone.Add(uint64(n)), status)
+	p.tracker.store(float64(p.unitsDone.Add(uint64(n))), status)
 
 	total := p.total.Load()
 
