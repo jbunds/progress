@@ -172,7 +172,7 @@ func (p *Progress) Report(weight float64, status string) {
 // Close stops the background renderer, writes the final completion frame, and restores the terminal cursor if needed.
 func (p *Progress) Close(ctx context.Context) {
 	p.closeOnce.Do(func() {
-		close(p.stopChan) // stop the background renderLoop
+		close(p.stopChan) // stop the renderLoop goroutine
 		<-p.doneChan      // block until renderLoop exits
 		p.finish(ctx)     // render the final frame to the terminal
 	})
@@ -180,13 +180,13 @@ func (p *Progress) Close(ctx context.Context) {
 
 // renderLoop periodically draws the progress line at ~60 FPS without impeding workers.
 func (p *Progress) renderLoop(ctx context.Context) {
-	if isTerminal(p.output) { _, _ = io.WriteString(p.output, "\033[?25l") } // hide the cursor
-
 	ticker := p.clock.tick()
 	defer ticker.Stop()
 
 	defer close(p.doneChan)
 	defer signal.Stop(p.resizeChan)
+
+	if isTerminal(p.output) { _, _ = io.WriteString(p.output, "\033[?25l") } // hide the cursor
 
 	for {
 		select {
@@ -272,6 +272,50 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 	return err
 }
 
+// prepareTerminal sets the line terminator character and ANSI escape sequences to be used when p.output (nominally os.Stderr) has not been piped or redirected.
+func (p *Progress) prepareTerminal() {
+	if isTerminal(p.output) {
+		p.clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
+		p.doneSeq  = "\r\033[?25h" // restores the cursor
+		p.lineTerm = ""
+	}
+}
+
+// finish renders the final progress frame to the terminal.
+func (p *Progress) finish(ctx context.Context) {
+	cause := context.Cause(ctx)
+
+	var output string
+	if cause != nil && !errors.Is(cause, context.Canceled) {
+		output = p.clearSeq + "stopped (" + cause.Error() + ")" + p.doneSeq
+	} else {
+		output = p.clearSeq + "processing (100%): done" + p.doneSeq
+	}
+
+	_, _ = io.WriteString(p.output, output)
+}
+
+// handleResize records the new terminal width to be respected by subsequent render cycles.
+func (p *Progress) handleResize() {
+	f, ok := p.output.(*os.File)
+	if !ok { return }
+
+	bufPtr   := p.buf.Load()
+	newWidth := getResizedTermWidth(f, p.staticWidth)
+	reqCap   := 4 * int(newWidth) + p.staticWidth
+
+	if bufPtr == nil || cap(*bufPtr) < reqCap { // grow the buffer when the terminal width is increased
+		newBuf := make([]byte, 0, reqCap)
+		p.buf.Store(&newBuf)
+	}
+
+	for { // atomically update termWidth while preserving concurrent percentage or status changes
+		oldState := p.state.Load()
+		newState := (oldState & 0xFFFF) | (uint32(newWidth) << 16) // pack newWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
+		if p.state.CompareAndSwap(oldState, newState) { break }
+	}
+}
+
 // truncateFromLeft constrains the length of progress status messages rendered to the terminal, properly handling utf-8 strings.
 func truncateFromLeft(s string, maxLen int) (string, bool) {
 	runeCount := utf8.RuneCountInString(s)
@@ -289,49 +333,6 @@ func truncateFromLeft(s string, maxLen int) (string, bool) {
 	return s[i:], maxLen > 3
 }
 
-// prepareTerminal sets the line terminator character and ANSI escape sequences to be used when p.output (nominally os.Stderr) has not been piped or redirected.
-func (p *Progress) prepareTerminal() {
-	if isTerminal(p.output) {
-		p.clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
-		p.doneSeq  = "\r\033[?25h" // restores the cursor
-		p.lineTerm = ""
-	}
-}
-
-// handleResize records the new terminal width to be respected by subsequent render cycles.
-func (p *Progress) handleResize() {
-	f, ok := p.output.(*os.File)
-	if !ok { return }
-
-	bufPtr   := p.buf.Load()
-	newWidth := p.getResizedTermWidth(f)
-	reqCap   := 4 * int(newWidth) + p.staticWidth
-
-	if bufPtr == nil || cap(*bufPtr) < reqCap { // grow the buffer when the terminal width is increased
-		newBuf := make([]byte, 0, reqCap)
-		p.buf.Store(&newBuf)
-	}
-
-	for { // atomically update termWidth while preserving concurrent percentage or status changes
-		oldState     := p.state.Load()
-		newState     := (oldState & 0xFFFF) | (uint32(newWidth) << 16) // pack newWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
-		if p.state.CompareAndSwap(oldState, newState) { break }
-	}
-}
-
-// finish renders the final progress frame to the terminal.
-func (p *Progress) finish(ctx context.Context) {
-	cause := context.Cause(ctx)
-
-	var output string
-	if cause != nil && !errors.Is(cause, context.Canceled) {
-		output = p.clearSeq + "stopped (" + cause.Error() + ")" + p.doneSeq
-	} else {
-		output = p.clearSeq + "processing (100%): done" + p.doneSeq
-	}
-	_, _ = io.WriteString(p.output, output)
-}
-
 // getTermWidth determines the width of the terminal window, which is used to format status messages.
 func getTermWidth(files ...*os.File) uint16 {
 	if len(files) == 0 { files = []*os.File{ os.Stderr } }
@@ -345,8 +346,8 @@ func getTermWidth(files ...*os.File) uint16 {
 }
 
 // getResizedTermWidth returns the current terminal width, enforcing p.staticWidth as the minimum layout threshold.
-func (p *Progress) getResizedTermWidth(f *os.File) uint16 {
-	width := p.staticWidth
+func getResizedTermWidth(f *os.File, staticWidth int) uint16 {
+	width := staticWidth
 	if w, _, err := term.GetSize(int(getFD(f))); err == nil && w > 0 {
 		width = max(width, w) // assume a human manually resized the terminal, so support terminal widths as narrow as p.staticWidth
 	}
@@ -354,8 +355,13 @@ func (p *Progress) getResizedTermWidth(f *os.File) uint16 {
 }
 
 // isTerminal determines if the specified writer is connected to a terminal.
-func isTerminal(w io.Writer) bool {
-	return !testing.Testing() && term.IsTerminal(getFD(w))
+func isTerminal(v any) bool {
+	if testing.Testing() { return false }
+	if os.Getenv("GITHUB_ACTIONS") == "true" || // https://docs.github.com/actions/reference/workflows-and-actions/variables
+	   os.Getenv("CI"            ) == "true" { return false }
+	fd := getFD(v)
+	if fd < 0 { return false }
+	return term.IsTerminal(fd)
 }
 
 // getFD returns the file descriptor of the provided argument.
