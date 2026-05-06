@@ -29,7 +29,7 @@ const (
 	// precision starts to degrade as the total number of work units approaches scale,
 	// but even at this limit, each unit of work represents at least 1 unit of scale
 	scale    uint64 = 1e15
-	minWidth uint16 = 80           // fallback for pipes, redirects, and non-tty outputs
+	minWidth uint16 = 80             // fallback for pipes, redirects, and non-tty outputs
 
 	pctFieldLen     = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
 	prefix          = "processing (" // prepended to each progress status line rendered to the terminal
