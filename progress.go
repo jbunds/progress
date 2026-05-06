@@ -339,12 +339,8 @@ func getTermWidth(files ...*os.File) uint16 {
 	if len(files) == 0 { files = []*os.File{ os.Stderr } }
 	width := int(minWidth)
 	for _, f := range files {
-		// although f.Fd() for os.Stderr == 2, the following check is performed to satisfy the gosec
-		// linter (otherwise gosec complains about possible integer overflow in the call to int(fd))
-		if fd, ok := getFD(f); ok {
-			if w, _, err := term.GetSize(int(fd)); err == nil {
-				width = max(width, w)
-			}
+		if w, _, err := term.GetSize(int(getFD(f))); err == nil {
+			width = max(width, w)
 		}
 	}
 	return uint16(width)
@@ -352,18 +348,13 @@ func getTermWidth(files ...*os.File) uint16 {
 
 // isTerminal determines if the specified writer is connected to a terminal.
 func isTerminal(w io.Writer) bool {
-	fd, ok := getFD(w)
-	return ok && term.IsTerminal(fd)
+	return !testing.Testing() && term.IsTerminal(getFD(w))
 }
 
-func getFD(w any) (int, bool) {
-	if f, ok := w.(interface{ Fd() uintptr }); ok {
-		fd := f.Fd()
-		if fd <= math.MaxInt && !testing.Testing() {
-			return int(fd), true
-		}
-	}
-	return -1, false
+// getFD returns the file descriptor of the provided argument.
+func getFD(w any) int {
+	if f, ok := w.(interface{ Fd() uintptr }); ok { return int(f.Fd()) }
+	return -1
 }
 
 // helpers for synchronous, deterministic tests

@@ -66,31 +66,27 @@ func TestNew(t *testing.T) {
 
 func TestGetTermWidth(t *testing.T) {
 	t.Parallel()
+
+	r, w, err := os.Pipe()
+	if err != nil { t.Error(err) }
+	t.Cleanup(func() { if err := r.Close(); err != nil { t.Log(err) } })
+	t.Cleanup(func() { if err := w.Close(); err != nil { t.Log(err) } })
+
 	tests := []struct {
 		name   string
-		output io.Writer
+		output *os.File
 		want   uint16
 	}{
 		{
-			name: "output file omitted",
-			want: minWidth,
-		},
-		{
-			name:   "output to os.Stderr",
-			output: os.Stderr,
+			name:  "falls back to minWidth for non-terminal files",
+			output: w, // pipes have no width
 			want:   minWidth,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			var got uint16
-			if tt.output == nil {
-				got = getTermWidth()
-			} else {
-				f, _ := tt.output.(*os.File)
-				got = getTermWidth(f)
-			}
+			got := getTermWidth(tt.output)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("getTermWidth(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
@@ -344,7 +340,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	p.state.Store(pack(minWidth, 0))
 
 	go p.renderLoop(t.Context())
-	defer p.Close(t.Context())
+	t.Cleanup(func() { p.Close(t.Context()) })
 
 	p.Report(11, "completed 11 units of work") // first report: 11/73
 	tickTrigger <- time.Now()
@@ -407,13 +403,15 @@ func TestClose(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.wantProg.total.Store(tt.total)
-			tt.wantProg.state.Store(pack(minWidth, 0))
 			ctx, cancel := context.WithCancelCause(t.Context())
 			got         := new(bytes.Buffer)
 			p           := New(ctx, tt.total, got)
+			tt.wantProg.total.Store(tt.total)
+			tt.wantProg.state.Store(pack(uint16(p.state.Load() >> 16), 0))
+
 			cancel(tt.err)
 			p.Close(ctx)
+
 			if diff := cmp.Diff(tt.wantOut, got.String()); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
