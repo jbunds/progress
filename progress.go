@@ -31,16 +31,16 @@ const (
 	scale    uint64 = 1e15
 	minWidth uint16 = 80           // fallback for pipes, redirects, and non-tty outputs
 
-	pctFieldLen   = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
-	prefix        = "processing (" // prepended to each progress status line rendered to the terminal
-	defaultSuffix = "%): "         // appended to each percentage status calculation rendered to the terminal
+	pctFieldLen     = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
+	prefix          = "processing (" // prepended to each progress status line rendered to the terminal
+	defaultSuffix   = "%): "         // appended to each percentage status calculation rendered to the terminal
 )
 
 // Option defines a functional configuration for Progress.
-// (exported to allow callers to create []*progress.Option to pass to New)
-type Option func(*Progress)
+type Option func(*Progress) // (exported to allow callers to create []*progress.Option to pass to New)
 
 // WithTracker allows callers to explicitly specify a status tracker, e.g.:
+//
 //   progress.New(ctx, 100, os.Stderr, progress.WithTracker(progress.Fraction))
 func WithTracker(s strategy) Option {
 	return func(p *Progress) {
@@ -51,21 +51,21 @@ func WithTracker(s strategy) Option {
 // Progress provides a throttled, concurrency-safe, high-precision status indicator for workloads.
 type Progress struct {
 	// shared state (atomic)
-	tracker       statusTracker  // tracks the current progress value
-	total         atomic.Uint64  // total work units; 0 for fractional path allocation; > 0 for weight-based accumulation
-	current       atomic.Uint64  // accumulates shares of scale as work is completed
-	state         atomic.Uint32  // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
-	lastState     atomic.Uint32  // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
-	lastStatusVal atomic.Value   // stores the result of the last tracker.Load()
+	tracker       statusTracker          // tracks the current progress status
+	total         atomic.Uint64          // total work units; 0 for fractional path allocation; > 0 for weight-based accumulation
+	current       atomic.Uint64          // accumulates shares of scale as work is completed
+	state         atomic.Uint32          // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
+	lastState     atomic.Uint32          // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
+	lastStatusVal atomic.Value           // stores the result of the last tracker.load()
+	buf           atomic.Pointer[[]byte] // pre-allocated, reusable buffer for writing status messages to the terminal
 
 	// configuration (read-only after construction)
-	buf           []byte         // reusable buffer for writing status messages to the terminal
 	output        io.Writer      // destination writer for the terminal-formatted work progress status updates
 	clock         clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
 	stopChan      chan struct{}  // signals the background rendering loop to perform final cleanup
 	doneChan      chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
 	drawNotify    chan struct{}  // used in tests to signal the completion of a draw cycle
-	resizeChan    chan os.Signal // handles terminal window resizing
+	resizeChan    chan os.Signal // handles terminal window resizing events via the syscall.SIGWINCH signal
 	staticWidth   int            // the static width reserved for the prefix prepended to each status message, e.g., "processing (7.4%): "
 	clearSeq      string         // ANSI escape sequence used to clear the current terminal line
 	doneSeq       string         // ANSI escape sequence used to restore the terminal cursor
@@ -79,13 +79,12 @@ type Progress struct {
 //
 // The value of the `totalUnits` parameter determines the accumulation mode used internally:
 //
-//    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known a priori)
-//    pass totalUnits == 0 for fractional path allocation (when totalUnits is not known a priori)
+//    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known)
+//    pass totalUnits == 0 for fractional path allocation (when totalUnits is unknown)
 func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Option) *Progress {
 	p := &Progress{
 		tracker:     &standardTracker{},
 		output:      output,
-		buf:         make([]byte, 0, 128), // pre-allocate to avoid heap growth during draw() cycles
 		stopChan:    make(chan struct{}),
 		doneChan:    make(chan struct{}),
 		resizeChan:  make(chan os.Signal, 1),
@@ -97,9 +96,14 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix), // 12 + 3 + 4 == 19
 	}
 
-	p.prepareTerminal()
 	p.total.Store(min(totalUnits, scale)) // fall back to scale if totalUnits exceeds max precision
-	p.state.Store(uint32(max(getTermWidth(), minWidth)) << 16)
+
+	termWidth := max(getTermWidth(), minWidth)
+	buf       := make([]byte, 0, 4 * int(termWidth) + p.staticWidth) // assume worst case where all UTF-8 characters in status strings are 4-bytes each
+
+	p.buf.Store(&buf)
+	p.prepareTerminal()
+	p.state.Store(uint32(termWidth) << 16)
 
 	for _, opt := range opts { opt(p) } // allows callers to override the default status tracker via the WithTracker Option
 
@@ -108,7 +112,7 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		p.staticWidth = len(prefix) + pctFieldLen + len(p.suffix) // 12 + 3 + 2 == 17
 	}
 
-	signal.Notify(p.resizeChan, syscall.SIGWINCH) // trap SIGWINCH to handle the terminal window being resized
+	signal.Notify(p.resizeChan, syscall.SIGWINCH) // listen for a SIGWINCH signal to handle the terminal window being resized
 
 	go p.renderLoop(ctx)
 
@@ -126,8 +130,8 @@ func (p *Progress) AddTotal(n uint64) {
 
 // Report updates the current progress status.
 //
-//   if total >  0: weight represents the relative weight of the work completed, and the progress percentage is calculated as weight / totalUnits
-//   if total == 0: weight represents the portion of the InitialBudget(), which must be apportioned among all sub-tasks by the caller
+//   if total >  0: weight represents the relative weight of the work completed, and the progress percentage is calculated as accumulated weight / totalUnits
+//   if total == 0: weight represents the portion of the InitialBudget(), which must be divided among all sub-tasks by the caller
 func (p *Progress) Report(weight float64, status string) {
 	p.tracker.store(uint64(weight), status)
 
@@ -149,22 +153,19 @@ func (p *Progress) Report(weight float64, status string) {
 	// capture 5 significant digits of the newCurrent value to be stored in the bit-packed
 	// p.state field (atomic.Uint32) while avoiding new memory allocations
 	//
-	// ((newCurrent * 10000 + (scale / 2)) / scale) converts the 1e15 scale to 5 significant
-	// digits (1e4) to prevent overflow
+	// ((newCurrent * 10000 + (scale / 2)) / scale) converts the 1e15 scale
+	// to 5 significant digits (1e4) to prevent overflow
 	//
 	// adding half of the total scale (the divisor) ensures precise
 	// rounding to avoid floor truncation during integer division
 	//
-	// however, the gosec linter is oblivious to the fact that newCurrent is capped
-	// at scale (1e15) above, so we must perform a little dance to reassure gosec...
-	//
-	// with scale == 1e15 and newCurrent capped at 1e15, the maximum value of the numerator
-	// is ~1e19, which cleanly fits into a uint64 (math.MaxUint64 =~ 1.84e19)
+	// with scale == 1e15 and newCurrent capped at scale, the maximum value of the
+	// numerator is ~1e19, which cleanly fits into a uint64 (math.MaxUint64 =~ 1.84e19)
 
 	scaledSigDigits  := (newCurrent * 10000 + (scale / 2)) / scale
 
-	newSigDigits := uint16(min(scaledSigDigits, math.MaxUint16))
-	termWidth    := uint16(p.state.Load() >> 16) // preserve termWidth while updating state
+	newSigDigits := uint16(min(scaledSigDigits, math.MaxUint16)) // satisfy gosec
+	termWidth    := uint16(p.state.Load() >> 16)                 // preserve termWidth while updating state
 
 	p.state.Store(uint32(termWidth) << 16 | uint32(newSigDigits))
 }
@@ -174,11 +175,11 @@ func (p *Progress) Close(ctx context.Context) {
 	p.closeOnce.Do(func() {
 		close(p.stopChan) // stop the background renderLoop
 		<-p.doneChan      // block until renderLoop exits
-		p.finish(ctx)
+		p.finish(ctx)     // render the final frame to the terminal
 	})
 }
 
-// renderLoop periodically draws the progress line at ~60 FPS without impeding the processing logic.
+// renderLoop periodically draws the progress line at ~60 FPS without impeding workers.
 func (p *Progress) renderLoop(ctx context.Context) {
 	if isTerminal(p.output) { _, _ = io.WriteString(p.output, "\033[?25l") } // hide the cursor
 
@@ -202,7 +203,7 @@ func (p *Progress) renderLoop(ctx context.Context) {
 	}
 }
 
-// sync compares the current progress and status text against the last rendered values to skip redundant redraws
+// sync compares the current progress and status text against the last rendered values to skip redundant redraws.
 func (p *Progress) sync() { // skips redundant redraws
 	currentState := p.state.Load()
 	currentVal   := p.tracker.load()
@@ -210,7 +211,7 @@ func (p *Progress) sync() { // skips redundant redraws
 	lastVal      := p.lastStatusVal.Load()
 
 	if currentState == lastState &&
-	   currentVal   == lastVal { return }
+	   currentVal   == lastVal { return } // status unchanged; skip redundant redraw
 
 	p.draw(currentState, currentVal)
 
@@ -241,29 +242,33 @@ func (p *Progress) draw(state uint32, val any) {
 	}
 }
 
-// writeStatus writes the progress status to to p.output (nominally the terminal's stderr) using the shared internal buffer to ensure an atomic system call.
+// writeStatus writes the progress status to to p.output (nominally os.Stderr) using the shared internal buffer to ensure an atomic system call.
 func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated bool) error {
-	p.buf = p.buf[:0]
-	p.buf = append(p.buf, p.clearSeq...)
-	p.buf = append(p.buf, prefix...)
+	bufPtr := p.buf.Load()
+	if bufPtr == nil { return nil }
+
+	buf := *bufPtr
+	buf  = buf[:0]
+	buf  = append(buf, p.clearSeq...)
+	buf  = append(buf, prefix...)
 
 	switch {
 	case pctSigDigits >= 9950: // 99.5% < pctSigDigits >  100% => "100%"
-		p.buf = append(p.buf, "100"...)
+		buf = append(buf, "100"...)
 	case pctSigDigits >=  995: // 9.95% < pctSigDigits > 99.4% => " 10%" - " 99%"
 		val := (pctSigDigits + 50) / 100 // round to the nearest 1% (995 -> 10; 9949 -> 99)
-		p.buf = append(p.buf, ' ', byte('0' + (val / 10)),      byte('0' + (val % 10)))
+		buf = append(buf, ' ', byte('0' + (val / 10)),      byte('0' + (val % 10)))
 	default:                   // 0.00% < pctSigDigits > 9.94% => "0.1%" - "9.9%"
 		val := (pctSigDigits + 5) / 10 // round to the nearest 0.1% (994 -> 9.9; 0 -> 0.0)
-		p.buf = append(p.buf,      byte('0' + (val / 10)), '.', byte('0' + (val % 10)))
+		buf = append(buf,      byte('0' + (val / 10)), '.', byte('0' + (val % 10)))
 	}
 
-	p.buf = append(p.buf, p.suffix...)
-	if truncated { p.buf = append(p.buf, "..."...) }
-	p.buf = append(p.buf, status...)
-	p.buf = append(p.buf, p.lineTerm...)
+	buf = append(buf, p.suffix...)
+	if truncated { buf = append(buf, "..."...) }
+	buf = append(buf, status...)
+	buf = append(buf, p.lineTerm...)
 
-	_, err := p.output.Write(p.buf) // single, atomic system call when p.buf <= 4kB, which p.buf can be reasonably expected to never exceed
+	_, err := p.output.Write(buf) // single, atomic system call when p.buf <= 4kB, which p.buf can be reasonably expected to never exceed
 
 	return err
 }
@@ -299,7 +304,14 @@ func (p *Progress) handleResize() {
 	f, ok := p.output.(*os.File)
 	if !ok { return }
 
+	bufPtr   := p.buf.Load()
 	newWidth := getTermWidth(f)
+	reqCap   := 4 * int(newWidth) + p.staticWidth
+
+	if bufPtr == nil || cap(*bufPtr) < reqCap { // grow the buffer when the terminal width is increased
+		newBuf := make([]byte, 0, reqCap)
+		p.buf.Store(&newBuf)
+	}
 
 	for { // atomically update termWidth while preserving concurrent percentage or status changes
 		oldState     := p.state.Load()
@@ -322,6 +334,40 @@ func (p *Progress) finish(ctx context.Context) {
 	_, _ = io.WriteString(p.output, output)
 }
 
+// getTermWidth determines the width of the terminal window, which is used to format status messages.
+func getTermWidth(files ...*os.File) uint16 {
+	if len(files) == 0 { files = []*os.File{ os.Stderr } }
+	width := int(minWidth)
+	for _, f := range files {
+		// although f.Fd() for os.Stderr == 2, the following check is performed to satisfy the gosec
+		// linter (otherwise gosec complains about possible integer overflow in the call to int(fd))
+		if fd, ok := getFD(f); ok {
+			if w, _, err := term.GetSize(int(fd)); err == nil {
+				width = max(width, w)
+			}
+		}
+	}
+	return uint16(width)
+}
+
+// isTerminal determines if the specified writer is connected to a terminal.
+func isTerminal(w io.Writer) bool {
+	fd, ok := getFD(w)
+	return ok && term.IsTerminal(fd)
+}
+
+func getFD(w any) (int, bool) {
+	if f, ok := w.(interface{ Fd() uintptr }); ok {
+		fd := f.Fd()
+		if fd <= math.MaxInt && !testing.Testing() {
+			return int(fd), true
+		}
+	}
+	return -1, false
+}
+
+// helpers for synchronous, deterministic tests
+
 type ticker interface {
 	ch() <-chan time.Time
 	Stop()
@@ -342,29 +388,3 @@ func (r *realClock ) tick() ticker { return &realTicker{ Ticker: time.NewTicker(
 func (f *fakeClock ) tick() ticker { return &fakeTicker{ c:      f.c                   }}
 
 func (f *fakeTicker) Stop() {}
-
-// isTerminal determines if the specified writer is connected to a terminal.
-func isTerminal(w io.Writer) bool {
-	if f, ok := w.(*os.File); ok {
-		if fd := f.Fd(); fd <= math.MaxInt && term.IsTerminal(int(fd)) && !testing.Testing() { // fd <= math.MaxInt satisfies gosec
-			return true
-		}
-	}
-	return false
-}
-
-// getTermWidth determines the width of the terminal window, which is used to format status messages.
-func getTermWidth(files ...*os.File) uint16 {
-	if len(files) == 0 { files = []*os.File{ os.Stderr } }
-	width := int(minWidth)
-	for _, f := range files {
-		// although f.Fd() for os.Stderr == 2, the following check is performed to satisfy the gosec
-		// linter (otherwise gosec complains about possible integer overflow in the call to int(fd))
-		if fd := f.Fd(); fd <= math.MaxInt && !testing.Testing() {
-			if w, _, err := term.GetSize(int(fd)); err == nil {
-				width = max(width, w)
-			}
-		}
-	}
-	return uint16(width)
-}

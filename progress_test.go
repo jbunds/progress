@@ -20,8 +20,8 @@ var opts = cmp.Options{
 	cmp.AllowUnexported(Progress{}, standardTracker{}, uniqueTracker{}, percentTracker{}, fractionTracker{}, realClock{}),
 	cmp.Transformer("unwrapBool",   func(t *atomic.Bool  ) bool   { return t.Load() }),
 	cmp.Transformer("unwrapUint64", func(i *atomic.Uint64) uint64 { return i.Load() }),
-	cmpopts.EquateComparable(atomic.Uint32{}, atomic.Uint64{}, atomic.Value{}, atomic.Pointer[string]{}),
-	cmpopts.IgnoreFields(Progress{}, "output", "stopChan", "doneChan", "resizeChan", "closeOnce", "drawNotify"), // non-trivial to compare
+	cmpopts.EquateComparable(atomic.Uint32{}, atomic.Uint64{}, atomic.Value{}, atomic.Pointer[string]{}, atomic.Pointer[[]byte]{}),
+	cmpopts.IgnoreFields(Progress{}, "buf", "output", "stopChan", "doneChan", "resizeChan", "closeOnce", "drawNotify"), // non-trivial to compare
 }
 
 func TestNew(t *testing.T) {
@@ -217,6 +217,11 @@ func pack(termWidth, pctSigDigits uint16) uint32 {
 	return uint32(termWidth) << 16 | uint32(pctSigDigits)
 }
 
+func buf() *[]byte {
+	buf := make([]byte, 0, 128)
+	return &buf
+}
+
 func TestDraw(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -254,6 +259,8 @@ func TestDraw(t *testing.T) {
 				suffix:      defaultSuffix,
 				staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
 			}
+
+			p.buf.Store(buf()) // initialize p.buf to prevent nil pointer panic in writeStatus
 
 			p.draw(tt.state, tt.statusText)
 
@@ -332,6 +339,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
 	}
 
+	p.buf.Store(buf()) // initialize p.buf to prevent nil pointer panic in writeStatus
 	p.total.Store(73)
 	p.state.Store(pack(minWidth, 0))
 
@@ -375,7 +383,6 @@ func TestClose(t *testing.T) {
 			wantOut: "processing (100%): done\n",
 			wantProg: &Progress{
 				tracker:     &standardTracker{},
-				buf:         []byte(""),
 				clock:       &realClock{ dur: 16 * time.Millisecond },
 				doneSeq:     "\n",
 				lineTerm:    "\n",
@@ -390,7 +397,6 @@ func TestClose(t *testing.T) {
 			wantOut:  "stopped (aborted for some reason)\n",
 			wantProg: &Progress{
 				tracker:     &standardTracker{},
-				buf:         []byte(""),
 				clock:       &realClock{ dur: 16 * time.Millisecond },
 				doneSeq:     "\n",
 				lineTerm:    "\n",
