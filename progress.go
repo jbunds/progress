@@ -52,9 +52,8 @@ func WithTracker(s strategy) Option {
 type Progress struct {
 	// shared state (atomic)
 	tracker       statusTracker  // tracks the current progress value
-	unitsDone     atomic.Uint64  // stores the numerator of the fraction tracker
-	total         atomic.Uint64  // 0 for fractional path allocation; > 0 for weight-based accumulation
-	current       atomic.Uint64  // accumulates shares of scale
+	total         atomic.Uint64  // total work units; 0 for fractional path allocation; > 0 for weight-based accumulation
+	current       atomic.Uint64  // accumulates shares of scale as work is completed
 	state         atomic.Uint32  // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
 	lastState     atomic.Uint32  // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
 	lastStatusVal atomic.Value   // stores the result of the last tracker.Load()
@@ -125,20 +124,20 @@ func (p *Progress) AddTotal(n uint64) {
 	p.total.Add(min(n, scale)) // fall back to scale if total exceeds max precision
 }
 
-// Report updates the current progress and status.
+// Report updates the current progress status.
 //
-//   if total >  0: n represents the relative weight of the work completed, and the progress percentage is calculated as n / totalUnits
-//   if total == 0: n represents the portion of the InitialBudget(), which must be divided among all sub-tasks by the caller
-func (p *Progress) Report(n float64, status string) {
-	p.tracker.store(float64(p.unitsDone.Add(uint64(n))), status)
+//   if total >  0: weight represents the relative weight of the work completed, and the progress percentage is calculated as weight / totalUnits
+//   if total == 0: weight represents the portion of the InitialBudget(), which must be apportioned among all sub-tasks by the caller
+func (p *Progress) Report(weight float64, status string) {
+	p.tracker.store(uint64(weight), status)
 
 	total := p.total.Load()
 
 	var share uint64
 	if total > 0 {
-		share = uint64((n / float64(total)) * float64(scale)) //  weight-based accumulation mode: calculate the share of the total
+		share = uint64((weight * float64(scale)) / float64(total)) //  weight-based accumulation mode: calculate the share of the total, maintaining precision
 	} else {
-		share = uint64(n)                                     // fractional path allocation mode: add the budget share directly
+		share = uint64(weight)                                     // fractional path allocation mode: add the share of the budget directly
 	}
 
 	newCurrent := p.current.Add(share)
@@ -147,11 +146,11 @@ func (p *Progress) Report(n float64, status string) {
 		p.current.Store(scale)
 	}
 
-	// capture 5 significant digits of the newCurrent value to be stored in the bit-packed p.state
-	// field (atomic.Uint32) while avoiding new memory allocations to mitigate GC pressure
+	// capture 5 significant digits of the newCurrent value to be stored in the bit-packed
+	// p.state field (atomic.Uint32) while avoiding new memory allocations
 	//
 	// ((newCurrent * 10000 + (scale / 2)) / scale) converts the 1e15 scale to 5 significant
-	// digits (1e4) per the "res64" uint64-typed variable to prevent overflow
+	// digits (1e4) to prevent overflow
 	//
 	// adding half of the total scale (the divisor) ensures precise
 	// rounding to avoid floor truncation during integer division
@@ -162,13 +161,12 @@ func (p *Progress) Report(n float64, status string) {
 	// with scale == 1e15 and newCurrent capped at 1e15, the maximum value of the numerator
 	// is ~1e19, which cleanly fits into a uint64 (math.MaxUint64 =~ 1.84e19)
 
-	res64        := (newCurrent * 10000 + (scale / 2)) / scale
+	scaledSigDigits  := (newCurrent * 10000 + (scale / 2)) / scale
 
-	newSigDigits := uint16(min(res64, math.MaxUint16))
-	oldState     := p.state.Load()
-	currentWidth := uint16(oldState >> 16) // preserve termWidth while updating state
+	newSigDigits := uint16(min(scaledSigDigits, math.MaxUint16))
+	termWidth    := uint16(p.state.Load() >> 16) // preserve termWidth while updating state
 
-	p.state.Store(uint32(currentWidth) << 16 | uint32(newSigDigits))
+	p.state.Store(uint32(termWidth) << 16 | uint32(newSigDigits))
 }
 
 // Close stops the background renderer, writes the final completion frame, and restores the terminal cursor if needed.

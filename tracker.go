@@ -4,9 +4,9 @@ import "strconv"
 
 // statusTracker tracks the current work completion progress status.
 type statusTracker interface {
-  store(float64, string) // handles interning / storage of the current status; float64 to support Report(n, ...)s of fractional weights, i.e., non-integer n
-  load()     any         // returns the comparable value (e.g., *string or Handle)
-  value(any) string      // converts the loaded value back to a string for display in the UI
+  store(uint64, string) // handles interning / storage of the current status
+  load()     any        // returns the comparable value (e.g., *string or Handle)
+  value(any) string     // converts the loaded value back to a string for display in the UI
 }
 
 type strategy int

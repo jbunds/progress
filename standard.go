@@ -5,7 +5,7 @@ import "sync/atomic"
 // standard tracker for mostly unique status strings
 type standardTracker struct { ptr atomic.Pointer[string] }
 
-func (s *standardTracker) store(_ float64, status string) {
+func (s *standardTracker) store(_ uint64, status string) {
 	if p := s.ptr.Load(); p != nil && *p == status { return }
 	s.ptr.Store(&status)
 }

@@ -8,6 +8,6 @@ type percentTracker struct {}
 //             to *Progress.state) per Report calls, but the very low-precision
 //             percentage rendered to the terminal does not change
 
-func (p *percentTracker) store(_ float64, _ string) {}
-func (p *percentTracker) load()  any                { return nil }
-func (p *percentTracker) value(_ any)       string  { return ""  }
+func (p *percentTracker) store(_ uint64, _ string) {}
+func (p *percentTracker) load()  any               { return nil }
+func (p *percentTracker) value(_ any)      string  { return ""  }
