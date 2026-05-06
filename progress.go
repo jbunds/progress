@@ -268,7 +268,7 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 	buf = append(buf, status...)
 	buf = append(buf, p.lineTerm...)
 
-	_, err := p.output.Write(buf) // single, atomic system call when p.buf <= 4kB, which p.buf can be reasonably expected to never exceed
+	_, err := p.output.Write(buf) // single, atomic system call when p.buf <= PIPE_BUF, which p.buf can be reasonably expected to rarely exceed
 
 	return err
 }
