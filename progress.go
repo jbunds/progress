@@ -30,7 +30,6 @@ const (
 	// but even at this limit, each unit of work represents at least 1 unit of scale
 	scale    uint64 = 1e15
 	minWidth uint16 = 80             // fallback for pipes, redirects, and non-tty outputs
-
 	pctFieldLen     = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
 	prefix          = "processing (" // prepended to each progress status line rendered to the terminal
 	defaultSuffix   = "%): "         // appended to each percentage status calculation rendered to the terminal
@@ -203,7 +202,7 @@ func (p *Progress) renderLoop(ctx context.Context) {
 	}
 }
 
-// sync compares the current progress and status text against the last rendered values to skip redundant redraws.
+// sync performs a state-aware redraw, skipping redundant I/O if the progress and status values haven't changed since the last render.
 func (p *Progress) sync() { // skips redundant redraws
 	currentState := p.state.Load()
 	currentVal   := p.tracker.load()
@@ -305,7 +304,7 @@ func (p *Progress) handleResize() {
 	if !ok { return }
 
 	bufPtr   := p.buf.Load()
-	newWidth := getTermWidth(f)
+	newWidth := p.getResizedTermWidth(f)
 	reqCap   := 4 * int(newWidth) + p.staticWidth
 
 	if bufPtr == nil || cap(*bufPtr) < reqCap { // grow the buffer when the terminal width is increased
@@ -315,8 +314,7 @@ func (p *Progress) handleResize() {
 
 	for { // atomically update termWidth while preserving concurrent percentage or status changes
 		oldState     := p.state.Load()
-		curSigDigits :=  uint16(oldState & 0xFFFF)                      // drop upper 16 bits (old termWidth), and preserve lower 16 bits (pctSigDigits)
-		newState     := (uint32(newWidth) << 16) | uint32(curSigDigits) // pack newWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
+		newState     := (oldState & 0xFFFF) | (uint32(newWidth) << 16) // pack newWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
 		if p.state.CompareAndSwap(oldState, newState) { break }
 	}
 }
@@ -344,6 +342,15 @@ func getTermWidth(files ...*os.File) uint16 {
 		}
 	}
 	return uint16(width)
+}
+
+// getResizedTermWidth returns the current terminal width, enforcing p.staticWidth as the minimum layout threshold.
+func (p *Progress) getResizedTermWidth(f *os.File) uint16 {
+	width := p.staticWidth
+	if w, _, err := term.GetSize(int(getFD(f))); err == nil && w > 0 {
+		width = max(width, w) // assume a human manually resized the terminal, so support terminal widths as narrow as p.staticWidth
+	}
+	return uint16(width & 0xFFFF)
 }
 
 // isTerminal determines if the specified writer is connected to a terminal.

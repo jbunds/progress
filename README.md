@@ -13,6 +13,7 @@ Incremental calculations retain high-precision, while imposing minimal overhead 
 
 Features include:
 
+- race-free by design
 - context-aware:
   - correctly handles cancellation of the parent context, ensuring a clean exit under reasonable circumstances
 - concurrency-safe and well-suited to highly-scaled concurrent processing systems:
@@ -43,6 +44,7 @@ Features include:
   - `progress.Fraction`: writes progress status as a proper fraction (x/y) given a prescribed fixed total units of work (y)
 - transparently handles pipes, redirections, and non-TTY environments
 - correctly handles UTF-8 strings passed by callers
+- supports concurrency-safe terminal window resizing, dynamically adapting the layout, formatting the rendered output accordingly, and ensuring layout and output integrity during concurrent writes to the terminal
 
 Limitations:
 
