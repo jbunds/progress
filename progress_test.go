@@ -53,7 +53,7 @@ func TestNew(t *testing.T) {
 			ctx := t.Context()
 			buf := new(bytes.Buffer)
 			got := New(ctx, tt.totalUnits, buf)
-			t.Cleanup(func() { got.Close(ctx) })
+			t.Cleanup(func() { got.Close() })
 			if diff := cmp.Diff(tt.wantTotal, got.total.Load(), opts...); diff != "" {
 				t.Errorf("New(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
@@ -110,7 +110,7 @@ func TestInitialBudget(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
 			p   := New(ctx, 0, io.Discard)
-			t.Cleanup(func() { p.Close(ctx) })
+			t.Cleanup(func() { p.Close() })
 			got := p.InitialBudget()
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("InitialBudget(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -142,7 +142,7 @@ func TestAddTotal(t *testing.T) {
 			ctx := t.Context()
 			p   := New(ctx, 0, io.Discard)
 			p.AddTotal(tt.units)
-			t.Cleanup(func() { p.Close(ctx) })
+			t.Cleanup(func() { p.Close() })
 			if diff := cmp.Diff(tt.want, p.total.Load()); diff != "" {
 				t.Errorf("AddTotal(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
@@ -200,7 +200,7 @@ func TestReport(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
 			p   := New(ctx, tt.total, io.Discard)
-			t.Cleanup(func() { p.Close(ctx) })
+			t.Cleanup(func() { p.Close() })
 			for range 3 { p.Report(tt.unitsDone, tt.status) }
 			if diff := cmp.Diff(tt.want, p.current.Load()); diff != "" {
 				t.Errorf("current progress was not updated (-want +got):\n%s", diff)
@@ -305,8 +305,7 @@ func TestRenderLoop(t *testing.T) {
 	p.total.Store(100)
 	p.state.Store(pack(minWidth, 0))
 
-	ctx := t.Context()
-	go p.renderLoop(ctx)
+	go p.renderLoop(t.Context())
 
 	p.Report(10, "working...")
 	tickAndExpectDraw()
@@ -314,7 +313,7 @@ func TestRenderLoop(t *testing.T) {
 	p.Report(0, "working...") // redundant report
 	tickAndExpectSkip()
 
-	t.Cleanup(func() { p.Close(ctx) })
+	t.Cleanup(func() { p.Close() })
 }
 
 func TestFractionTrackerRedraw(t *testing.T) {
@@ -340,7 +339,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	p.state.Store(pack(minWidth, 0))
 
 	go p.renderLoop(t.Context())
-	t.Cleanup(func() { p.Close(t.Context()) })
+	t.Cleanup(func() { p.Close() })
 
 	p.Report(11, "completed 11 units of work") // first report: 11/73
 	tickTrigger <- time.Now()
@@ -410,7 +409,7 @@ func TestClose(t *testing.T) {
 			tt.wantProg.state.Store(pack(uint16(p.state.Load() >> 16), 0))
 
 			cancel(tt.err)
-			p.Close(ctx)
+			p.Close()
 
 			if diff := cmp.Diff(tt.wantOut, got.String()); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)

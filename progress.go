@@ -178,28 +178,34 @@ syncState: // derive the UI state from the successfully-committed p.current upda
 	}
 }
 
-// Close stops the background renderer, writes the final completion frame, and restores the terminal cursor if needed.
-func (p *Progress) Close(ctx context.Context) {
+// Close stops the background renderer and waits for cleanup to complete.
+func (p *Progress) Close() {
 	p.closeOnce.Do(func() {
 		close(p.stopChan) // stop the renderLoop goroutine
 		<-p.doneChan      // block until renderLoop exits
-		p.finish(ctx)     // render the final frame to the terminal
 	})
 }
 
 // renderLoop periodically draws the progress line at ~60 FPS without impeding workers.
-func (p *Progress) renderLoop(ctx context.Context) {
+func (p *Progress) renderLoop(parentCtx context.Context) {
+	ctx, stop := signal.NotifyContext(parentCtx,
+		os.Interrupt,    // interrupt signal (ctrl+c)
+		syscall.SIGTERM, // kill signal
+		syscall.SIGHUP)  // terminal closed signal
+	defer stop()         // restore default signal behavior when the loop exits
+
 	ticker := p.clock.tick()
 	defer ticker.Stop()
 
 	defer close(p.doneChan)
 	defer signal.Stop(p.resizeChan)
+	defer p.finish(ctx) // render the final frame to the terminal and perform any necessary cleanup
 
 	if isTerminal(p.output) { _, _ = io.WriteString(p.output, "\033[?25l") } // hide the cursor
 
 	for {
 		select {
-		case <-ctx.Done():   // parent context canceled
+		case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
 			return
 		case <-p.stopChan:   // Close() called
 			return
