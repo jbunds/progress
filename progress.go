@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"math"
 	"os"
 	"os/signal"
 	"sync"
@@ -122,9 +121,13 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 func (p *Progress) InitialBudget() float64 { return float64(scale) }
 
 // AddTotal dynamically increases the total work budget as new tasks are discovered.
-// It is concurrency-safe and can be called concurrently with Report().
+// It is concurrency-safe and ensures the total budget never exceeds scale.
 func (p *Progress) AddTotal(n uint64) {
-	p.total.Add(min(n, scale)) // fall back to scale if total exceeds max precision
+	for {
+		oldTotal := p.total.Load()
+		newTotal := min(oldTotal + n, scale) // fall back to scale if total exceeds max precision
+		if p.total.CompareAndSwap(oldTotal, newTotal) { break }
+	}
 }
 
 // Report updates the current progress status.
@@ -134,6 +137,7 @@ func (p *Progress) AddTotal(n uint64) {
 func (p *Progress) Report(weight float64, status string) {
 	p.tracker.store(uint64(weight), status)
 
+syncCurrent:
 	total := p.total.Load()
 
 	var share uint64
@@ -143,12 +147,14 @@ func (p *Progress) Report(weight float64, status string) {
 		share = uint64(weight)                                     // fractional path allocation mode: add the share of the budget directly
 	}
 
-	newCurrent := p.current.Add(share)
-	if newCurrent > scale { // cap at scale (100%)
-		newCurrent = scale
-		p.current.Store(scale)
+	oldCurrent := p.current.Load()
+	newCurrent := min(oldCurrent + share, scale) // cap at scale (100%)
+
+	if !p.current.CompareAndSwap(oldCurrent, newCurrent) {
+		goto syncCurrent // handle a concurrent Report or AddTotal call
 	}
 
+syncState: // derive the UI state from the successfully-committed p.current update above
 	// capture 5 significant digits of the newCurrent value to be stored in the bit-packed
 	// p.state field (atomic.Uint32) while avoiding new memory allocations
 	//
@@ -161,12 +167,15 @@ func (p *Progress) Report(weight float64, status string) {
 	// with scale == 1e15 and newCurrent capped at scale, the maximum value of the
 	// numerator is ~1e19, which cleanly fits into a uint64 (math.MaxUint64 =~ 1.84e19)
 
-	scaledSigDigits  := (newCurrent * 10000 + (scale / 2)) / scale
+	oldState        := p.state.Load()
+	scaledSigDigits := (newCurrent * 10000 + (scale / 2)) / scale
+	oldSigDigits    := uint16(oldState        & 0xFFFF)
+	newSigDigits    := uint16(scaledSigDigits & 0xFFFF) // satisfy gosec
+	newState        := (oldState & 0xFFFF0000) | uint32(max(newSigDigits, oldSigDigits)) // ensure motonicity and preserve termWidth
 
-	newSigDigits := uint16(min(scaledSigDigits, math.MaxUint16)) // satisfy gosec
-	termWidth    := uint16(p.state.Load() >> 16)                 // preserve termWidth while updating state
-
-	p.state.Store(uint32(termWidth) << 16 | uint32(newSigDigits))
+	if !p.state.CompareAndSwap(oldState, newState) {
+		goto syncState // handle concurrent Report call or terminal resize event
+	}
 }
 
 // Close stops the background renderer, writes the final completion frame, and restores the terminal cursor if needed.
