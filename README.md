@@ -13,35 +13,39 @@ Incremental calculations retain high-precision, while imposing minimal overhead 
 
 Features include:
 
-- race-free by design
+- race-free and lock-free by design:
+  - concurrency-safe and well-suited to highly-scaled concurrent processing systems
+  - uses Go concurrency primitives for synchronization
+  - uses `atomic.Uint64` and `atomic.Pointer` types to:
+    - provide lock-free updates of internal state for highly-scaled concurrent workloads
+    - obviate mutex contention
+    - minimize memory allocation and impose minimal GC overhead
+    - enable fast and efficient UI synchronization via comparisons of:
+      - string pointers (`atomic.Pointer[string]`)
+      - string handles (`unique.Handle[string]`)
+      - `atomic.Uint64` values
 - context-aware:
   - correctly handles cancellation of the parent context, ensuring a clean exit under reasonable circumstances
-- concurrency-safe and well-suited to highly-scaled concurrent processing systems:
-  - uses `sync/atomic` to provide lock-free updates of internal state for highly-scaled concurrent workloads
-  - optionally supports an implementation via the `unique` package to reduce the memory footprint for suitable workloads (repetitive status updates)
-- very efficient:
+- very efficient with minimal memory footprint:
   - optimized for low CPU usage, even at refresh rates beyond human perception
   - the use of a background rendering loop throttled at ~60 FPS combined with `atomic` types:
     - decouples the progress status tracker from the workers processing the workload
     - allows workers to report progress updates to the tracker asynchronously
     - ensures that UI rendering (which involves I/O and syscalls) never blocks the workers
+  - dynamically pre-allocates a concurrency-safe, optimally-sized reusable `atomic.Pointer[[]byte]` buffer for all I/O:
+    - increased dynamically as needed by a terminal window resize event listener
   - condenses all I/O operations into a single, atomic system call per frame, minimizing I/O latency
   - skips redundant UI redraws, further minimizing I/O and ensuring the terminal is never overwhelmed
   - uses bit-packed `atomic.Uint32` types and bitwise operations to further reduce memory allocation and efficiently handle updates of internal state
-  - uses `atomic.Uint64` and `atomic.Pointer` types to:
-    - minimize memory allocation
-    - impose minimal GC overhead
-    - enable fast and efficient UI synchronization via comparisons of string pointers (`atomic.Pointer[string]`), string handles (`unique.Handle[string]`), and `atomic.Uint64` values
-    - obviate mutex contention
 - supports two tracking modes:
-  - weight-based accumulation: callers specify the total known amount of work (e.g., 100 tasks, known a prioi)
-  - fractional allocation: callers add the relative share of the total budget as work is discovered (e.g., recursively walking a directory to process its contents)
+  - **weight-based accumulation**: callers specify the total known amount of work (e.g., 100 tasks)
+  - **fractional allocation**: callers add the relative share of the total budget as work is discovered (e.g., recursively traversing a directory to process its contents)
 - supports multiple progress status tracking implementations which are well-suited to different sets of inputs:
-  - `progress.Standard`: suitable for mostly unique status updates
-  - `progress.Unique`:   suitable for mostly repetitive status updates
+  - `progress.Standard`: suitable for mostly unique status updates (uses `atomic.Pointer[string]`)
+  - `progress.Unique`:   suitable for mostly repetitive status updates (uses `atomic.Value` and `unique.Handle[string]` to canonicalize status, further reducing memory footprint)
 - supports multiple progress status formats:
   - `progress.Percent`:  writes only the percentage calculation to the terminal
-  - `progress.Fraction`: writes progress status as a proper fraction (x/y) given a prescribed fixed total units of work (y)
+  - `progress.Fraction`: writes progress status as a proper fraction (`x/y`) given a prescribed fixed total units of work (`y`)
 - transparently handles pipes, redirections, and non-TTY environments
 - correctly handles UTF-8 strings passed by callers
 - supports concurrency-safe terminal window resizing, dynamically adapting the layout, formatting the rendered output accordingly, and ensuring layout and output integrity during concurrent writes to the terminal
@@ -58,3 +62,11 @@ See [![Go Reference](https://pkg.go.dev/badge/github.com/jbunds/progress.svg)](h
 #### Example Usage
 
 See the [`examples`](./examples) directory for examples of the modal API.
+
+---
+
+#### Motivation
+
+This library originated as an experiement to satisfy the author's curiosity about the practical application of modern Go features (e.g., `context`, `sync/atomic`, `unique`) in a context where concurrency is paramount after a nearly eight-year break from coding Go.
+
+The implementation was then iteratively optimized well beyond the point of overengineering, for fun and as a learning exercise.
