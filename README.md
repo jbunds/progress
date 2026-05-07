@@ -11,6 +11,14 @@ The `progress` package provides status updates to the terminal as units of work 
 
 Incremental calculations retain high-precision, while imposing minimal overhead upon callers.
 
+---
+
+#### Example Usage
+
+See the [`examples`](./examples) directory for examples of the modal API.
+
+---
+
 Features include:
 
 - race-free and lock-free by design:
@@ -56,12 +64,6 @@ Limitations:
   - a workload capacity limited to 1 quadrillion units still allows for extremely fine-grained budget splitting and / or extremely deep recursion
 
 See [![Go Reference](https://pkg.go.dev/badge/github.com/jbunds/progress.svg)](https://pkg.go.dev/github.com/jbunds/progress) for API documentation and [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jbunds/progress) for technical internal implementation details.
-
----
-
-#### Example Usage
-
-See the [`examples`](./examples) directory for examples of the modal API.
 
 ---
 
