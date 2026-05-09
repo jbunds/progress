@@ -62,6 +62,8 @@ Limitations:
 
 - the precision of percentage calculations starts to progressively degrade at ~1 quadrillion (1e15) units of work
   - a workload capacity limited to 1 quadrillion units still allows for extremely fine-grained budget splitting and / or extremely deep recursion
+- probably won't work on Windows, e.g., correctly handling terminal resize events
+- truncated status updates may render incorrectly in terminals which lack UTF-8 support
 
 See [![Go Reference](https://pkg.go.dev/badge/github.com/jbunds/progress.svg)](https://pkg.go.dev/github.com/jbunds/progress) for API documentation and [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jbunds/progress) for technical internal implementation details.
 
@@ -72,3 +74,11 @@ See [![Go Reference](https://pkg.go.dev/badge/github.com/jbunds/progress.svg)](h
 This library originated as an experiement to satisfy the author's curiosity about the practical application of modern, idiomatic Go features (e.g., `context`, `sync/atomic`, `unique`) in a context where concurrency is paramount after a nearly eight-year break from coding Go, back when 1.10 was the latest release.
 
 The implementation was then iteratively optimized well beyond the point of overengineering, for fun and as a learning exercise.
+
+---
+
+#### Further Reading // Viewing
+
+- [Zig progress bar](https://andrewkelley.me/post/zig-new-cli-progress-bar-explained.html) - [Andrew Kelley](https://andrewkelley.me/)
+- [Why Progress Bars Don't Move Smoothly](https://www.youtube.com/watch?v=iZnLZFRylbs) - [Tom Scott](https://www.youtube.com/@TomScottGo)
+- [Progress Bars](https://www.youtube.com/watch?v=uHh0qpc1BR4) - [Computerphile](https://www.youtube.com/@Computerphile)
