@@ -6,23 +6,30 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/jbunds/progress"
 )
 
 func main() {
-	ctx  := context.Background()
-	prog := progress.New(ctx, 0, os.Stderr)
-	defer prog.Close(ctx)
+	ctx, stop := signal.NotifyContext(context.Background(),
+		os.Interrupt,    // interrupt signal (ctrl+c)
+		syscall.SIGTERM, // kill signal
+		syscall.SIGHUP)  // terminal closed signal
+	defer stop()
 
-	simulateDiscovery(prog, "root", prog.InitialBudget(), 0)
+	prog := progress.New(ctx, 0, os.Stderr)
+	defer prog.Close()
+
+	simulateDiscovery(ctx, prog, "root", prog.InitialBudget(), 0)
 }
 
-func simulateDiscovery(prog *progress.Progress, name string, budget float64, depth int) {
+func simulateDiscovery(ctx context.Context, prog *progress.Progress, name string, budget float64, depth int) {
 	if budget < 1e-6 { return } // floating point "zero" check
 	if depth > 2 {
-		processLeaf(prog, name, budget)
+		processLeaf(ctx, prog, name, budget)
 		return
 	}
 
@@ -31,6 +38,15 @@ func simulateDiscovery(prog *progress.Progress, name string, budget float64, dep
 	remaining   := budget
 
 	for i := range numChildren {
+		childName := fmt.Sprintf("%s/node_%d", name, i)
+		prog.Report(0, fmt.Sprintf("scanning %s...", childName))
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(200 * time.Millisecond):
+		}
+
 		var currentShare float64
 		if i == numChildren - 1 {
 			currentShare = remaining
@@ -39,19 +55,19 @@ func simulateDiscovery(prog *progress.Progress, name string, budget float64, dep
 			remaining   -= currentShare
 		}
 
-		childName := fmt.Sprintf("%s/node_%d", name, i)
-		prog.Report(0, fmt.Sprintf("scanning %s...", childName))
-		time.Sleep(200 * time.Millisecond)
-
 		if rand.Float64() > 0.4 {
-			simulateDiscovery(prog, childName, currentShare, depth + 1)
+			simulateDiscovery(ctx, prog, childName, currentShare, depth + 1)
 		} else {
-			processLeaf(prog, childName, currentShare)
+			processLeaf(ctx, prog, childName, currentShare)
 		}
 	}
 }
 
-func processLeaf(prog *progress.Progress, name string, budget float64) {
-	time.Sleep(500 * time.Millisecond)
-	prog.Report(budget, fmt.Sprintf("finished: %s", name))
+func processLeaf(ctx context.Context, prog *progress.Progress, name string, budget float64) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(500 * time.Millisecond):
+		prog.Report(budget, fmt.Sprintf("finished: %s", name))
+	}
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/jbunds/progress"
@@ -17,19 +19,28 @@ type task struct {
 }
 
 func main() {
-	ctx  := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(),
+		os.Interrupt,    // interrupt signal (ctrl+c)
+		syscall.SIGTERM, // kill signal
+		syscall.SIGHUP)  // terminal closed signal
+	defer stop()
+
 	prog := progress.New(ctx, 0, os.Stderr)
-	defer prog.Close(ctx)
+	defer prog.Close()
 
-	workload := randWork(100)       // 100 random tasks of varying weight
+	workload := randWork(100)          // 100 random tasks of varying weight
 
-	for _, task := range workload { // workload discovery
-		prog.AddTotal(task.weight)    // report to the progress tracker that a weighted task was discovered
+	for _, task := range workload {    // workload discovery
+		prog.AddTotal(task.weight)     // report to the progress tracker that a weighted task was discovered
 	}
 
-	for i, task := range workload { // workload processing
-		time.Sleep(task.delay)        // simulate work
-		prog.Report(float64(task.weight), fmt.Sprintf("task %d finished", i))
+	for i, task := range workload {    // workload processing
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(task.delay): // simulate work
+			prog.Report(float64(task.weight), fmt.Sprintf("task %d finished", i))
+		}
 	}
 }
 
