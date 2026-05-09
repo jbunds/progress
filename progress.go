@@ -35,7 +35,7 @@ const (
 )
 
 // Option defines a functional configuration for Progress.
-type Option func(*Progress) // (exported to allow callers to create []*progress.Option to pass to New)
+type Option func(*Progress) // exported to allow callers to create []*progress.Option to pass to New(...)
 
 // WithTracker allows callers to explicitly specify a status tracker, e.g.:
 //
@@ -46,7 +46,8 @@ func WithTracker(s strategy) Option {
 	}
 }
 
-// Progress provides a throttled, concurrency-safe, high-precision status indicator for workloads.
+// Progress implements a throttled, concurrency-safe,
+// high-precision status indicator for workloads.
 type Progress struct {
 	// shared state (atomic)
 	tracker       statusTracker          // tracks the current progress status
@@ -58,7 +59,7 @@ type Progress struct {
 	buf           atomic.Pointer[[]byte] // pre-allocated, reusable buffer for writing status messages to the terminal
 
 	// configuration (read-only after construction)
-	output        io.Writer      // destination writer for the terminal-formatted work progress status updates
+	output        io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)
 	clock         clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
 	stopChan      chan struct{}  // signals the background rendering loop to perform final cleanup
 	doneChan      chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
@@ -117,7 +118,8 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 	return p
 }
 
-// InitialBudget returns the full internal scale (100%) to be used as the starting budget for tracking fractional progress.
+// InitialBudget returns the full internal scale (100%) to be used
+// as the starting budget for tracking fractional progress.
 func (p *Progress) InitialBudget() float64 { return float64(scale) }
 
 // AddTotal dynamically increases the total work budget as new tasks are discovered.
@@ -132,8 +134,11 @@ func (p *Progress) AddTotal(n uint64) {
 
 // Report updates the current progress status.
 //
-//   if total >  0: weight represents the relative weight of the work completed, and the progress percentage is calculated as accumulated weight / totalUnits
-//   if total == 0: weight represents the portion of the InitialBudget(), which must be divided among all sub-tasks by the caller
+//   if total >  0: weight represents the relative weight of the work completed, and the
+//                  progress percentage is calculated as accumulated weight / totalUnits
+//
+//   if total == 0: weight represents the portion of the InitialBudget(),
+//                  which must be divided among all sub-tasks by the caller
 func (p *Progress) Report(weight float64, status string) {
 	p.tracker.store(uint64(weight), status)
 
@@ -186,7 +191,7 @@ func (p *Progress) Close() {
 	})
 }
 
-// renderLoop periodically draws the progress line at ~60 FPS without impeding workers.
+// renderLoop periodically renders progress status updates at ~60 FPS without impeding workers.
 func (p *Progress) renderLoop(parentCtx context.Context) {
 	ctx, stop := signal.NotifyContext(parentCtx,
 		os.Interrupt,    // interrupt signal (ctrl+c)
@@ -217,8 +222,9 @@ func (p *Progress) renderLoop(parentCtx context.Context) {
 	}
 }
 
-// sync performs a state-aware redraw, skipping redundant I/O if the progress and status values haven't changed since the last render.
-func (p *Progress) sync() { // skips redundant redraws
+// sync performs a state-aware redraw, skipping redundant redraws if the
+// progress and status values haven't changed since the last render.
+func (p *Progress) sync() {
 	currentState := p.state.Load()
 	currentVal   := p.tracker.load()
 	lastState    := p.lastState.Load()
@@ -233,7 +239,8 @@ func (p *Progress) sync() { // skips redundant redraws
 	if currentVal != nil { p.lastStatusVal.Store(currentVal) }
 }
 
-// draw formats and renders the current progress status to the terminal, truncating text as needed to fit within the terminal width.
+// draw formats and renders the current progress status to the terminal,
+// truncating text as needed to fit within the terminal width.
 func (p *Progress) draw(state uint32, val any) {
 	termWidth := uint16(state >> 16)
 	maxLen    := max(int(termWidth) - p.staticWidth, 0)
@@ -256,7 +263,8 @@ func (p *Progress) draw(state uint32, val any) {
 	}
 }
 
-// writeStatus writes the progress status to to p.output (nominally os.Stderr) using the shared internal buffer to ensure an atomic system call.
+// writeStatus writes the progress status to to p.output (nominally os.Stderr)
+// using the shared internal buffer to ensure an atomic system call.
 func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated bool) error {
 	bufPtr := p.buf.Load()
 	if bufPtr == nil { return nil }
@@ -287,7 +295,8 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 	return err
 }
 
-// prepareTerminal sets the line terminator character and ANSI escape sequences to be used when p.output (nominally os.Stderr) has not been piped or redirected.
+// prepareTerminal sets the line terminator character and ANSI escape sequences to
+// be used when p.output (nominally os.Stderr) has not been piped or redirected.
 func (p *Progress) prepareTerminal() {
 	if isTerminal(p.output) {
 		p.clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
@@ -331,7 +340,8 @@ func (p *Progress) handleResize() {
 	}
 }
 
-// truncateFromLeft constrains the length of progress status messages rendered to the terminal, properly handling utf-8 strings.
+// truncateFromLeft constrains the length of progress status messages
+// rendered to the terminal, properly handling utf-8 strings.
 func truncateFromLeft(s string, maxLen int) (string, bool) {
 	runeCount := utf8.RuneCountInString(s)
 	if runeCount <= maxLen { return s, false }
@@ -348,7 +358,8 @@ func truncateFromLeft(s string, maxLen int) (string, bool) {
 	return s[i:], maxLen > 1
 }
 
-// getTermWidth determines the width of the terminal window, which is used to format status messages.
+// getTermWidth determines the width of the terminal window,
+// which is used to format status messages.
 func getTermWidth(files ...*os.File) uint16 {
 	if len(files) == 0 { files = []*os.File{ os.Stderr } }
 	width := int(minWidth)
@@ -360,7 +371,8 @@ func getTermWidth(files ...*os.File) uint16 {
 	return uint16(width)
 }
 
-// getResizedTermWidth returns the current terminal width, enforcing p.staticWidth as the minimum layout threshold.
+// getResizedTermWidth returns the current terminal width,
+// enforcing p.staticWidth as the minimum layout threshold.
 func getResizedTermWidth(f *os.File, staticWidth int) uint16 {
 	width := staticWidth
 	if w, _, err := term.GetSize(int(getFD(f))); err == nil && w > 0 {
