@@ -52,8 +52,8 @@ Features include:
   - `progress.Standard`: suitable for mostly unique status updates (uses `atomic.Pointer[string]`)
   - `progress.Unique`:   suitable for mostly repetitive status updates (uses `atomic.Value` and `unique.Handle[string]` to canonicalize status, further reducing memory footprint)
 - supports multiple progress status formats:
-  - `progress.Percent`:  writes only the percentage calculation to the terminal
   - `progress.Fraction`: writes progress status as a proper fraction (`x/y`) given a prescribed fixed total units of work (`y`)
+  - `progress.Percent`:  writes only the percentage calculation to the terminal
 - transparently handles pipes, redirections, and non-TTY environments
 - correctly handles UTF-8 strings passed by callers
 - supports concurrency-safe terminal window resizing, dynamically adapting the layout, formatting the rendered output accordingly, and ensuring layout and output integrity during concurrent writes to the terminal
