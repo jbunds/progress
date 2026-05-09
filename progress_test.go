@@ -236,13 +236,13 @@ func TestDraw(t *testing.T) {
 			name:       "status message truncated from the left and prepended with an ellipsis",
 			state:      pack(40, 7100), // 40 - len("processing (100%): ") == 21
 			statusText: new("this is a very long status message that must be truncated"),
-			want:       "processing ( 71%): ... must be truncated",
+			want:       "processing ( 71%): …at must be truncated",
 		},
 		{
 			name:       "status message truncated from the left with no ellipsis prepended (terminal too narrow)",
 			state:      pack(22, 9300), // 22 - len("processing (100%): ") == 3
 			statusText: new("short message"),
-			want:       "processing ( 93%): age",
+			want:       "processing ( 93%): …ge",
 		},
 	}
 	for _, tt := range tests {

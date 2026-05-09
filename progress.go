@@ -278,7 +278,7 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 	}
 
 	buf = append(buf, p.suffix...)
-	if truncated { buf = append(buf, "..."...) }
+	if truncated { buf = append(buf, "…"...) }
 	buf = append(buf, status...)
 	buf = append(buf, p.lineTerm...)
 
@@ -337,7 +337,7 @@ func truncateFromLeft(s string, maxLen int) (string, bool) {
 	if runeCount <= maxLen { return s, false }
 
 	skip := runeCount - maxLen
-	if maxLen > 3 { skip = runeCount - (maxLen - 3) }
+	if maxLen > 1 { skip = runeCount - (maxLen - 1) }
 
 	i := 0
 	for range skip {
@@ -345,7 +345,7 @@ func truncateFromLeft(s string, maxLen int) (string, bool) {
 		i += size
 	}
 
-	return s[i:], maxLen > 3
+	return s[i:], maxLen > 1
 }
 
 // getTermWidth determines the width of the terminal window, which is used to format status messages.
