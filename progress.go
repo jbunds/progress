@@ -41,9 +41,7 @@ type Option func(*Progress) // exported to allow callers to create []*progress.O
 //
 //   progress.New(ctx, 100, os.Stderr, progress.WithTracker(progress.Fraction))
 func WithTracker(s strategy) Option {
-	return func(p *Progress) {
-		p.tracker = getTracker(s, p.total.Load())
-	}
+	return func(p *Progress) { p.tracker = getTracker(s, p.total.Load()) }
 }
 
 // Progress implements a throttled, concurrency-safe,
@@ -66,11 +64,12 @@ type Progress struct {
 	drawNotify    chan struct{}  // used in tests to signal the completion of a draw cycle
 	resizeChan    chan os.Signal // handles terminal window resizing events via the syscall.SIGWINCH signal
 	staticWidth   int            // the static width reserved for the prefix prepended to each status message, e.g., "processing (7.4%): "
+	resizeHandler resizeHandler  // handles terminal resize events (enables dependency injection in tests)
 	clearSeq      string         // ANSI escape sequence used to clear the current terminal line
 	doneSeq       string         // ANSI escape sequence used to restore the terminal cursor
 	lineTerm      string         // output line terminator
-	closeOnce     sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 	suffix        string         // appended to each percentage status calculation rendered to the terminal
+	closeOnce     sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress
@@ -97,15 +96,20 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 
 	p.total.Store(min(totalUnits, scale)) // fall back to scale if totalUnits exceeds max precision
 
-	termWidth := max(getTermWidth(), minWidth)
+	termWidth := getTermWidth()
 	buf       := make([]byte, 0, 4 * int(termWidth) + p.staticWidth) // assume worst case where all UTF-8 characters in status strings are 4-bytes each
 
 	p.buf.Store(&buf)
 	p.prepareTerminal()
 	p.state.Store(uint32(termWidth) << 16)
+	p.resizeHandler = p.getResizedTermWidth
 
 	for _, opt := range opts { opt(p) } // allows callers to override the default status tracker via the WithTracker Option
 
+	// TODO(jeff): this block is ugly and signals a leaky abstraction.
+	//             consider the tradeoffs between maintaining fields like "suffix",
+	//             and "staticWidth" (i.e., those used for rendering logic) in the
+	//             statusTracker structs, or perhaps encapsulated in some new struct.
 	if _, ok := p.tracker.(*percentTracker); ok {
 		p.suffix      = "%)"
 		p.staticWidth = len(prefix) + pctFieldLen + len(p.suffix) // 12 + 3 + 2 == 17
@@ -321,11 +325,8 @@ func (p *Progress) finish(ctx context.Context) {
 
 // handleResize records the new terminal width to be respected by subsequent render cycles.
 func (p *Progress) handleResize() {
-	f, ok := p.output.(*os.File)
-	if !ok { return }
-
 	bufPtr   := p.buf.Load()
-	newWidth := getResizedTermWidth(f, p.staticWidth)
+	newWidth := p.resizeHandler()
 	reqCap   := 4 * int(newWidth) + p.staticWidth
 
 	if bufPtr == nil || cap(*bufPtr) < reqCap { // grow the buffer when the terminal width is increased
@@ -338,6 +339,18 @@ func (p *Progress) handleResize() {
 		newState := (oldState & 0xFFFF) | (uint32(newWidth) << 16) // pack newWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
 		if p.state.CompareAndSwap(oldState, newState) { break }
 	}
+}
+
+// getResizedTermWidth returns the current terminal width,
+// enforcing p.staticWidth as the minimum layout threshold.
+func (p *Progress) getResizedTermWidth() uint16 {
+	f, ok := p.output.(*os.File)
+	if !ok { return 0 }
+	width := p.staticWidth
+	if w, _, err := term.GetSize(int(getFD(f))); err == nil && w > 0 {
+		width = max(width, w) // assume a human manually resized the terminal, so support terminal widths as narrow as p.staticWidth
+	}
+	return uint16(width & 0xFFFF)
 }
 
 // truncateFromLeft constrains the length of progress status messages
@@ -371,16 +384,6 @@ func getTermWidth(files ...*os.File) uint16 {
 	return uint16(width)
 }
 
-// getResizedTermWidth returns the current terminal width,
-// enforcing p.staticWidth as the minimum layout threshold.
-func getResizedTermWidth(f *os.File, staticWidth int) uint16 {
-	width := staticWidth
-	if w, _, err := term.GetSize(int(getFD(f))); err == nil && w > 0 {
-		width = max(width, w) // assume a human manually resized the terminal, so support terminal widths as narrow as p.staticWidth
-	}
-	return uint16(width & 0xFFFF)
-}
-
 // isTerminal determines if the specified writer is connected to a terminal.
 func isTerminal(v any) bool {
 	if testing.Testing() { return false }
@@ -398,6 +401,16 @@ func getFD(w any) int {
 }
 
 // helpers for synchronous, deterministic tests
+
+type resizeHandler func() uint16
+
+func withResizeHandler(rh resizeHandler) Option {
+	return func(p *Progress) { p.resizeHandler = rh }
+}
+
+func withClock(c clock) Option {
+	return func(p *Progress) { p.clock = c }
+}
 
 type ticker interface {
 	ch() <-chan time.Time

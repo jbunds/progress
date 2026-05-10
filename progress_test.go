@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -16,12 +17,22 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
+// TODO(jeff): improve these tests
+
 var opts = cmp.Options{
 	cmp.AllowUnexported(Progress{}, standardTracker{}, uniqueTracker{}, percentTracker{}, fractionTracker{}, realClock{}),
 	cmp.Transformer("unwrapBool",   func(t *atomic.Bool  ) bool   { return t.Load() }),
 	cmp.Transformer("unwrapUint64", func(i *atomic.Uint64) uint64 { return i.Load() }),
 	cmpopts.EquateComparable(atomic.Uint32{}, atomic.Uint64{}, atomic.Value{}, atomic.Pointer[string]{}, atomic.Pointer[[]byte]{}),
-	cmpopts.IgnoreFields(Progress{}, "buf", "output", "stopChan", "doneChan", "resizeChan", "closeOnce", "drawNotify"), // non-trivial to compare
+	cmpopts.IgnoreFields(Progress{}, // non-trivial to compare
+		"buf",
+		"output",
+		"stopChan",
+		"doneChan",
+		"resizeChan",
+		"resizeHandler",
+		"closeOnce",
+		"drawNotify"),
 }
 
 func TestNew(t *testing.T) {
@@ -267,8 +278,68 @@ func TestDraw(t *testing.T) {
 	}
 }
 
+func TestPercentTrackerDraw(t *testing.T) {
+	t.Parallel()
+	suffix    := "%)"
+	termWidth := len(prefix) + pctFieldLen + len(suffix)
+	tests  := []struct {
+		name  string
+		state uint32
+		want  string
+	}{
+		{
+			name:  "0.9%",
+			state: pack(uint16(termWidth & 0xFFFF), 94),
+			want:  "processing (0.9%)",
+		},
+		{
+			name:  "1.0%",
+			state: pack(uint16(termWidth & 0xFFFF), 95),
+			want:  "processing (1.0%)",
+		},
+		{
+			name:  "9.9%",
+			state: pack(uint16(termWidth & 0xFFFF), 994),
+			want:  "processing (9.9%)",
+		},
+		{
+			name:  "10%",
+			state: pack(uint16(termWidth & 0xFFFF), 995),
+			want:  "processing ( 10%)",
+		},
+		{
+			name:  "99%",
+			state: pack(uint16(termWidth & 0xFFFF), 9949),
+			want:  "processing ( 99%)",
+		},
+		{
+			name:  "100%",
+			state: pack(uint16(termWidth & 0xFFFF), 9950),
+			want:  "processing (100%)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := new(bytes.Buffer)
+			p   := &Progress{
+				tracker:     &percentTracker{},
+				output:      got,
+				suffix:      suffix,
+				staticWidth: termWidth,
+			}
+
+			p.buf.Store(buf())
+
+			p.draw(tt.state, "")
+
+			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
+				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
 func TestRenderLoop(t *testing.T) {
-	// TODO(jeff): improve this test
 	t.Parallel()
 
 	got         := new(bytes.Buffer)
@@ -293,7 +364,7 @@ func TestRenderLoop(t *testing.T) {
 	tickAndExpectSkip := func() {
 		tickTrigger <- time.Now()
 		for p.lastState.Load() != p.state.Load() { // wait until renderLoop has processed the state via the stage 2 check
-			runtime.Gosched()
+			runtime.Gosched() // yield the processor to allow the scheduler to run the renderLoop goroutine so it completes the atomic state update
 		}
 		select {       // verify that the notify channel is empty
 		case <-notify: // unexpected draw() cycle completed
@@ -419,4 +490,39 @@ func TestClose(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandleResize(t *testing.T) {
+	t.Parallel()
+
+	fc := &fakeClock{ c: make(chan time.Time, 1) }
+
+	mockTermWidth     := minWidth
+	mockResizeHandler := func() uint16 { return mockTermWidth }
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	p := New(ctx, 0, io.Discard, withClock(fc), withResizeHandler(mockResizeHandler))
+
+	mockTermWidth = 120
+
+	// ugly hack to force the test to block until renderLoop has drained the first signal
+	// from resizeChan by abusing the fact that the size of the p.resizeChan buffer is 1
+	p.resizeChan <- syscall.SIGWINCH
+	p.resizeChan <- syscall.SIGWINCH
+
+	want := uint32(120)
+
+	var got uint32
+	for got = p.state.Load() >> 16; got != uint32(mockTermWidth); got = p.state.Load() >> 16 {
+		runtime.Gosched() // yield the processor to allow the scheduler to run the renderLoop goroutine so it completes the atomic state update
+	}
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("handleResize() mismatch (-want +got):\n%s", diff)
+	}
+
+	cancel()
+	<-p.doneChan
 }
