@@ -28,7 +28,7 @@ const (
 	// precision starts to degrade as the total number of work units approaches scale,
 	// but even at this limit, each unit of work represents at least 1 unit of scale
 	scale    uint64 = 1e15
-	minWidth uint16 = 80             // fallback for pipes, redirects, and non-tty outputs
+	minWidth        = 80             // fallback for pipes, redirects, and non-tty outputs
 	pctFieldLen     = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
 	prefix          = "processing (" // prepended to each progress status line rendered to the terminal
 	defaultSuffix   = "%): "         // appended to each percentage status calculation rendered to the terminal
@@ -259,7 +259,7 @@ func (p *Progress) draw(state uint32, val any) {
 
 	err := p.writeStatus(uint16(state & 0xFFFF), status, truncated)
 
-	if err == nil && p.drawNotify != nil {
+	if p.drawNotify != nil && err == nil {
 		select {
 		case p.drawNotify <- struct{}{}: // ensures synchronous, deterministic tests by signaling the completion of a draw cycle
 		default:
@@ -344,11 +344,11 @@ func (p *Progress) handleResize() {
 // getResizedTermWidth returns the current terminal width,
 // enforcing p.staticWidth as the minimum layout threshold.
 func (p *Progress) getResizedTermWidth() uint16 {
+	width := p.staticWidth // assume a human manually resized the terminal, so support terminal widths as narrow as p.staticWidth
 	f, ok := p.output.(*os.File)
-	if !ok { return 0 }
-	width := p.staticWidth
+	if !ok { return uint16(width & 0xFFFF) }
 	if w, _, err := term.GetSize(int(getFD(f))); err == nil && w > 0 {
-		width = max(width, w) // assume a human manually resized the terminal, so support terminal widths as narrow as p.staticWidth
+		width = max(width, w)
 	}
 	return uint16(width & 0xFFFF)
 }
@@ -375,7 +375,7 @@ func truncateFromLeft(s string, maxLen int) (string, bool) {
 // which is used to format status messages.
 func getTermWidth(files ...*os.File) uint16 {
 	if len(files) == 0 { files = []*os.File{ os.Stderr } }
-	width := int(minWidth)
+	width := minWidth
 	for _, f := range files {
 		if w, _, err := term.GetSize(int(getFD(f))); err == nil {
 			width = max(width, w)

@@ -497,7 +497,7 @@ func TestHandleResize(t *testing.T) {
 
 	fc := &fakeClock{ c: make(chan time.Time, 1) }
 
-	mockTermWidth     := minWidth
+	mockTermWidth     := uint16(minWidth)
 	mockResizeHandler := func() uint16 { return mockTermWidth }
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -525,4 +525,15 @@ func TestHandleResize(t *testing.T) {
 
 	cancel()
 	<-p.doneChan
+}
+
+func TestGetResizedTermWidth(t *testing.T) {
+	t.Parallel()
+	p := New(t.Context(), 0, io.Discard)
+	t.Cleanup(func() { p.Close() })
+	want := uint16(p.staticWidth & 0xFFFF)
+	got  := p.getResizedTermWidth()
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("getResizedTermWidth() mismatch (-want +got):\n%s", diff)
+	}
 }
