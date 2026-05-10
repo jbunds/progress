@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unique"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -266,8 +267,7 @@ func TestDraw(t *testing.T) {
 				suffix:      defaultSuffix,
 				staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
 			}
-
-			p.buf.Store(buf()) // initialize p.buf to prevent nil pointer panic in writeStatus
+			p.buf.Store(buf())
 
 			p.draw(tt.state, tt.statusText)
 
@@ -328,7 +328,6 @@ func TestPercentTrackerDraw(t *testing.T) {
 				suffix:      suffix,
 				staticWidth: termWidth,
 			}
-
 			p.buf.Store(buf())
 
 			p.draw(tt.state, "")
@@ -339,6 +338,46 @@ func TestPercentTrackerDraw(t *testing.T) {
 		})
 	}
 }
+
+func TestUniqueTrackerDraw(t *testing.T) {
+	t.Parallel()
+	tests  := []struct {
+		name       string
+		total      uint64
+		state      uint32
+		statusText string
+		want       string
+	}{
+		{
+			name:       "succeeds",
+			total:      100,
+			state:      pack(minWidth, 3700),
+			statusText: "working...",
+			want:       "processing ( 37%): working...",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := new(bytes.Buffer)
+			p   := &Progress{
+				tracker:     &uniqueTracker{},
+				output:      got,
+				suffix:      defaultSuffix,
+				staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
+			}
+			p.buf.Store(buf())
+
+			p.draw(tt.state, unique.Make(tt.statusText))
+
+			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
+				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
+
+		})
+	}
+}
+
 func TestRenderLoop(t *testing.T) {
 	t.Parallel()
 
@@ -405,7 +444,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
 	}
 
-	p.buf.Store(buf()) // initialize p.buf to prevent nil pointer panic in writeStatus
+	p.buf.Store(buf())
 	p.total.Store(73)
 	p.state.Store(pack(minWidth, 0))
 
