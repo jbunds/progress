@@ -24,7 +24,6 @@ const (
 
 func getTracker(strat strategy, totalUnits uint64) statusTracker {
 	switch strat {
-	case Standard: return &standardTracker{}
 	case Unique:   return &uniqueTracker{}
 	case Percent:  return &percentTracker{}
 	case Fraction:
