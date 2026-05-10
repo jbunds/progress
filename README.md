@@ -60,6 +60,7 @@ Features include:
 
 Limitations:
 
+- the UI is crude (or, more charitably, simple but effective) since that aspect of the library has thus far been willfully neglected
 - the precision of percentage calculations starts to progressively degrade at ~1 quadrillion (1e15) units of work
   - a workload capacity limited to 1 quadrillion units still allows for extremely fine-grained budget splitting and / or extremely deep recursion
 - probably won't work on Windows, e.g., correctly handling terminal resize events
