@@ -664,7 +664,11 @@ func TestIsTerminal(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "succeeds",
+			name: "p.isTerminalFunc(p.output) returns true",
+			want: true,
+		},
+		{
+			name: "p.isTerminalFunc(p.output) returns false",
 			want: false,
 		},
 	}
@@ -673,11 +677,11 @@ func TestIsTerminal(t *testing.T) {
 			t.Parallel()
 			p := &Progress{
 				output:         os.Stderr,
-				isTerminalFunc: func(v any) bool { return isTerminalInternal(v, false, false) },
+				isTerminalFunc: func(_ any) bool { return tt.want },
 			}
 			got := p.isTerminalFunc(p.output)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("isTerminalInternal(%q) mismatch (-want +got):\n%s", tt.name, diff)
+				t.Errorf("p.isTerminalFunc(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
 	}

@@ -384,7 +384,7 @@ func isTerminalInternal(v any, isTesting, isCI bool) bool {
 	if isTesting || isCI { return false }
 	fd := getFD(v)
 	if fd < 0 { return false }
-	return isTerminal(fd)
+	return term.IsTerminal(fd)
 }
 
 // getFD returns the file descriptor of the provided argument.
