@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"reflect"
 	"runtime"
 	"sync/atomic"
 	"syscall"
@@ -19,54 +20,65 @@ import (
 )
 
 var opts = cmp.Options{
-	cmp.AllowUnexported(
-		Progress{},
-		layout{},
-		standardTracker{},
-		uniqueTracker{},
-		percentTracker{},
-		fractionTracker{},
-		realClock{}),
-	cmp.Transformer("unwrapBool",   func(t *atomic.Bool  ) bool   { return t.Load() }),
-	cmp.Transformer("unwrapUint64", func(i *atomic.Uint64) uint64 { return i.Load() }),
-	cmpopts.EquateComparable(
-		atomic.Uint32{},
-		atomic.Uint64{},
-		atomic.Value{},
-		atomic.Pointer[string]{},
-		atomic.Pointer[[]byte]{}),
+	cmpopts.EquateEmpty(),
 	cmpopts.IgnoreFields(Progress{}, // non-trivial to compare
-		"buf",
-		"output",
-		"stopChan",
-		"doneChan",
-		"resizeChan",
-		"resizeHandler",
-		"closeOnce",
-		"drawNotify"),
+		"buf",        "output",        "stopChan",  "doneChan",
+		"resizeChan", "resizeHandler", "closeOnce", "drawNotify"),
+	cmp.AllowUnexported(
+		Progress{},        realClock{},     layout{},
+		standardTracker{}, uniqueTracker{},
+		percentTracker{},  fractionTracker{}),
+	cmpopts.EquateComparable(
+		atomic.Value{},
+		atomic.Uint32{},
+		atomic.Uint64{}),
+	cmp.FilterValues(func(x, _ any) bool { // recursively unwraps atomic types to facilitate deep comparison of underlying values
+		_, ok := x.(interface{ Load() any })
+		if !ok && reflect.ValueOf(x).CanAddr() {
+			_, ok = reflect.ValueOf(x).Addr().Interface().(interface{ Load() any })
+		}
+		return ok
+	}, cmp.Transformer("unwrapAtomic", func(x any) any {
+		if loader, ok := x.(interface{ Load() any }); ok { return loader.Load() }
+		v := reflect.ValueOf(x)
+		if v.CanAddr() { return v.Addr().Interface().(interface{ Load() any }).Load() }
+		return x
+	})),
 }
 
 func TestNew(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name       string
-		totalUnits uint64
-		wantTotal  uint64
+		name        string
+		totalUnits  uint64
+		opts        []Option
+		wantTotal   uint64
+		wantTracker statusTracker
 	}{
 		{
-			name:       "weight-based accumulation",
-			totalUnits: 100,
-			wantTotal:  100,
+			name:        "weight-based accumulation",
+			totalUnits:  100,
+			wantTotal:   100,
+			wantTracker: getTracker(Standard, 0),
 		},
 		{
-			name:       "fractional path allocation",
-			totalUnits: 0,
-			wantTotal:  0,
+			name:        "fractional path allocation",
+			totalUnits:  0,
+			wantTotal:   0,
+			wantTracker: getTracker(Standard, 0),
 		},
 		{
-			name:       "verify overflow safety",
-			totalUnits: scale + 1000,
-			wantTotal:  scale,
+			name:        "verify overflow safety",
+			totalUnits:  scale + 1000,
+			wantTotal:   scale,
+			wantTracker: getTracker(Standard, 0),
+		},
+		{
+			name:        "verify WithTracker",
+			totalUnits:  0,
+			wantTotal:   0,
+			opts:        []Option{WithTracker(Unique)},
+			wantTracker: getTracker(Unique, 0),
 		},
 	}
 	for _, tt := range tests {
@@ -74,13 +86,16 @@ func TestNew(t *testing.T) {
 			t.Parallel()
 			ctx := t.Context()
 			buf := new(bytes.Buffer)
-			got := New(ctx, tt.totalUnits, buf)
+			got := New(ctx, tt.totalUnits, buf, tt.opts...)
 			t.Cleanup(func() { got.Close() })
-			if diff := cmp.Diff(tt.wantTotal, got.total.Load(), opts...); diff != "" {
+			if diff := cmp.Diff(tt.wantTotal, got.total.Load()); diff != "" {
 				t.Errorf("New(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 			if got.stopChan == nil || got.doneChan == nil || got.resizeChan == nil {
 				t.Errorf("one or more channels were not initialized")
+			}
+			if diff := cmp.Diff(tt.wantTracker, got.tracker); diff != "" {
+				t.Errorf("New(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
 	}
@@ -503,6 +518,7 @@ func TestClose(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx, cancel := context.WithCancelCause(t.Context())
 			got         := new(bytes.Buffer)
 			p           := New(ctx, tt.total, got)

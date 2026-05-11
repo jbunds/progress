@@ -7,10 +7,13 @@ type strategy int
 const (
 	// Standard is the default tracker, and is suitable for tracking mostly unique status updates.
 	Standard strategy = iota
+
 	// Unique is suitable for tracking repetitive status updates.
 	Unique
+
 	// Fraction renders status updates to the UI as a proper fraction (x/y).
 	Fraction
+
 	// Percent renders only the percentage of completed work.
 	Percent
 )

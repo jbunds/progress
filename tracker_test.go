@@ -6,7 +6,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestTracker(t *testing.T) {
+func TestGetTracker(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name  string
@@ -28,7 +28,7 @@ func TestTracker(t *testing.T) {
 			name:  "percent",
 			strat: Percent,
 			want:  &percentTracker{
-				lo: layout{
+				lo: &layout{
 					staticWidth:    17,
 					prefix:         "processing (",
 					suffix:         "%)",
@@ -54,8 +54,9 @@ func TestTracker(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := getTracker(tt.strat, tt.total)
-			if diff := cmp.Diff(tt.want, got, opts); diff != "" {
+			if diff := cmp.Diff(tt.want, got, opts...); diff != "" {
 				t.Errorf("getTracker(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
