@@ -278,10 +278,10 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 // be used when p.output (nominally os.Stderr) has not been piped or redirected.
 func (p *Progress) prepareTerminal() {
 	if isTerminal(p.output) {
-		l               := p.tracker.layout()
-		l.clearSeq       = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
-		l.doneSeq        = "\r\033[?25h" // restores the cursor
-		l.lineTerminator = ""
+		layout               := p.tracker.layout()
+		layout.clearSeq       = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
+		layout.doneSeq        = "\r\033[?25h" // restores the cursor
+		layout.lineTerminator = ""
 	}
 }
 

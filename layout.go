@@ -7,8 +7,6 @@ const (
 	defaultSuffix = "%): "         // appended to each percentage status calculation rendered to the terminal
 )
 
-// TODO(jeff): determine where clearSeq, doneSeq, and lineTerminator will live, since they're currently not DRY
-
 // layout encapsulates the terminal-specific rendering layout configuration.
 type layout struct {
 	staticWidth    int    // the static width reserved for the prefix prepended to each status message, e.g., "processing (7.4%): "
