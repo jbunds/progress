@@ -27,11 +27,7 @@ const (
 	//
 	// precision starts to degrade as the total number of work units approaches scale,
 	// but even at this limit, each unit of work represents at least 1 unit of scale
-	scale    uint64 = 1e15
-	minWidth        = 80             // fallback for pipes, redirects, and non-tty outputs
-	pctFieldLen     = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
-	prefix          = "processing (" // prepended to each progress status line rendered to the terminal
-	defaultSuffix   = "%): "         // appended to each percentage status calculation rendered to the terminal
+	scale uint64 = 1e15
 )
 
 // Option defines a functional configuration for Progress.
@@ -63,12 +59,7 @@ type Progress struct {
 	doneChan      chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
 	drawNotify    chan struct{}  // used in tests to signal the completion of a draw cycle
 	resizeChan    chan os.Signal // handles terminal window resizing events via the syscall.SIGWINCH signal
-	staticWidth   int            // the static width reserved for the prefix prepended to each status message, e.g., "processing (7.4%): "
 	resizeHandler resizeHandler  // handles terminal resize events (enables dependency injection in tests)
-	clearSeq      string         // ANSI escape sequence used to clear the current terminal line
-	doneSeq       string         // ANSI escape sequence used to restore the terminal cursor
-	lineTerm      string         // output line terminator
-	suffix        string         // appended to each percentage status calculation rendered to the terminal
 	closeOnce     sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 }
 
@@ -81,39 +72,24 @@ type Progress struct {
 //    pass totalUnits == 0 for fractional path allocation (when totalUnits is unknown)
 func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Option) *Progress {
 	p := &Progress{
-		tracker:     &standardTracker{},
-		output:      output,
-		stopChan:    make(chan struct{}),
-		doneChan:    make(chan struct{}),
-		resizeChan:  make(chan os.Signal, 1),
-		clock:       &realClock{ dur: 16 * time.Millisecond },
-		clearSeq:    "",
-		doneSeq:     "\n",
-		lineTerm:    "\n",
-		suffix:      defaultSuffix,
-		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix), // 12 + 3 + 4 == 19
+		tracker:    getTracker(Standard, totalUnits),
+		output:     output,
+		stopChan:   make(chan struct{}),
+		doneChan:   make(chan struct{}),
+		resizeChan: make(chan os.Signal, 1),
+		clock:      &realClock{dur: 16 * time.Millisecond},
 	}
-
-	p.total.Store(min(totalUnits, scale)) // fall back to scale if totalUnits exceeds max precision
 
 	termWidth := getTermWidth()
-	buf       := make([]byte, 0, 4 * int(termWidth) + p.staticWidth) // assume worst case where all UTF-8 characters in status strings are 4-bytes each
+	buf       := make([]byte, 0, 4 * int(termWidth) + p.tracker.layout().staticWidth) // assume worst case where all UTF-8 characters in status strings are 4-bytes each
 
 	p.buf.Store(&buf)
-	p.prepareTerminal()
+	p.total.Store(min(totalUnits, scale)) // fall back to scale if totalUnits exceeds max precision
 	p.state.Store(uint32(termWidth) << 16)
 	p.resizeHandler = p.getResizedTermWidth
+	p.prepareTerminal()
 
-	for _, opt := range opts { opt(p) } // allows callers to override the default status tracker via the WithTracker Option
-
-	// TODO(jeff): this block is ugly and signals a leaky abstraction.
-	//             consider the tradeoffs between maintaining fields like "suffix",
-	//             and "staticWidth" (i.e., those used for rendering logic) in the
-	//             statusTracker structs, or perhaps encapsulated in some new struct.
-	if _, ok := p.tracker.(*percentTracker); ok {
-		p.suffix      = "%)"
-		p.staticWidth = len(prefix) + pctFieldLen + len(p.suffix) // 12 + 3 + 2 == 17
-	}
+	for _, opt := range opts { opt(p) } // allows callers to override defaults via exported Options
 
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // listen for a SIGWINCH signal to handle the terminal window being resized
 
@@ -246,15 +222,12 @@ func (p *Progress) sync() {
 // draw formats and renders the current progress status to the terminal,
 // truncating text as needed to fit within the terminal width.
 func (p *Progress) draw(state uint32, val any) {
-	termWidth := uint16(state >> 16)
-	maxLen    := max(int(termWidth) - p.staticWidth, 0)
-	status    := p.tracker.value(val)
-
+	maxLen    := max(int(state >> 16) - p.tracker.layout().staticWidth, 0)
+	status    := ""
 	truncated := false
-	if maxLen == 0 {
-		status = ""
-	} else {
-		status, truncated = truncateFromLeft(status, maxLen) // truncate from left to show most relevant portion (e.g., file basename)
+
+	if maxLen > 0 {
+		status, truncated = truncateFromLeft(p.tracker.value(val), maxLen) // truncate from left to show most relevant portion (e.g., file basename)
 	}
 
 	err := p.writeStatus(uint16(state & 0xFFFF), status, truncated)
@@ -273,26 +246,28 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 	bufPtr := p.buf.Load()
 	if bufPtr == nil { return nil }
 
+	layout := p.tracker.layout()
+
 	buf := *bufPtr
 	buf  = buf[:0]
-	buf  = append(buf, p.clearSeq...)
-	buf  = append(buf, prefix...)
+	buf  = append(buf, layout.clearSeq...)
+	buf  = append(buf, layout.prefix...)
 
 	switch {
-	case pctSigDigits >= 9950: // 99.5% < pctSigDigits >  100% => "100%"
+	case pctSigDigits >= 9950:           // 99.5% < pctSigDigits >  100% => "100%"
 		buf = append(buf, "100"...)
-	case pctSigDigits >=  995: // 9.95% < pctSigDigits > 99.4% => " 10%" - " 99%"
+	case pctSigDigits >=  995:           // 9.95% < pctSigDigits > 99.4% => " 10%" - " 99%"
 		val := (pctSigDigits + 50) / 100 // round to the nearest 1% (995 -> 10; 9949 -> 99)
 		buf = append(buf, ' ', byte('0' + (val / 10)),      byte('0' + (val % 10)))
-	default:                   // 0.00% < pctSigDigits > 9.94% => "0.1%" - "9.9%"
-		val := (pctSigDigits + 5) / 10 // round to the nearest 0.1% (994 -> 9.9; 0 -> 0.0)
+	default:                             // 0.00% < pctSigDigits > 9.94% => "0.1%" - "9.9%"
+		val := (pctSigDigits +  5) /  10 // round to the nearest 0.1% (994 -> 9.9; 0 -> 0.0)
 		buf = append(buf,      byte('0' + (val / 10)), '.', byte('0' + (val % 10)))
 	}
 
-	buf = append(buf, p.suffix...)
+	buf = append(buf, layout.suffix...)
 	if truncated { buf = append(buf, "…"...) }
 	buf = append(buf, status...)
-	buf = append(buf, p.lineTerm...)
+	buf = append(buf, layout.lineTerminator...)
 
 	_, err := p.output.Write(buf) // single, atomic system call when p.buf <= PIPE_BUF, which p.buf can be reasonably expected to rarely exceed
 
@@ -303,21 +278,28 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 // be used when p.output (nominally os.Stderr) has not been piped or redirected.
 func (p *Progress) prepareTerminal() {
 	if isTerminal(p.output) {
-		p.clearSeq = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
-		p.doneSeq  = "\r\033[?25h" // restores the cursor
-		p.lineTerm = ""
+		l               := p.tracker.layout()
+		l.clearSeq       = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
+		l.doneSeq        = "\r\033[?25h" // restores the cursor
+		l.lineTerminator = ""
 	}
 }
 
 // finish renders the final progress frame to the terminal.
 func (p *Progress) finish(ctx context.Context) {
-	cause := context.Cause(ctx)
+	cause  := context.Cause(ctx)
+	layout := p.tracker.layout()
 
 	var output string
 	if cause != nil && !errors.Is(cause, context.Canceled) {
-		output = p.clearSeq + "stopped (" + cause.Error() + ")" + p.doneSeq
+		output = layout.clearSeq                   +
+		         "stopped (" + cause.Error() + ")" +
+		         layout.doneSeq
 	} else {
-		output = p.clearSeq + "processing (100%): done" + p.doneSeq
+		output = layout.clearSeq                       +
+		         layout.prefix + "100" + layout.suffix +
+		         layout.finalStatus                    +
+		         layout.doneSeq
 	}
 
 	_, _ = io.WriteString(p.output, output)
@@ -327,7 +309,7 @@ func (p *Progress) finish(ctx context.Context) {
 func (p *Progress) handleResize() {
 	bufPtr   := p.buf.Load()
 	newWidth := p.resizeHandler()
-	reqCap   := 4 * int(newWidth) + p.staticWidth
+	reqCap   := 4 * int(newWidth) + p.tracker.layout().staticWidth
 
 	if bufPtr == nil || cap(*bufPtr) < reqCap { // grow the buffer when the terminal width is increased
 		newBuf := make([]byte, 0, reqCap)
@@ -337,14 +319,17 @@ func (p *Progress) handleResize() {
 	for { // atomically update termWidth while preserving concurrent percentage or status changes
 		oldState := p.state.Load()
 		newState := (oldState & 0xFFFF) | (uint32(newWidth) << 16) // pack newWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
-		if p.state.CompareAndSwap(oldState, newState) { break }
+		if p.state.CompareAndSwap(oldState, newState) {
+			p.sync()
+			break
+		}
 	}
 }
 
 // getResizedTermWidth returns the current terminal width,
-// enforcing p.staticWidth as the minimum layout threshold.
+// enforcing p.tracker.layout().staticWidth as the minimum layout threshold.
 func (p *Progress) getResizedTermWidth() uint16 {
-	width := p.staticWidth // assume a human manually resized the terminal, so support terminal widths as narrow as p.staticWidth
+	width := p.tracker.layout().staticWidth // assume a human manually resized the terminal, so support terminal widths as narrow as p.tracker.layout().staticWidth
 	f, ok := p.output.(*os.File)
 	if !ok { return uint16(width & 0xFFFF) }
 	if w, _, err := term.GetSize(int(getFD(f))); err == nil && w > 0 {

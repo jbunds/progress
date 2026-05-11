@@ -2,13 +2,6 @@ package progress
 
 import "strconv"
 
-// statusTracker tracks the current work completion progress status.
-type statusTracker interface {
-  store(uint64, string) // handles interning / storage of the current status
-  load()     any        // returns the comparable value (e.g., *string or Handle)
-  value(any) string     // converts the loaded value back to a string for display in the UI
-}
-
 type strategy int
 
 const (
@@ -22,17 +15,30 @@ const (
 	Percent
 )
 
+// statusTracker tracks the current work completion progress status.
+type statusTracker interface {
+	store(uint64, string) // handles interning / storage of the current status
+	load()      any       // returns the comparable value (e.g., *string or Handle)
+	value(any)  string    // converts the loaded value back to a string for display in the UI
+	init()                // initializes tracker-specific UI layout configuration and metadata
+	layout()    *layout   // returns the UI layout configuration and metadata for a tracker
+}
+
 func getTracker(strat strategy, totalUnits uint64) statusTracker {
+	var tracker statusTracker
+
 	switch strat {
-	case Unique:   return &uniqueTracker{}
-	case Percent:  return &percentTracker{}
+	case Unique:  tracker = &uniqueTracker{}
+	case Percent: tracker = &percentTracker{}
 	case Fraction:
-		if totalUnits == 0 {
-			return &standardTracker{} // silently fall back to a sensible progress tracking strategy
+		switch totalUnits {
+		case 0:  tracker = &standardTracker{} // silently fall back to a sensible progress tracking strategy
+		default: tracker = &fractionTracker{ total: strconv.FormatUint(totalUnits, 10) }
 		}
-		return &fractionTracker{
-			total: strconv.FormatUint(totalUnits, 10),
-		}
-	default: return &standardTracker{}
+	default: tracker = &standardTracker{}
 	}
+
+	tracker.init()
+
+	return tracker
 }

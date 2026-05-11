@@ -17,28 +17,39 @@ func TestTracker(t *testing.T) {
 		{
 			name:  "standard",
 			strat: Standard,
-			want:  &standardTracker{},
+			want:  &standardTracker{ lo: defaultLayout() },
 		},
 		{
 			name:  "unique",
 			strat: Unique,
-			want:  &uniqueTracker{},
+			want:  &uniqueTracker{ lo: defaultLayout() },
 		},
 		{
 			name:  "percent",
 			strat: Percent,
-			want:  &percentTracker{},
+			want:  &percentTracker{
+				lo: layout{
+					staticWidth:    17,
+					prefix:         "processing (",
+					suffix:         "%)",
+					doneSeq:        "\n",
+					lineTerminator: "\n",
+				},
+			},
 		},
 		{
 			name:  "fraction",
 			strat: Fraction,
-			want:  &standardTracker{},
+			want:  &standardTracker{ lo: defaultLayout() },
 		},
 		{
 			name:  "fraction",
 			total: 1,
 			strat: Fraction,
-			want:  &fractionTracker{ total: "1" },
+			want:  &fractionTracker{
+				total: "1",
+				lo:    defaultLayout(),
+			},
 		},
 	}
 	for _, tt := range tests {

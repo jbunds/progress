@@ -18,13 +18,23 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-// TODO(jeff): improve these tests
-
 var opts = cmp.Options{
-	cmp.AllowUnexported(Progress{}, standardTracker{}, uniqueTracker{}, percentTracker{}, fractionTracker{}, realClock{}),
+	cmp.AllowUnexported(
+		Progress{},
+		layout{},
+		standardTracker{},
+		uniqueTracker{},
+		percentTracker{},
+		fractionTracker{},
+		realClock{}),
 	cmp.Transformer("unwrapBool",   func(t *atomic.Bool  ) bool   { return t.Load() }),
 	cmp.Transformer("unwrapUint64", func(i *atomic.Uint64) uint64 { return i.Load() }),
-	cmpopts.EquateComparable(atomic.Uint32{}, atomic.Uint64{}, atomic.Value{}, atomic.Pointer[string]{}, atomic.Pointer[[]byte]{}),
+	cmpopts.EquateComparable(
+		atomic.Uint32{},
+		atomic.Uint64{},
+		atomic.Value{},
+		atomic.Pointer[string]{},
+		atomic.Pointer[[]byte]{}),
 	cmpopts.IgnoreFields(Progress{}, // non-trivial to compare
 		"buf",
 		"output",
@@ -92,7 +102,7 @@ func TestGetTermWidth(t *testing.T) {
 		{
 			name:  "falls back to minWidth for non-terminal files",
 			output: w, // pipes have no width
-			want:   minWidth,
+			want:   uint16(minWidth),
 		},
 	}
 	for _, tt := range tests {
@@ -221,8 +231,8 @@ func TestReport(t *testing.T) {
 	}
 }
 
-func pack(termWidth, pctSigDigits uint16) uint32 {
-	return uint32(termWidth) << 16 | uint32(pctSigDigits)
+func pack(termWidth int, percent float64) uint32 {
+	return uint32(termWidth & 0xFFFF) << 16 | uint32(percent * 10000)
 }
 
 func buf() *[]byte {
@@ -240,21 +250,21 @@ func TestDraw(t *testing.T) {
 	}{
 		{
 			name:       "nominal terminal width of 80", // minWidth == 80
-			state:      pack(80, 4700),                 // 80 - len("processing (100%): ") == 61
+			state:      pack(80, 0.47),                 // 80 - len("processing (100%): ") == 61
 			statusText: new("just a small fish in a big sea"),
-			want:       "processing ( 47%): just a small fish in a big sea",
+			want:       "processing ( 47%): just a small fish in a big sea\n",
 		},
 		{
 			name:       "status message truncated from the left and prepended with an ellipsis",
-			state:      pack(40, 7100), // 40 - len("processing (100%): ") == 21
+			state:      pack(40, 0.71), // 40 - len("processing (100%): ") == 21
 			statusText: new("this is a very long status message that must be truncated"),
-			want:       "processing ( 71%): …at must be truncated",
+			want:       "processing ( 71%): …at must be truncated\n",
 		},
 		{
 			name:       "status message truncated from the left with no ellipsis prepended (terminal too narrow)",
-			state:      pack(22, 9300), // 22 - len("processing (100%): ") == 3
+			state:      pack(22, 0.93), // 22 - len("processing (100%): ") == 3
 			statusText: new("short message"),
-			want:       "processing ( 93%): …ge",
+			want:       "processing ( 93%): …ge\n",
 		},
 	}
 	for _, tt := range tests {
@@ -262,10 +272,8 @@ func TestDraw(t *testing.T) {
 			t.Parallel()
 			got := new(bytes.Buffer)
 			p   := &Progress{
-				tracker:     &standardTracker{},
-				output:      got,
-				suffix:      defaultSuffix,
-				staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
+				tracker: getTracker(Standard, 0),
+				output:  got,
 			}
 			p.buf.Store(buf())
 
@@ -282,40 +290,40 @@ func TestPercentTrackerDraw(t *testing.T) {
 	t.Parallel()
 	suffix    := "%)"
 	termWidth := len(prefix) + pctFieldLen + len(suffix)
-	tests  := []struct {
+	tests     := []struct {
 		name  string
 		state uint32
 		want  string
 	}{
 		{
 			name:  "0.9%",
-			state: pack(uint16(termWidth & 0xFFFF), 94),
-			want:  "processing (0.9%)",
+			state: pack(termWidth, 0.0094),
+			want:  "processing (0.9%)\n",
 		},
 		{
 			name:  "1.0%",
-			state: pack(uint16(termWidth & 0xFFFF), 95),
-			want:  "processing (1.0%)",
+			state: pack(termWidth, 0.0095),
+			want:  "processing (1.0%)\n",
 		},
 		{
 			name:  "9.9%",
-			state: pack(uint16(termWidth & 0xFFFF), 994),
-			want:  "processing (9.9%)",
+			state: pack(termWidth, 0.0994),
+			want:  "processing (9.9%)\n",
 		},
 		{
 			name:  "10%",
-			state: pack(uint16(termWidth & 0xFFFF), 995),
-			want:  "processing ( 10%)",
+			state: pack(termWidth, 0.0995),
+			want:  "processing ( 10%)\n",
 		},
 		{
 			name:  "99%",
-			state: pack(uint16(termWidth & 0xFFFF), 9949),
-			want:  "processing ( 99%)",
+			state: pack(termWidth, 0.9949),
+			want:  "processing ( 99%)\n",
 		},
 		{
 			name:  "100%",
-			state: pack(uint16(termWidth & 0xFFFF), 9950),
-			want:  "processing (100%)",
+			state: pack(termWidth, 0.9950),
+			want:  "processing (100%)\n",
 		},
 	}
 	for _, tt := range tests {
@@ -323,10 +331,8 @@ func TestPercentTrackerDraw(t *testing.T) {
 			t.Parallel()
 			got := new(bytes.Buffer)
 			p   := &Progress{
-				tracker:     &percentTracker{},
-				output:      got,
-				suffix:      suffix,
-				staticWidth: termWidth,
+				tracker: getTracker(Percent, 0),
+				output:  got,
 			}
 			p.buf.Store(buf())
 
@@ -351,9 +357,9 @@ func TestUniqueTrackerDraw(t *testing.T) {
 		{
 			name:       "succeeds",
 			total:      100,
-			state:      pack(minWidth, 3700),
+			state:      pack(minWidth, 0.37),
 			statusText: "working...",
-			want:       "processing ( 37%): working...",
+			want:       "processing ( 37%): working...\n",
 		},
 	}
 	for _, tt := range tests {
@@ -361,10 +367,8 @@ func TestUniqueTrackerDraw(t *testing.T) {
 			t.Parallel()
 			got := new(bytes.Buffer)
 			p   := &Progress{
-				tracker:     &uniqueTracker{},
-				output:      got,
-				suffix:      defaultSuffix,
-				staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
+				tracker: getTracker(Unique, 0),
+				output:  got,
 			}
 			p.buf.Store(buf())
 
@@ -373,7 +377,6 @@ func TestUniqueTrackerDraw(t *testing.T) {
 			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
-
 		})
 	}
 }
@@ -386,13 +389,12 @@ func TestRenderLoop(t *testing.T) {
 	notify      := make(chan struct{}, 1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
 
 	p := &Progress{
-		tracker:     &standardTracker{},
-		output:      got,
-		clock:       &fakeClock{ c: tickTrigger },
-		drawNotify:  notify,
-		stopChan:    make(chan struct{}),
-		doneChan:    make(chan struct{}),
-		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
+		tracker:    getTracker(Standard, 0),
+		output:     got,
+		clock:      &fakeClock{ c: tickTrigger },
+		drawNotify: notify,
+		stopChan:   make(chan struct{}),
+		doneChan:   make(chan struct{}),
 	}
 
 	tickAndExpectDraw := func() {
@@ -402,7 +404,7 @@ func TestRenderLoop(t *testing.T) {
 
 	tickAndExpectSkip := func() {
 		tickTrigger <- time.Now()
-		for p.lastState.Load() != p.state.Load() { // wait until renderLoop has processed the state via the stage 2 check
+		for p.lastState.Load() != p.state.Load() { // wait until renderLoop has processed the state
 			runtime.Gosched() // yield the processor to allow the scheduler to run the renderLoop goroutine so it completes the atomic state update
 		}
 		select {       // verify that the notify channel is empty
@@ -434,14 +436,12 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	notify      := make(chan struct{}, 1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
 
 	p := &Progress{
-		tracker:     &fractionTracker{ total: "73" },
-		output:      got,
-		clock:       &fakeClock{ c: tickTrigger },
-		drawNotify:  notify,
-		stopChan:    make(chan struct{}),
-		doneChan:    make(chan struct{}),
-		suffix:      defaultSuffix,
-		staticWidth: len(prefix) + pctFieldLen + len(defaultSuffix),
+		tracker:    getTracker(Fraction, 73),
+		output:     got,
+		clock:      &fakeClock{ c: tickTrigger },
+		drawNotify: notify,
+		stopChan:   make(chan struct{}),
+		doneChan:   make(chan struct{}),
 	}
 
 	p.buf.Store(buf())
@@ -455,18 +455,18 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	tickTrigger <- time.Now()
 	<-notify
 
-	want := "processing ( 15%): 11/73"
+	want := "processing ( 15%): 11/73\n"
 	if diff := cmp.Diff(want, got.String()); diff != "" {
 		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
 	}
 
 	got.Reset()
 
-	p.Report(34, "completed another 34 units of work") // second report: 19/73
+	p.Report(34, "completed another 34 units of work") // second report: 45/73
 	tickTrigger <- time.Now()
 	<-notify
 
-	want = "processing ( 62%): 45/73"
+	want = "processing ( 62%): 45/73\n"
 	if diff := cmp.Diff(want, got.String()); diff != "" {
 		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
 	}
@@ -474,8 +474,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	t.Parallel()
-	staticWidth := len(prefix) + pctFieldLen + len(defaultSuffix)
-	tests  := []struct {
+	tests := []struct {
 		name     string
 		total    uint64
 		err      error
@@ -487,12 +486,8 @@ func TestClose(t *testing.T) {
 			total:   100,
 			wantOut: "processing (100%): done\n",
 			wantProg: &Progress{
-				tracker:     &standardTracker{},
-				clock:       &realClock{ dur: 16 * time.Millisecond },
-				doneSeq:     "\n",
-				lineTerm:    "\n",
-				suffix:      defaultSuffix,
-				staticWidth: staticWidth,
+				tracker: getTracker(Standard, 100),
+				clock:   &realClock{ dur: 16 * time.Millisecond },
 			},
 		},
 		{
@@ -501,12 +496,8 @@ func TestClose(t *testing.T) {
 			err:      errors.New("aborted for some reason"),
 			wantOut:  "stopped (aborted for some reason)\n",
 			wantProg: &Progress{
-				tracker:     &standardTracker{},
-				clock:       &realClock{ dur: 16 * time.Millisecond },
-				doneSeq:     "\n",
-				lineTerm:    "\n",
-				suffix:      defaultSuffix,
-				staticWidth: staticWidth,
+				tracker: getTracker(Standard, 200),
+				clock:   &realClock{ dur: 16 * time.Millisecond },
 			},
 		},
 	}
@@ -516,10 +507,14 @@ func TestClose(t *testing.T) {
 			got         := new(bytes.Buffer)
 			p           := New(ctx, tt.total, got)
 			tt.wantProg.total.Store(tt.total)
-			tt.wantProg.state.Store(pack(uint16(p.state.Load() >> 16), 0))
 
 			cancel(tt.err)
 			p.Close()
+			<-p.doneChan
+
+			finalState := p.state.Load() // capture final state
+			tt.wantProg.state.Store(     // sync tt.wantProg to match final state
+				pack(int(finalState >> 16), float64(finalState & 0xFFFF) / 10000))
 
 			if diff := cmp.Diff(tt.wantOut, got.String()); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -534,7 +529,8 @@ func TestClose(t *testing.T) {
 func TestHandleResize(t *testing.T) {
 	t.Parallel()
 
-	fc := &fakeClock{ c: make(chan time.Time, 1) }
+	fakeClock := &fakeClock{ c: make(chan time.Time, 1) }
+	notify    := make(chan struct{}, 1)
 
 	mockTermWidth     := uint16(minWidth)
 	mockResizeHandler := func() uint16 { return mockTermWidth }
@@ -542,21 +538,17 @@ func TestHandleResize(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	p := New(ctx, 0, io.Discard, withClock(fc), withResizeHandler(mockResizeHandler))
+	p := New(ctx, 0, io.Discard, withClock(fakeClock), withResizeHandler(mockResizeHandler))
+	p.drawNotify    = notify // drawNotify signals the completion of a draw cycle in the renderLoop
+	p.resizeHandler = mockResizeHandler
 
 	mockTermWidth = 120
+	p.resizeChan <-syscall.SIGWINCH
 
-	// ugly hack to force the test to block until renderLoop has drained the first signal
-	// from resizeChan by abusing the fact that the size of the p.resizeChan buffer is 1
-	p.resizeChan <- syscall.SIGWINCH
-	p.resizeChan <- syscall.SIGWINCH
+	<-notify // await a draw cycle to ensure the resize event has been processed
 
 	want := uint32(120)
-
-	var got uint32
-	for got = p.state.Load() >> 16; got != uint32(mockTermWidth); got = p.state.Load() >> 16 {
-		runtime.Gosched() // yield the processor to allow the scheduler to run the renderLoop goroutine so it completes the atomic state update
-	}
+	got  := p.state.Load() >> 16
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("handleResize() mismatch (-want +got):\n%s", diff)
@@ -570,7 +562,7 @@ func TestGetResizedTermWidth(t *testing.T) {
 	t.Parallel()
 	p := New(t.Context(), 0, io.Discard)
 	t.Cleanup(func() { p.Close() })
-	want := uint16(p.staticWidth & 0xFFFF)
+	want := uint16(p.tracker.layout().staticWidth & 0xFFFF)
 	got  := p.getResizedTermWidth()
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("getResizedTermWidth() mismatch (-want +got):\n%s", diff)
