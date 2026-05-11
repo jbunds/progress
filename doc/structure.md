@@ -11,15 +11,17 @@
 │       └── main.go
 ├── LICENSE
 ├── README.md
-├── fraction.go
 ├── go.mod
 ├── go.sum
+├── fraction.go
+├── layout.go
 ├── percent.go
-├── progress_test.go
 ├── progress.go
+├── progress_test.go
 ├── standard.go
 ├── tracker.go
+├── tracker_test.go
 └── unique.go
 
-5 directories, 16 files
+5 directories, 18 files
 ```
