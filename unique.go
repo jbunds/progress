@@ -27,6 +27,6 @@ func (u *uniqueTracker) value(v any)           string  {
 
 func (u *uniqueTracker) Equal(other *uniqueTracker) bool { // workaround cmp's draconian strictures
 	if u == nil || other == nil { return u == other }
-	return cmp.Equal(u.lo,     other.lo, cmp.AllowUnexported(layout{})) &&
-	       cmp.Equal(u.load(), other.load())
+	return cmp.Equal(u.load(), other.load()) &&
+	       cmp.Equal(u.lo,     other.lo, cmp.AllowUnexported(layout{}))
 }
