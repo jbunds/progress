@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -22,8 +23,9 @@ import (
 var opts = cmp.Options{
 	cmpopts.EquateEmpty(),
 	cmpopts.IgnoreFields(Progress{}, // non-trivial to compare
-		"buf",        "output",        "stopChan",  "doneChan",
-		"resizeChan", "resizeHandler", "closeOnce", "drawNotify"),
+		"buf",       "output",     "stopChan",
+		"doneChan",  "resizeChan", "resizeHandler",
+		"closeOnce", "drawNotify", "isTerminalFunc"),
 	cmp.AllowUnexported(
 		Progress{},        realClock{},     layout{},
 		standardTracker{}, uniqueTracker{},
@@ -243,6 +245,26 @@ func TestReport(t *testing.T) {
 				t.Errorf("current progress was not updated (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestReportContention(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
+	p := &Progress{ tracker: getTracker(Standard, 100) }
+	p.total.Store(100)
+	var wg sync.WaitGroup
+	for i := range 200 {
+		wg.Go(func() {
+			for j := range 500 {
+				p.Report(float64(1e12) + float64(i * j), "spamming Report to trigger contention inside CAS loops")
+				if j % 50 == 0 { p.current.Store(0) }
+			}
+		})
+	}
+	wg.Wait()
+	want := uint32(10000)
+	if diff := cmp.Diff(want, p.state.Load()); diff != "" {
+		t.Errorf("p.state.Load() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -582,5 +604,91 @@ func TestGetResizedTermWidth(t *testing.T) {
 	got  := p.getResizedTermWidth()
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("getResizedTermWidth() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestPrepareTerminal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		isTerminal bool
+	}{
+		{
+			name:       "terminal detected",
+			isTerminal: true,
+		},
+		{
+			name:       "not a terminal",
+			isTerminal: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := &Progress{
+				output:         os.Stderr,
+				tracker:        getTracker(Standard, 0),
+				isTerminalFunc: func(any) bool { return tt.isTerminal },
+			}
+			p.prepareTerminal()
+			layout := p.tracker.layout()
+			if tt.isTerminal {
+				if diff := cmp.Diff("\r\033[2K\r", layout.clearSeq); diff != "" {
+					t.Errorf("prepareTerminal(%q) clearSeq mismatch (-want +got):\n%s", tt.name, diff)
+				}
+				if diff := cmp.Diff("\r\033[?25h", layout.doneSeq); diff != "" {
+					t.Errorf("prepareTerminal(%q) doneSeq mismatch (-want +got):\n%s", tt.name, diff)
+				}
+				if diff := cmp.Diff("", layout.lineTerminator); diff != "" {
+					t.Errorf("prepareTerminal(%q) lineTerminator mismatch (-want +got):\n%s", tt.name, diff)
+				}
+			} else {
+				if diff := cmp.Diff("", layout.clearSeq); diff != "" {
+					t.Errorf("prepareTerminal(%q) clearSeq mismatch (-want +got):\n%s", tt.name, diff)
+				}
+				if diff := cmp.Diff("\n", layout.doneSeq); diff != "" {
+					t.Errorf("prepareTerminal(%q) doneSeq mismatch (-want +got):\n%s", tt.name, diff)
+				}
+				if diff := cmp.Diff("\n", layout.lineTerminator); diff != "" {
+					t.Errorf("prepareTerminal(%q) lineTerminator mismatch (-want +got):\n%s", tt.name, diff)
+				}
+			}
+		})
+	}
+}
+
+func TestIsTerminal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{
+			name: "succeeds",
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := &Progress{
+				output:         os.Stderr,
+				isTerminalFunc: func(v any) bool { return isTerminalInternal(v, false, false) },
+			}
+			got := p.isTerminalFunc(p.output)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("isTerminalInternal(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
+func TestGetFdOfNonFile(t *testing.T) {
+	t.Parallel()
+	w    := "foo"
+	got  := getFD(w)
+	want := -1
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("getFD(%q) mismatch (-want +got):\n%s", w, diff)
 	}
 }

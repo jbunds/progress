@@ -53,14 +53,15 @@ type Progress struct {
 	buf           atomic.Pointer[[]byte] // pre-allocated, reusable buffer for writing status messages to the terminal
 
 	// configuration (read-only after construction)
-	output        io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)
-	clock         clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
-	stopChan      chan struct{}  // signals the background rendering loop to perform final cleanup
-	doneChan      chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
-	drawNotify    chan struct{}  // used in tests to signal the completion of a draw cycle
-	resizeChan    chan os.Signal // handles terminal window resizing events via the syscall.SIGWINCH signal
-	resizeHandler resizeHandler  // handles terminal resize events (enables dependency injection in tests)
-	closeOnce     sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
+	output         io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)
+	stopChan       chan struct{}  // signals the background rendering loop to perform final cleanup
+	doneChan       chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
+	drawNotify     chan struct{}  // used in tests to signal the completion of a draw cycle
+	resizeChan     chan os.Signal // handles terminal window resizing events via the syscall.SIGWINCH signal
+	resizeHandler  resizeHandler  // handles terminal resize events (enables dependency injection in tests)
+	closeOnce      sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
+	clock          clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
+	isTerminalFunc func(any) bool // facilitates dependency injection for tests
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress
@@ -72,12 +73,13 @@ type Progress struct {
 //    pass totalUnits == 0 for fractional path allocation (when totalUnits is unknown)
 func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Option) *Progress {
 	p := &Progress{
-		tracker:    getTracker(Standard, totalUnits),
-		output:     output,
-		stopChan:   make(chan struct{}),
-		doneChan:   make(chan struct{}),
-		resizeChan: make(chan os.Signal, 1),
-		clock:      &realClock{dur: 16 * time.Millisecond},
+		tracker:        getTracker(Standard, totalUnits),
+		output:         output,
+		stopChan:       make(chan struct{}),
+		doneChan:       make(chan struct{}),
+		resizeChan:     make(chan os.Signal, 1),
+		clock:          &realClock{dur: 16 * time.Millisecond},
+		isTerminalFunc: isTerminal,
 	}
 
 	termWidth := getTermWidth()
@@ -277,7 +279,7 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 // prepareTerminal sets the line terminator character and ANSI escape sequences to
 // be used when p.output (nominally os.Stderr) has not been piped or redirected.
 func (p *Progress) prepareTerminal() {
-	if isTerminal(p.output) {
+	if p.isTerminalFunc(p.output) {
 		layout               := p.tracker.layout()
 		layout.clearSeq       = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
 		layout.doneSeq        = "\r\033[?25h" // restores the cursor
@@ -371,12 +373,18 @@ func getTermWidth(files ...*os.File) uint16 {
 
 // isTerminal determines if the specified writer is connected to a terminal.
 func isTerminal(v any) bool {
-	if testing.Testing() { return false }
-	if os.Getenv("GITHUB_ACTIONS") == "true" || // https://docs.github.com/actions/reference/workflows-and-actions/variables
-	   os.Getenv("CI"            ) == "true" { return false }
+	return isTerminalInternal(
+		v,
+		testing.Testing(),
+		os.Getenv("CI"            ) == "true" || // https://docs.github.com/actions/reference/workflows-and-actions/variables
+		os.Getenv("GITHUB_ACTIONS") == "true")
+}
+
+func isTerminalInternal(v any, isTesting, isCI bool) bool {
+	if isTesting || isCI { return false }
 	fd := getFD(v)
 	if fd < 0 { return false }
-	return term.IsTerminal(fd)
+	return isTerminal(fd)
 }
 
 // getFD returns the file descriptor of the provided argument.
