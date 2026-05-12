@@ -16,8 +16,9 @@ func (s *standardTracker) init()           { s.lo = defaultLayout() }
 func (s *standardTracker) layout() *layout { return s.lo            }
 func (s *standardTracker) load()       any { return s.ptr.Load()    }
 func (s *standardTracker) store(_ uint64, status string) {
-	if p := s.ptr.Load(); p != nil && *p == status { return }
-	s.ptr.Store(&status)
+	if p := s.ptr.Load(); p == nil || *p != status {
+		s.ptr.Store(&status)
+	}
 }
 
 func (s *standardTracker) value(v any) string {
