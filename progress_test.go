@@ -41,9 +41,13 @@ var opts = cmp.Options{
 		}
 		return ok
 	}, cmp.Transformer("unwrapAtomic", func(x any) any {
-		if loader, ok := x.(interface{ Load() any }); ok { return loader.Load() }
+		if loader, ok := x.(interface{ Load() any }); ok {
+			return loader.Load()
+		}
 		v := reflect.ValueOf(x)
-		if v.CanAddr() { return v.Addr().Interface().(interface{ Load() any }).Load() }
+		if v.CanAddr() {
+			return v.Addr().Interface().(interface{ Load() any }).Load()
+		}
 		return x
 	})),
 }
@@ -178,10 +182,11 @@ func TestAddTotal(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := t.Context()
 			p   := New(ctx, 0, io.Discard)
-			p.AddTotal(tt.units)
 			t.Cleanup(func() { p.Close() })
+			p.AddTotal(tt.units)
 			if diff := cmp.Diff(tt.want, p.total.Load()); diff != "" {
 				t.Errorf("AddTotal(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
@@ -577,6 +582,7 @@ func TestHandleResize(t *testing.T) {
 	defer cancel()
 
 	p := New(ctx, 0, io.Discard, withClock(fakeClock), withResizeHandler(mockResizeHandler))
+	t.Cleanup(func() { p.Close() })
 	p.drawNotify    = notify // drawNotify signals the completion of a draw cycle in the renderLoop
 	p.resizeHandler = mockResizeHandler
 
@@ -610,16 +616,25 @@ func TestGetResizedTermWidth(t *testing.T) {
 func TestPrepareTerminal(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name       string
-		isTerminal bool
+		name               string
+		isTerminal         bool
+		wantClearSeq       string
+		wantDoneSeq        string
+		wantLineTerminator string
 	}{
 		{
-			name:       "terminal detected",
-			isTerminal: true,
+			name:               "is a terminal",
+			isTerminal:         true,
+			wantClearSeq:       "\r\033[2K\r",
+			wantDoneSeq:        "\r\033[?25h",
+			wantLineTerminator: "",
 		},
 		{
-			name:       "not a terminal",
-			isTerminal: false,
+			name:               "is not a terminal",
+			isTerminal:         false,
+			wantClearSeq:       "",
+			wantDoneSeq:        "\n",
+			wantLineTerminator: "\n",
 		},
 	}
 	for _, tt := range tests {
@@ -632,64 +647,22 @@ func TestPrepareTerminal(t *testing.T) {
 			}
 			p.prepareTerminal()
 			layout := p.tracker.layout()
-			if tt.isTerminal {
-				if diff := cmp.Diff("\r\033[2K\r", layout.clearSeq); diff != "" {
-					t.Errorf("prepareTerminal(%q) clearSeq mismatch (-want +got):\n%s", tt.name, diff)
-				}
-				if diff := cmp.Diff("\r\033[?25h", layout.doneSeq); diff != "" {
-					t.Errorf("prepareTerminal(%q) doneSeq mismatch (-want +got):\n%s", tt.name, diff)
-				}
-				if diff := cmp.Diff("", layout.lineTerminator); diff != "" {
-					t.Errorf("prepareTerminal(%q) lineTerminator mismatch (-want +got):\n%s", tt.name, diff)
-				}
-			} else {
-				if diff := cmp.Diff("", layout.clearSeq); diff != "" {
-					t.Errorf("prepareTerminal(%q) clearSeq mismatch (-want +got):\n%s", tt.name, diff)
-				}
-				if diff := cmp.Diff("\n", layout.doneSeq); diff != "" {
-					t.Errorf("prepareTerminal(%q) doneSeq mismatch (-want +got):\n%s", tt.name, diff)
-				}
-				if diff := cmp.Diff("\n", layout.lineTerminator); diff != "" {
-					t.Errorf("prepareTerminal(%q) lineTerminator mismatch (-want +got):\n%s", tt.name, diff)
-				}
+			if diff := cmp.Diff(tt.wantClearSeq, layout.clearSeq); diff != "" {
+				t.Errorf("prepareTerminal(%q) clearSeq mismatch (-want +got):\n%s", tt.name, diff)
+			}
+			if diff := cmp.Diff(tt.wantDoneSeq, layout.doneSeq); diff != "" {
+				t.Errorf("prepareTerminal(%q) doneSeq mismatch (-want +got):\n%s", tt.name, diff)
+			}
+			if diff := cmp.Diff(tt.wantLineTerminator, layout.lineTerminator); diff != "" {
+				t.Errorf("prepareTerminal(%q) lineTerminator mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
 	}
 }
 
-func TestIsTerminal(t *testing.T) {
+func TestGetFD(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name string
-		want bool
-	}{
-		{
-			name: "p.isTerminalFunc(p.output) returns true",
-			want: true,
-		},
-		{
-			name: "p.isTerminalFunc(p.output) returns false",
-			want: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			p := &Progress{
-				output:         os.Stderr,
-				isTerminalFunc: func(_ any) bool { return tt.want },
-			}
-			got := p.isTerminalFunc(p.output)
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("p.isTerminalFunc(%q) mismatch (-want +got):\n%s", tt.name, diff)
-			}
-		})
-	}
-}
-
-func TestGetFdOfNonFile(t *testing.T) {
-	t.Parallel()
-	w    := "foo"
+	w    := "not a file"
 	got  := getFD(w)
 	want := -1
 	if diff := cmp.Diff(want, got); diff != "" {

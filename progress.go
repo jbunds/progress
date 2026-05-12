@@ -82,7 +82,7 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		isTerminalFunc: isTerminal,
 	}
 
-	termWidth := getTermWidth()
+	termWidth := getTermWidth(p.output)
 	buf       := make([]byte, 0, 4 * int(termWidth) + p.tracker.layout().staticWidth) // assume worst case where all UTF-8 characters in status strings are 4-bytes each
 
 	p.buf.Store(&buf)
@@ -328,13 +328,13 @@ func (p *Progress) handleResize() {
 	}
 }
 
-// getResizedTermWidth returns the current terminal width,
-// enforcing p.tracker.layout().staticWidth as the minimum layout threshold.
+// getResizedTermWidth returns the current terminal width, enforcing
+// p.tracker.layout().staticWidth as the minimum layout threshold.
 func (p *Progress) getResizedTermWidth() uint16 {
 	width := p.tracker.layout().staticWidth // assume a human manually resized the terminal, so support terminal widths as narrow as p.tracker.layout().staticWidth
-	f, ok := p.output.(*os.File)
-	if !ok { return uint16(width & 0xFFFF) }
-	if w, _, err := term.GetSize(int(getFD(f))); err == nil && w > 0 {
+	fd    := getFD(p.output)
+	if fd < 0 { return uint16(width & 0xFFFF) }
+	if w, _, err := term.GetSize(fd); err == nil && w > 0 {
 		width = max(width, w)
 	}
 	return uint16(width & 0xFFFF)
@@ -358,30 +358,22 @@ func truncateFromLeft(s string, maxLen int) (string, bool) {
 	return s[i:], maxLen > 1
 }
 
-// getTermWidth determines the width of the terminal window,
-// which is used to format status messages.
-func getTermWidth(files ...*os.File) uint16 {
-	if len(files) == 0 { files = []*os.File{ os.Stderr } }
-	width := minWidth
-	for _, f := range files {
-		if w, _, err := term.GetSize(int(getFD(f))); err == nil {
-			width = max(width, w)
-		}
+// getTermWidth determines the width of the terminal
+// window, which is used to format status messages.
+func getTermWidth(w io.Writer) uint16 {
+	fd := getFD(w)
+	if fd < 0 { return minWidth }
+	if width, _, err := term.GetSize(fd); err == nil {
+			return uint16(max(minWidth, width) & 0xFFFF)
 	}
-	return uint16(width)
+	return uint16(minWidth)
 }
 
 // isTerminal determines if the specified writer is connected to a terminal.
 func isTerminal(v any) bool {
-	return isTerminalInternal(
-		v,
-		testing.Testing(),
-		os.Getenv("CI"            ) == "true" || // https://docs.github.com/actions/reference/workflows-and-actions/variables
-		os.Getenv("GITHUB_ACTIONS") == "true")
-}
-
-func isTerminalInternal(v any, isTesting, isCI bool) bool {
-	if isTesting || isCI { return false }
+	if testing.Testing()                     ||
+	   os.Getenv("GITHUB_ACTIONS") == "true" || // https://docs.github.com/actions/reference/workflows-and-actions/variables
+	   os.Getenv("CI"            ) == "true" { return false }
 	fd := getFD(v)
 	if fd < 0 { return false }
 	return term.IsTerminal(fd)
@@ -397,13 +389,8 @@ func getFD(w any) int {
 
 type resizeHandler func() uint16
 
-func withResizeHandler(rh resizeHandler) Option {
-	return func(p *Progress) { p.resizeHandler = rh }
-}
-
-func withClock(c clock) Option {
-	return func(p *Progress) { p.clock = c }
-}
+func withResizeHandler(rh resizeHandler) Option { return func(p *Progress) { p.resizeHandler = rh } }
+func withClock        (c  clock        ) Option { return func(p *Progress) { p.clock         = c  } }
 
 type ticker interface {
 	ch() <-chan time.Time
