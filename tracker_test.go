@@ -96,6 +96,7 @@ func TestUniqueTrackerStoresAndLoads(t *testing.T) {
 }
 
 func TestUniqueTrackerEqualMethod(t *testing.T) {
+	t.Parallel()
 	t.Run("uniqueTracker.Equal", func(t *testing.T) {
 		t.Parallel()
 		u1 := getTracker(Unique, 0)
@@ -107,6 +108,7 @@ func TestUniqueTrackerEqualMethod(t *testing.T) {
 }
 
 func TestStandardTrackerEqualMethod(t *testing.T) {
+	t.Parallel()
 	t.Run("standardTracker.Equal", func(t *testing.T) {
 		t.Parallel()
 		s1 := getTracker(Standard, 0)
@@ -118,6 +120,7 @@ func TestStandardTrackerEqualMethod(t *testing.T) {
 }
 
 func TestPercentTrackerMethods(t *testing.T) {
+	t.Parallel()
 	t.Run("percentTracker store, load, value", func(t *testing.T) {
 		t.Parallel()
 		p := getTracker(Percent, 0)
@@ -132,6 +135,7 @@ func TestPercentTrackerMethods(t *testing.T) {
 }
 
 func TestUniqueTrackerValue(t *testing.T) {
+	t.Parallel()
 	t.Run("uniqueTracker.value", func(t *testing.T) {
 		t.Parallel()
 		u   := getTracker(Unique, 0)
@@ -143,6 +147,7 @@ func TestUniqueTrackerValue(t *testing.T) {
 }
 
 func TestFractionTrackerValue(t *testing.T) {
+	t.Parallel()
 	t.Run("fractionTracker.value", func(t *testing.T) {
 		t.Parallel()
 		f   := getTracker(Fraction, 3)
