@@ -67,7 +67,7 @@ Limitations:
 - the UI is crude (or, more charitably, simple but effective) since that aspect of the library has thus far been willfully neglected
 - the precision of percentage calculations starts to progressively degrade at ~1 quadrillion (1e15) units of work
   - a workload capacity limited to 1 quadrillion units still allows for extremely fine-grained budget splitting and / or extremely deep recursion
-- probably won't work on Windows, e.g., correctly handling terminal resize events
+- handling of terminal resize events on Windows systems is not supported
 - truncated status updates may render incorrectly in terminals which lack UTF-8 support
 
 See [![Go Reference](https://pkg.go.dev/badge/github.com/jbunds/progress.svg)](https://pkg.go.dev/github.com/jbunds/progress) for API documentation and [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jbunds/progress) for technical internal implementation details.
