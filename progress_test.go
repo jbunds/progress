@@ -1,5 +1,7 @@
 package progress
 
+// TODO(jeff): refactor the test code into respective *_test.go files following the recent refactoring
+
 import (
 	"bytes"
 	"context"
@@ -528,8 +530,9 @@ func TestClose(t *testing.T) {
 			total:   100,
 			wantOut: "processing (100%): done\n",
 			wantProg: &Progress{
-				tracker: getTracker(Standard, 100),
-				clock:   &realClock{ dur: 16 * time.Millisecond },
+				tracker:   getTracker(Standard, 100),
+				clock:     &realClock{ dur: 16 * time.Millisecond },
+				termWidth: 80,
 			},
 		},
 		{
@@ -538,8 +541,9 @@ func TestClose(t *testing.T) {
 			err:      errors.New("aborted for some reason"),
 			wantOut:  "stopped (aborted for some reason)\n",
 			wantProg: &Progress{
-				tracker: getTracker(Standard, 200),
-				clock:   &realClock{ dur: 16 * time.Millisecond },
+				tracker:   getTracker(Standard, 200),
+				clock:     &realClock{ dur: 16 * time.Millisecond },
+				termWidth: 80,
 			},
 		},
 	}
@@ -625,9 +629,9 @@ func TestPrepareTerminal(t *testing.T) {
 		{
 			name:               "is a terminal",
 			isTerminal:         true,
-			wantClearSeq:       "\r\033[2K\r",
-			wantDoneSeq:        "\r\033[?25h",
-			wantLineTerminator: "",
+			wantClearSeq:       "\r\033[?2026h",
+			wantDoneSeq:        "\033[0m\r\033[?25h",
+			wantLineTerminator: "\033[K\033[0m\033[?2026l",
 		},
 		{
 			name:               "is not a terminal",

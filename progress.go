@@ -10,11 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"testing"
 	"time"
-	"unicode/utf8"
-
-	"golang.org/x/term"
 )
 
 const (
@@ -54,6 +50,7 @@ type Progress struct {
 
 	// configuration (read-only after construction)
 	output         io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)
+	termWidth      uint16         // terminal width; falls back to 80 (per the minWidth package global) for pipes, redirections, and non-tty outputs
 	stopChan       chan struct{}  // signals the background rendering loop to perform final cleanup
 	doneChan       chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
 	drawNotify     chan struct{}  // used in tests to signal the completion of a draw cycle
@@ -62,6 +59,7 @@ type Progress struct {
 	closeOnce      sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 	clock          clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
 	isTerminalFunc func(any) bool // facilitates dependency injection for tests
+	isTerminal     bool
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress
@@ -82,12 +80,13 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		isTerminalFunc: isTerminal,
 	}
 
-	termWidth := getTermWidth(p.output)
-	buf       := make([]byte, 0, 4 * int(termWidth) + p.tracker.layout().staticWidth) // assume worst case where all UTF-8 characters in status strings are 4-bytes each
+	p.isTerminal = p.isTerminalFunc(p.output)
+	p.termWidth  = getTermWidth(p.output)
+	buf         := make([]byte, 0, 4 * int(p.termWidth) + p.tracker.layout().staticWidth) // assume worst case where all UTF-8 characters in status strings are 4-bytes each
 
 	p.buf.Store(&buf)
 	p.total.Store(min(totalUnits, scale)) // fall back to scale if totalUnits exceeds max precision
-	p.state.Store(uint32(termWidth) << 16)
+	p.state.Store(uint32(p.termWidth) << 16)
 	p.resizeHandler = p.getResizedTermWidth
 	p.prepareTerminal()
 
@@ -179,7 +178,7 @@ func (p *Progress) renderLoop(parentCtx context.Context) {
 		os.Interrupt,    // interrupt signal (ctrl+c)
 		syscall.SIGTERM, // kill signal
 		syscall.SIGHUP)  // terminal closed signal
-	defer stop()         // restore default signal behavior when the loop exits
+	defer stop()         // restore default signal behavior when the loop exits; the *Progress instance is assumed to be a per-process singleton
 
 	ticker := p.clock.tick()
 	defer ticker.Stop()
@@ -204,89 +203,6 @@ func (p *Progress) renderLoop(parentCtx context.Context) {
 	}
 }
 
-// sync performs a state-aware redraw, skipping redundant redraws if the
-// progress and status values haven't changed since the last render.
-func (p *Progress) sync() {
-	currentState := p.state.Load()
-	currentVal   := p.tracker.load()
-	lastState    := p.lastState.Load()
-	lastVal      := p.lastStatusVal.Load()
-
-	if currentState == lastState &&
-	   currentVal   == lastVal { return } // status unchanged; skip redundant redraw
-
-	p.draw(currentState, currentVal)
-
-	p.lastState.Store(currentState)
-	if currentVal != nil { p.lastStatusVal.Store(currentVal) }
-}
-
-// draw formats and renders the current progress status to the terminal,
-// truncating text as needed to fit within the terminal width.
-func (p *Progress) draw(state uint32, val any) {
-	maxLen    := max(int(state >> 16) - p.tracker.layout().staticWidth, 0)
-	status    := ""
-	truncated := false
-
-	if maxLen > 0 {
-		status, truncated = truncateFromLeft(p.tracker.value(val), maxLen) // truncate from left to show most relevant portion (e.g., file basename)
-	}
-
-	err := p.writeStatus(uint16(state & 0xFFFF), status, truncated)
-
-	if p.drawNotify != nil && err == nil {
-		select {
-		case p.drawNotify <- struct{}{}: // ensures synchronous, deterministic tests by signaling the completion of a draw cycle
-		default:
-		}
-	}
-}
-
-// writeStatus writes the progress status to to p.output (nominally os.Stderr)
-// using the shared internal buffer to ensure an atomic system call.
-func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated bool) error {
-	bufPtr := p.buf.Load()
-	if bufPtr == nil { return nil }
-
-	layout := p.tracker.layout()
-
-	buf := *bufPtr
-	buf  = buf[:0]
-	buf  = append(buf, layout.clearSeq...)
-	buf  = append(buf, layout.prefix...)
-
-	switch {
-	case pctSigDigits >= 9950:           // 99.5% < pctSigDigits >  100% => "100%"
-		buf = append(buf, "100"...)
-	case pctSigDigits >=  995:           // 9.95% < pctSigDigits > 99.4% => " 10%" - " 99%"
-		val := (pctSigDigits + 50) / 100 // round to the nearest 1% (995 -> 10; 9949 -> 99)
-		buf = append(buf, ' ', byte('0' + (val / 10)),      byte('0' + (val % 10)))
-	default:                             // 0.00% < pctSigDigits > 9.94% => "0.1%" - "9.9%"
-		val := (pctSigDigits +  5) /  10 // round to the nearest 0.1% (994 -> 9.9; 0 -> 0.0)
-		buf = append(buf,      byte('0' + (val / 10)), '.', byte('0' + (val % 10)))
-	}
-
-	buf = append(buf, layout.suffix...)
-	if truncated { buf = append(buf, "…"...) }
-	buf = append(buf, status...)
-	buf = append(buf, layout.lineTerminator...)
-
-	_, err := p.output.Write(buf) // single, atomic system call when p.buf <= PIPE_BUF, which p.buf can be reasonably expected to rarely exceed
-
-	return err
-}
-
-// prepareTerminal sets the line terminator character and ANSI escape sequences to
-// be used when p.output (nominally os.Stderr) has not been piped or redirected.
-func (p *Progress) prepareTerminal() {
-	if p.isTerminalFunc(p.output) {
-		layout               := p.tracker.layout()
-		layout.clearSeq       = "\r\033[2K\r" // \033[2K clears the line, \r moves the cursor to the beginning of the line
-		layout.doneSeq        = "\r\033[?25h" // restores the cursor
-		layout.lineTerminator = ""
-	}
-}
-
 // finish renders the final progress frame to the terminal.
 func (p *Progress) finish(ctx context.Context) {
 	cause  := context.Cause(ctx)
@@ -307,90 +223,9 @@ func (p *Progress) finish(ctx context.Context) {
 	_, _ = io.WriteString(p.output, output)
 }
 
-// handleResize records the new terminal width to be respected by subsequent render cycles.
-func (p *Progress) handleResize() {
-	bufPtr   := p.buf.Load()
-	newWidth := p.resizeHandler()
-	reqCap   := 4 * int(newWidth) + p.tracker.layout().staticWidth
-
-	if bufPtr == nil || cap(*bufPtr) < reqCap { // grow the buffer when the terminal width is increased
-		newBuf := make([]byte, 0, reqCap)
-		p.buf.Store(&newBuf)
-	}
-
-	for { // atomically update termWidth while preserving concurrent percentage or status changes
-		oldState := p.state.Load()
-		newState := (oldState & 0xFFFF) | (uint32(newWidth) << 16) // pack newWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
-		if p.state.CompareAndSwap(oldState, newState) {
-			p.sync()
-			break
-		}
-	}
-}
-
-// getResizedTermWidth returns the current terminal width, enforcing
-// p.tracker.layout().staticWidth as the minimum layout threshold.
-func (p *Progress) getResizedTermWidth() uint16 {
-	width := p.tracker.layout().staticWidth // assume a human manually resized the terminal, so support terminal widths as narrow as p.tracker.layout().staticWidth
-	fd    := getFD(p.output)
-	if fd < 0 { return uint16(width & 0xFFFF) }
-	if w, _, err := term.GetSize(fd); err == nil && w > 0 {
-		width = max(width, w)
-	}
-	return uint16(width & 0xFFFF)
-}
-
-// truncateFromLeft constrains the length of progress status messages
-// rendered to the terminal, properly handling utf-8 strings.
-func truncateFromLeft(s string, maxLen int) (string, bool) {
-	runeCount := utf8.RuneCountInString(s)
-	if runeCount <= maxLen { return s, false }
-
-	skip := runeCount - maxLen
-	if maxLen > 1 { skip = runeCount - (maxLen - 1) }
-
-	i := 0
-	for range skip {
-		_, size := utf8.DecodeRuneInString(s[i:])
-		i += size
-	}
-
-	return s[i:], maxLen > 1
-}
-
-// getTermWidth determines the width of the terminal
-// window, which is used to format status messages.
-func getTermWidth(w io.Writer) uint16 {
-	fd := getFD(w)
-	if fd < 0 { return minWidth }
-	if width, _, err := term.GetSize(fd); err == nil {
-			return uint16(max(minWidth, width) & 0xFFFF)
-	}
-	return uint16(minWidth)
-}
-
-// isTerminal determines if the specified writer is connected to a terminal.
-func isTerminal(v any) bool {
-	if testing.Testing()                     ||
-	   os.Getenv("GITHUB_ACTIONS") == "true" || // https://docs.github.com/actions/reference/workflows-and-actions/variables
-	   os.Getenv("CI"            ) == "true" { return false }
-	fd := getFD(v)
-	if fd < 0 { return false }
-	return term.IsTerminal(fd)
-}
-
-// getFD returns the file descriptor of the provided argument.
-func getFD(w any) int {
-	if f, ok := w.(interface{ Fd() uintptr }); ok { return int(f.Fd()) }
-	return -1
-}
-
 // helpers for synchronous, deterministic tests
 
-type resizeHandler func() uint16
-
-func withResizeHandler(rh resizeHandler) Option { return func(p *Progress) { p.resizeHandler = rh } }
-func withClock        (c  clock        ) Option { return func(p *Progress) { p.clock         = c  } }
+func withClock (c clock ) Option { return func(p *Progress) { p.clock = c } }
 
 type ticker interface {
 	ch() <-chan time.Time
