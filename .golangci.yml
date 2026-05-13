@@ -14,9 +14,5 @@ linters:
     - gocritic
     - godoclint
     - gosec
+    - prealloc
     - revive
-  settings:
-    errcheck:
-      exclude-functions:
-        - fmt.Fprintf
-        - fmt.Fprintln
