@@ -7,12 +7,17 @@ run:
 linters:
   default: standard # https://github.com/golangci/golangci-lint/blob/60180aacaa642385a3f683875507013b43214edf/.golangci.reference.yml#L14
   enable:
+    - asasalint
     - bodyclose
     - canonicalheader
     - contextcheck
+    - copyloopvar
     - decorder
     - gocritic
     - godoclint
     - gosec
+    - makezero
+    - perfsprint
     - prealloc
+    - reassign
     - revive
