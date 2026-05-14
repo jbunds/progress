@@ -11,50 +11,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestHandleResize(t *testing.T) {
-	t.Parallel()
-
-	fakeClock := &fakeClock{ c: make(chan time.Time, 1) }
-	notify    := make(chan struct{}, 1)
-
-	mockTermWidth     := uint16(minWidth)
-	mockResizeHandler := func() uint16 { return mockTermWidth }
-
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-
-	p := New(ctx, 0, io.Discard, withClock(fakeClock), withResizeHandler(mockResizeHandler))
-	t.Cleanup(func() { p.Close() })
-	p.drawNotify    = notify // drawNotify signals the completion of a draw cycle in the renderLoop
-	p.resizeHandler = mockResizeHandler
-
-	mockTermWidth = 120
-	p.resizeChan <-syscall.SIGWINCH
-
-	<-notify // await a draw cycle to ensure the resize event has been processed
-
-	want := uint32(120)
-	got  := p.state.Load() >> 16
-
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("handleResize() mismatch (-want +got):\n%s", diff)
-	}
-
-	cancel()
-	<-p.doneChan
-}
-
-func TestGetResizedTermWidth(t *testing.T) {
-	t.Parallel()
-	p := New(t.Context(), 0, io.Discard)
-	t.Cleanup(func() { p.Close() })
-	want := uint16(p.tracker.layout().staticWidth & 0xFFFF)
-	got  := p.getResizedTermWidth()
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("getResizedTermWidth() mismatch (-want +got):\n%s", diff)
-	}
-}
-
 func TestPrepareTerminal(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -97,6 +53,79 @@ func TestPrepareTerminal(t *testing.T) {
 			}
 			if diff := cmp.Diff(tt.wantLineTerminator, layout.lineTerminator); diff != "" {
 				t.Errorf("prepareTerminal(%q) lineTerminator mismatch (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
+func TestHandleResize(t *testing.T) {
+	t.Parallel()
+
+	fakeClock := &fakeClock{ c: make(chan time.Time, 1) }
+	notify    := make(chan struct{}, 1)
+
+	mockTermWidth     := uint16(minWidth)
+	mockResizeHandler := func() uint16 { return mockTermWidth }
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	p := New(ctx, 0, io.Discard, withClock(fakeClock), withResizeHandler(mockResizeHandler))
+	t.Cleanup(func() { p.Close() })
+	p.drawNotify = notify // drawNotify signals the completion of a draw cycle in the renderLoop
+
+	mockTermWidth = 120
+	p.resizeChan <-syscall.SIGWINCH
+
+	<-notify // await a draw cycle to ensure the resize event has been processed
+
+	want := uint32(120)
+	got  := p.state.Load() >> 16
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("handleResize() mismatch (-want +got):\n%s", diff)
+	}
+
+	cancel()
+	<-p.doneChan
+}
+
+func TestGetResizedTermWidth(t *testing.T) {
+	t.Parallel()
+	p := New(t.Context(), 0, io.Discard)
+	t.Cleanup(func() { p.Close() })
+	want := uint16(p.tracker.layout().staticWidth & 0xFFFF)
+	got  := p.getResizedTermWidth()
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("getResizedTermWidth() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestGetTermWidth(t *testing.T) {
+	t.Parallel()
+
+	r, w, err := os.Pipe()
+	if err != nil { t.Error(err) }
+	t.Cleanup(func() { if err := r.Close(); err != nil { t.Log(err) } })
+	t.Cleanup(func() { if err := w.Close(); err != nil { t.Log(err) } })
+
+	tests := []struct {
+		name   string
+		output *os.File
+		want   uint16
+	}{
+		{
+			name:  "falls back to minWidth for non-terminal files",
+			output: w, // pipes have no width
+			want:   uint16(minWidth),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := getTermWidth(tt.output)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("getTermWidth(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
 	}
