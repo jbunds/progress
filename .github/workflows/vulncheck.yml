@@ -1,0 +1,22 @@
+name: Vulnerability Check
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**/*.go'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**/*.go'
+  workflow_dispatch: # allows this workflow to be manually triggered from the UI
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6 # http://github.com/actions/checkout
+      - uses: actions/setup-go@v6 # http://github.com/actions/setup-go
+        with:
+          go-version-file: go.mod # https://github.com/actions/setup-go/blob/main/docs/advanced-usage.md#using-the-go-version-file-input
+      - uses: golang/govulncheck-action@v1 # https://github.com/golang/govulncheck-action

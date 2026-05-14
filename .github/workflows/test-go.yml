@@ -27,7 +27,7 @@ jobs:
 
     - uses: actions/setup-go@v6 # http://github.com/actions/setup-go
       with:
-        go-version: '1.26.2'    # https://github.com/marketplace/actions/setup-go-environment#supported-version-syntax
+        go-version-file: go.mod # https://github.com/actions/setup-go/blob/main/docs/advanced-usage.md#using-the-go-version-file-input
 
     - name: test                # https://pkg.go.dev/cmd/go#hdr-Testing_functions
       id:   test
