@@ -74,10 +74,10 @@ type Progress struct {
 // New initializes a throttled, concurrency-safe, high-precision work progress
 // tracker and starts a work completion status rendering loop in the background.
 //
-// The value of the `totalUnits` parameter determines the accumulation mode used internally:
+// The value of the totalUnits parameter determines the accumulation mode used internally:
 //
-//    pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known)
-//    pass totalUnits == 0 for fractional path allocation (when totalUnits is unknown)
+//   - Pass totalUnits >  0 for weight-based accumulation  (when totalUnits is known).
+//   - Pass totalUnits == 0 for fractional path allocation (when totalUnits is unknown).
 func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Option) *Progress {
 	p := &Progress{
 		tracker:        getTracker(Standard, totalUnits),
@@ -125,11 +125,12 @@ func (p *Progress) AddTotal(n uint64) {
 
 // Report updates the current progress status.
 //
-//   if total >  0: weight represents the relative weight of the work completed, and the
-//                  progress percentage is calculated as accumulated weight / totalUnits
+// The progress calculation depends on the initialization mode:
 //
-//   if total == 0: weight represents the portion of the InitialBudget(),
-//                  which must be divided among all sub-tasks by the caller
+//   - If total >  0: weight represents the relative weight of the work completed,
+//     and the progress percentage is calculated as accumulated weight / totalUnits.
+//   - If total == 0: weight represents the portion of the InitialBudget(),
+//     which must be divided among all sub-tasks by the caller.
 func (p *Progress) Report(weight float64, status string) {
 	p.tracker.store(uint64(weight), status)
 
