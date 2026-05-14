@@ -1,6 +1,6 @@
 package progress
 
-// appendUintIdxInline writes a uint32 directly into a byte slice without heap allocation.
+// appendIntIdxInline writes a stringified integer directly into a byte slice without heap allocation.
 // optimized for RGB channel and terminal column ranges (0-255, 0-999).
 func appendIntIdxInline(b []byte, v int) []byte {
 	if v < 0 { return appendUintIdxFallback(b, uint32(0)) }

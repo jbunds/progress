@@ -53,6 +53,7 @@ linters:
             - syscall
             - testing
             - time
+            - unicode/utf8
             - unique
             - github.com/google/go-cmp/cmp
             - github.com/google/go-cmp/cmp/cmpopts
