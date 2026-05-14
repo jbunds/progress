@@ -1,6 +1,6 @@
 package progress
 
-// (no-op) tracker for cases where status strings are not needed
+// (no-op) tracker for cases where status strings are not needed.
 type percentTracker struct { lo *layout }
 
 // TODO(jeff): ensure redundant redraws are skipped when new shares of scale

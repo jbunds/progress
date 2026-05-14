@@ -22,36 +22,41 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-var opts = cmp.Options{
-	cmpopts.EquateEmpty(),
-	cmpopts.IgnoreFields(Progress{}, // non-trivial to compare
-		"buf",       "output",     "stopChan",
-		"doneChan",  "resizeChan", "resizeHandler",
-		"closeOnce", "drawNotify", "isTerminalFunc"),
-	cmp.AllowUnexported(
-		Progress{},        realClock{},     layout{},
-		standardTracker{}, uniqueTracker{},
-		percentTracker{},  fractionTracker{}),
-	cmpopts.EquateComparable(
-		atomic.Value{},
-		atomic.Uint32{},
-		atomic.Uint64{}),
-	cmp.FilterValues(func(x, _ any) bool { // recursively unwraps atomic types to facilitate deep comparison of underlying values
-		_, ok := x.(interface{ Load() any })
-		if !ok && reflect.ValueOf(x).CanAddr() {
-			_, ok = reflect.ValueOf(x).Addr().Interface().(interface{ Load() any })
-		}
-		return ok
-	}, cmp.Transformer("unwrapAtomic", func(x any) any {
-		if loader, ok := x.(interface{ Load() any }); ok {
-			return loader.Load()
-		}
-		v := reflect.ValueOf(x)
-		if v.CanAddr() {
-			return v.Addr().Interface().(interface{ Load() any }).Load()
-		}
-		return x
-	})),
+func getCmpOpts() cmp.Options {
+	return cmp.Options{
+		cmpopts.EquateEmpty(),
+		cmpopts.IgnoreFields(Progress{}, // non-trivial to compare
+			"buf",       "output",     "stopChan",
+			"doneChan",  "resizeChan", "resizeHandler",
+			"closeOnce", "drawNotify", "isTerminalFunc"),
+		cmp.AllowUnexported(
+			Progress{},        realClock{},     layout{},
+			standardTracker{}, uniqueTracker{},
+			percentTracker{},  fractionTracker{}),
+		cmpopts.IgnoreUnexported(theme{}),
+		cmpopts.EquateComparable(
+			atomic.Value{},
+			atomic.Uint32{},
+			atomic.Uint64{}),
+		cmp.FilterValues(func(x, _ any) bool { // recursively unwraps atomic types to facilitate deep comparison of underlying values
+			_, ok := x.(interface{ Load() any })
+			if !ok && reflect.ValueOf(x).CanAddr() {
+				_, ok = reflect.ValueOf(x).Addr().Interface().(interface{ Load() any })
+			}
+			return ok
+		}, cmp.Transformer("unwrapAtomic", func(x any) any {
+			if loader, ok := x.(interface{ Load() any }); ok {
+				return loader.Load()
+			}
+			v := reflect.ValueOf(x)
+			if v.CanAddr() {
+				if loader, ok := v.Addr().Interface().(interface{ Load() any }); ok {
+					return loader.Load()
+				}
+			}
+			return x
+		})),
+	}
 }
 
 func TestNew(t *testing.T) {
@@ -566,7 +571,7 @@ func TestClose(t *testing.T) {
 			if diff := cmp.Diff(tt.wantOut, got.String()); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
-			if diff := cmp.Diff(tt.wantProg, p, opts...); diff != "" {
+			if diff := cmp.Diff(tt.wantProg, p, getCmpOpts()); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})

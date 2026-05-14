@@ -6,7 +6,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// standard tracker for mostly unique status strings
+// standard tracker for mostly unique status strings.
 type standardTracker struct {
 	lo  *layout
 	ptr atomic.Pointer[string]

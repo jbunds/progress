@@ -7,7 +7,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// unique tracker for repetitive status strings
+// unique tracker for repetitive status strings.
 type uniqueTracker struct {
 	lo  *layout
 	val atomic.Value

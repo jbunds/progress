@@ -15,25 +15,33 @@ import (
 
 const (
 	// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
-	// (the sync/atomic package provides no floating-point types)
 	//
-	// the choice of 1e15 balances high-precision fractional shares in the context
+	// The choice of 1e15 balances high-precision fractional shares in the context
 	// of, e.g., deep recursion, with sufficient uint64 headroom to prevent overflow
-	// when performing intermediate percentage calculations (newCurrent * 10000)
+	// when performing intermediate percentage calculations (newCurrent * 10000).
 	//
-	// precision starts to degrade as the total number of work units approaches scale,
-	// but even at this limit, each unit of work represents at least 1 unit of scale
+	// Precision starts to degrade as the total number of work units approaches scale,
+	// but even at this limit, each unit of work represents at least 1 unit of scale.
 	scale uint64 = 1e15
 )
 
 // Option defines a functional configuration for Progress.
 type Option func(*Progress) // exported to allow callers to create []*progress.Option to pass to New(...)
 
-// WithTracker allows callers to explicitly specify a status tracker, e.g.:
+// WithTracker allows callers to override the default progress.Standard status tracker, e.g.:
 //
 //   progress.New(ctx, 100, os.Stderr, progress.WithTracker(progress.Fraction))
 func WithTracker(s strategy) Option {
 	return func(p *Progress) { p.tracker = getTracker(s, p.total.Load()) }
+}
+
+// WithTheme allows callers to override the default color (green) of the progress bar, e.g.:
+//
+//   progress.New(ctx, 100, os.Stderr, progress.WithTheme("yellow"))
+//
+// Silently falls back to the default ("green") if an invalid theme name is specified.
+func WithTheme(c string) Option {
+	return func(p *Progress) { p.theme = themeOrDefault(c) }
 }
 
 // Progress implements a throttled, concurrency-safe,
@@ -60,6 +68,7 @@ type Progress struct {
 	clock          clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
 	isTerminalFunc func(any) bool // facilitates dependency injection for tests
 	isTerminal     bool
+	theme          theme
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress
@@ -78,6 +87,7 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		resizeChan:     make(chan os.Signal, 1),
 		clock:          &realClock{dur: 16 * time.Millisecond},
 		isTerminalFunc: isTerminal,
+		theme:          themeOrDefault("green"),
 	}
 
 	p.isTerminal = p.isTerminalFunc(p.output)

@@ -56,7 +56,7 @@ func TestGetTracker(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := getTracker(tt.strat, tt.total)
-			if diff := cmp.Diff(tt.want, got, opts...); diff != "" {
+			if diff := cmp.Diff(tt.want, got, getCmpOpts()); diff != "" {
 				t.Errorf("getTracker(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})

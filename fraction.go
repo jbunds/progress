@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 )
 
-// tracker for cases where status strings are a proper fraction of the completed versus total work
+// tracker for cases where status strings are a proper fraction of the completed versus total work.
 type fractionTracker struct {
 	lo      *layout
 	current atomic.Uint64 // numerator

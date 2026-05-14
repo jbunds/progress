@@ -1,29 +1,17 @@
 package progress
 
-const (
-	startBgR,  startBgG,  startBgB =  10,  25,  12 //   0% progress theme: dark green background, white foreground
-	startFgR,  startFgG,  startFgB = 255, 255, 255
-	  endBgR,    endBgG,    endBgB =  40, 210,  85 // 100% progress theme: bright green background, darker grey foreground
-	  endFgR,    endFgG,    endFgB =  20,  30,  20
-	deltaBgR =   endBgR - startBgR                 // precomputed delta slope:  30
-	deltaBgG =   endBgG - startBgG                 // precomputed delta slope: 185
-	deltaBgB =   endBgB - startBgB                 // precomputed delta slope:  73
-	deltaFgR = startFgR -   endFgR                 // precomputed delta slope: 235
-	deltaFgG = startFgG -   endFgG                 // precomputed delta slope: 225
-	deltaFgB = startFgB -   endFgB                 // precomputed delta slope: 235
-)
-
-// state tracks loop variants across drawing steps without triggering heap escapes
+// writeState encapsulates canvas boundaries, color theme, and cursor positions
+// across sequential draws in a stack-allocated block to prevent heap escaping.
 type writeState struct {
 	buf        []byte
-	cols       uint32
-	visCols    uint32
-	termWidth  uint32
-	denom      uint32
+	cols       int
+	visCols    int
+	termWidth  int
+	denom      int
+	theme      theme
 	isTerm     bool
 	isColored  bool
 }
-
 
 // sync performs a state-aware redraw, skipping redundant redraws if the
 // progress and status values haven't changed since the last render.
@@ -77,16 +65,17 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 	//
 	// global gradient: maps the color spectrum across the full terminal width.
 	//                  the color of any character depends strictly on its absolute screen column.
-	tWidth := uint32(p.termWidth)
-	var denom uint32
+	tWidth := int(p.termWidth)
+	var denom int
 	if tWidth > 1 { denom = tWidth - 1 }
 
 	state := writeState{
 		buf:       buf,
 		visCols:   0,
-		cols:      (tWidth * uint32(pctSigDigits)) / 10000,
+		cols:      (tWidth * int(pctSigDigits)) / 10000,
 		termWidth: tWidth,
 		denom:     denom,
+		theme:     p.theme,
 		isTerm:    p.isTerminal,
 		isColored: false,
 	}
@@ -106,6 +95,7 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 //		cols:      barCols,
 //		termWidth: tWidth,
 //		denom:     denom,
+//		theme:     p.theme,
 //		isTerm:    p.isTerminal,
 //		isColored: false,
 //	}
@@ -132,19 +122,19 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 	state.writeString(status)
 
 	for p.isTerminal && state.visCols < state.cols { // fill remaining bar space with clean gradient padding
-		var factor uint32
+		var factor int
 		if state.denom > 0 { factor = (state.visCols * 1000) / state.denom }
 
-		bgR := startBgR + (deltaBgR * factor) / 1000
-		bgG := startBgG + (deltaBgG * factor) / 1000
-		bgB := startBgB + (deltaBgB * factor) / 1000
+		bgR := state.theme.startBgR + (state.theme.deltaBgR * factor) / 1000
+		bgG := state.theme.startBgG + (state.theme.deltaBgG * factor) / 1000
+		bgB := state.theme.startBgB + (state.theme.deltaBgB * factor) / 1000
 
 		state.buf = append(state.buf, "\033[30;48;2;"...) // 30=black foreground (text), 48=prepare to set background color, 2=24-bit RGB triplet incoming
-		state.buf = appendUintIdxInline(state.buf, bgR)
+		state.buf = appendIntIdxInline(state.buf, bgR)
 		state.buf = append(state.buf, ';')
-		state.buf = appendUintIdxInline(state.buf, bgG)
+		state.buf = appendIntIdxInline(state.buf, bgG)
 		state.buf = append(state.buf, ';')
-		state.buf = appendUintIdxInline(state.buf, bgB)
+		state.buf = appendIntIdxInline(state.buf, bgB)
 		state.buf = append(state.buf, 'm', ' ')
 		state.visCols++
 		state.isColored = true
@@ -160,33 +150,33 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 }
 
 func (s *writeState) writeRune(r rune) {
-	var rWidth uint32 = 1
+	rWidth := 1
 	if r > 0x1100 && isWideRune(r) { rWidth = 2 }
 
 	if s.isTerm && s.termWidth > 0 && s.visCols < s.cols {
-		var factor uint32
+		var factor int
 		if s.denom > 0 { factor = (s.visCols * 1000) / s.denom }
 
-		bgR  := startBgR + (deltaBgR * factor) / 1000
-		bgG  := startBgG + (deltaBgG * factor) / 1000
-		bgB  := startBgB + (deltaBgB * factor) / 1000
+		bgR  := s.theme.startBgR + (s.theme.deltaBgR * factor) / 1000
+		bgG  := s.theme.startBgG + (s.theme.deltaBgG * factor) / 1000
+		bgB  := s.theme.startBgB + (s.theme.deltaBgB * factor) / 1000
 
-		fgR  := startFgR - (deltaFgR * factor) / 1000
-		fgG  := startFgG - (deltaFgG * factor) / 1000
-		fgB  := startFgB - (deltaFgB * factor) / 1000
+		fgR  :=         startFgR + (s.theme.deltaFgR * factor) / 1000
+		fgG  :=         startFgG + (s.theme.deltaFgG * factor) / 1000
+		fgB  :=         startFgB + (s.theme.deltaFgB * factor) / 1000
 
 		s.buf = append(s.buf, "\033[38;2;"...) // 38=set foreground (text) color, 2=24-bit RGB triplet incoming
-		s.buf = appendUintIdxInline(s.buf, fgR)
+		s.buf = appendIntIdxInline(s.buf, fgR)
 		s.buf = append(s.buf, ';')
-		s.buf = appendUintIdxInline(s.buf, fgG)
+		s.buf = appendIntIdxInline(s.buf, fgG)
 		s.buf = append(s.buf, ';')
-		s.buf = appendUintIdxInline(s.buf, fgB)
+		s.buf = appendIntIdxInline(s.buf, fgB)
 		s.buf = append(s.buf, ";48;2;"...) // 48=prepare to set background color, 2=24-bit RGB triplet incoming
-		s.buf = appendUintIdxInline(s.buf, bgR)
+		s.buf = appendIntIdxInline(s.buf, bgR)
 		s.buf = append(s.buf, ';')
-		s.buf = appendUintIdxInline(s.buf, bgG)
+		s.buf = appendIntIdxInline(s.buf, bgG)
 		s.buf = append(s.buf, ';')
-		s.buf = appendUintIdxInline(s.buf, bgB)
+		s.buf = appendIntIdxInline(s.buf, bgB)
 		s.buf = append(s.buf, 'm')
 		s.isColored = true
 	} else if s.visCols >= s.cols && s.isColored {

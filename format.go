@@ -2,7 +2,8 @@ package progress
 
 // appendUintIdxInline writes a uint32 directly into a byte slice without heap allocation.
 // optimized for RGB channel and terminal column ranges (0-255, 0-999).
-func appendUintIdxInline(b []byte, v uint32) []byte {
+func appendIntIdxInline(b []byte, v int) []byte {
+	if v < 0 { return appendUintIdxFallback(b, uint32(0)) }
 	switch {
 	case v < 10:
 		return append(b,                                                 byte('0' + (v & 0xF)))
@@ -18,7 +19,7 @@ func appendUintIdxInline(b []byte, v uint32) []byte {
 		return append(b, byte('0' + (q1 & 0xF)), byte('0' + (q2 & 0xF)), byte('0' + (r & 0xF)))
 	}
 
-	return appendUintIdxFallback(b, v) // fallback which avoids array-to-slice heap allocation escaping
+	return appendUintIdxFallback(b, uint32(v & 0x7FFFFFFF)) // fallback which avoids array-to-slice heap allocation escaping
 }
 
 //go:noinline
@@ -39,7 +40,7 @@ func appendUintIdxFallback(b []byte, v uint32) []byte {
 	return b
 }
 
-// appendRune is a fast, zero-allocation inline implementation of utf8.EncodeRune
+// appendRune is a fast, zero-allocation inline implementation of utf8.EncodeRune.
 func appendRune(p []byte, r rune) []byte {
 	switch {
 	case r <= 0x7F:
