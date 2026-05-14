@@ -18,7 +18,7 @@ permissions:      # https://docs.github.com/actions/reference/workflows-and-acti
 
 jobs:
   test:
-    runs-on: macos-latest # https://docs.github.com/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for--private-repositories
+    runs-on: macos-26 # https://docs.github.com/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for--private-repositories
     steps:
 
     - uses: actions/checkout@v6 # http://github.com/actions/checkout

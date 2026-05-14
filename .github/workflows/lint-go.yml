@@ -18,8 +18,8 @@ permissions: # https://docs.github.com/actions/reference/workflows-and-actions/w
   contents: read
 
 jobs:
-  golangci:               # TODO: consolidate all linters (golangci-lint and stylelint) into a single GitHub Actions workflow called linters.yml
-    runs-on: macos-latest # https://docs.github.com/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for--private-repositories
+  golangci:           # TODO: consolidate all linters (golangci-lint and stylelint) into a single GitHub Actions workflow called linters.yml
+    runs-on: macos-26 # https://docs.github.com/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for--private-repositories
     steps:
       - uses: actions/checkout@v6 # http://github.com/actions/checkout
       - uses: actions/setup-go@v6 # http://github.com/actions/setup-go
