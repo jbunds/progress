@@ -14,16 +14,16 @@ type theme struct {
 	deltaFgR, deltaFgG, deltaFgB int
 }
 
-func themeOrDefault(name string) theme {
+func themeOrDefault(name string) *theme {
 	if t, ok := getTheme(name); ok { return t }
 	t, _ := getTheme("green")
 	return t
 }
 
-func getTheme(name string) (theme, bool) {
+func getTheme(name string) (*theme, bool) {
 	switch name {
 	case "green":
-		return theme{
+		return &theme{
 			startBgR: 10,            startBgG:  25,            startBgB: 12,
 			  endBgR: 40,              endBgG: 210,              endBgB: 85,
 			  endFgR: 20,              endFgG:  30,              endFgB: 20,
@@ -31,7 +31,7 @@ func getTheme(name string) (theme, bool) {
 			deltaFgR: 20 - startFgR, deltaFgG:  30 - startFgG, deltaFgB: 20 - startFgB,
 		}, true
 	case "red":
-		return theme{
+		return &theme{
 			startBgR:  30,            startBgG:   5,            startBgB:   5,
 			  endBgR: 210,              endBgG:  15,              endBgB:  25,
 			  endFgR: 255,              endFgG: 220,              endFgB: 220,
@@ -39,7 +39,7 @@ func getTheme(name string) (theme, bool) {
 			deltaFgR: 255 - startFgR, deltaFgG: 220 - startFgG, deltaFgB: 220 - startFgB,
 		}, true
 	case "orange":
-		return theme{
+		return &theme{
 			startBgR:  26,            startBgG:  12,            startBgB: 12,
 			  endBgR: 255,              endBgG: 150,              endBgB: 50,
 			  endFgR:  42,              endFgG:  12,              endFgB: 12,
@@ -47,14 +47,14 @@ func getTheme(name string) (theme, bool) {
 			deltaFgR:  42 - startFgR, deltaFgG:  12 - startFgG, deltaFgB: 12 - startFgB,
 		}, true
 	case "yellow":
-		return theme{
+		return &theme{
 			startBgR:  55,            startBgG:  24,            startBgB:   2,
 			endBgR:   255,              endBgG: 215,              endBgB:  10,
 			endFgR:    35,              endFgG:  25,              endFgB:   5,
 			deltaBgR: 255 -       55, deltaBgG: 215 -       24, deltaBgB:  10 -        2,
 			deltaFgR:  35 - startFgR, deltaFgG:  25 - startFgG, deltaFgB:   5 - startFgB,
-	  }, true
+		}, true
 	default:
-		return theme{}, false
+		return &theme{}, false
 	}
 }

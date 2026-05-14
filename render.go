@@ -8,7 +8,7 @@ type writeState struct {
 	visCols    int
 	termWidth  int
 	denom      int
-	theme      theme
+	theme      *theme
 	isTerm     bool
 	isColored  bool
 }

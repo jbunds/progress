@@ -68,7 +68,7 @@ type Progress struct {
 	clock          clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
 	isTerminalFunc func(any) bool // facilitates dependency injection for tests
 	isTerminal     bool
-	theme          theme
+	theme          *theme
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress

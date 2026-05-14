@@ -1,0 +1,113 @@
+package progress
+
+import (
+	"context"
+	"io"
+	"os"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
+)
+
+func TestHandleResize(t *testing.T) {
+	t.Parallel()
+
+	fakeClock := &fakeClock{ c: make(chan time.Time, 1) }
+	notify    := make(chan struct{}, 1)
+
+	mockTermWidth     := uint16(minWidth)
+	mockResizeHandler := func() uint16 { return mockTermWidth }
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	p := New(ctx, 0, io.Discard, withClock(fakeClock), withResizeHandler(mockResizeHandler))
+	t.Cleanup(func() { p.Close() })
+	p.drawNotify    = notify // drawNotify signals the completion of a draw cycle in the renderLoop
+	p.resizeHandler = mockResizeHandler
+
+	mockTermWidth = 120
+	p.resizeChan <-syscall.SIGWINCH
+
+	<-notify // await a draw cycle to ensure the resize event has been processed
+
+	want := uint32(120)
+	got  := p.state.Load() >> 16
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("handleResize() mismatch (-want +got):\n%s", diff)
+	}
+
+	cancel()
+	<-p.doneChan
+}
+
+func TestGetResizedTermWidth(t *testing.T) {
+	t.Parallel()
+	p := New(t.Context(), 0, io.Discard)
+	t.Cleanup(func() { p.Close() })
+	want := uint16(p.tracker.layout().staticWidth & 0xFFFF)
+	got  := p.getResizedTermWidth()
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("getResizedTermWidth() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestPrepareTerminal(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name               string
+		isTerminal         bool
+		wantClearSeq       string
+		wantDoneSeq        string
+		wantLineTerminator string
+	}{
+		{
+			name:               "is a terminal",
+			isTerminal:         true,
+			wantClearSeq:       "\r\033[?2026h",
+			wantDoneSeq:        "\033[0m\r\033[?25h",
+			wantLineTerminator: "\033[K\033[0m\033[?2026l",
+		},
+		{
+			name:               "is not a terminal",
+			isTerminal:         false,
+			wantClearSeq:       "",
+			wantDoneSeq:        "\n",
+			wantLineTerminator: "\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := &Progress{
+				output:         os.Stderr,
+				tracker:        getTracker(Standard, 0),
+				isTerminalFunc: func(any) bool { return tt.isTerminal },
+			}
+			p.prepareTerminal()
+			layout := p.tracker.layout()
+			if diff := cmp.Diff(tt.wantClearSeq, layout.clearSeq); diff != "" {
+				t.Errorf("prepareTerminal(%q) clearSeq mismatch (-want +got):\n%s", tt.name, diff)
+			}
+			if diff := cmp.Diff(tt.wantDoneSeq, layout.doneSeq); diff != "" {
+				t.Errorf("prepareTerminal(%q) doneSeq mismatch (-want +got):\n%s", tt.name, diff)
+			}
+			if diff := cmp.Diff(tt.wantLineTerminator, layout.lineTerminator); diff != "" {
+				t.Errorf("prepareTerminal(%q) lineTerminator mismatch (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
+func TestGetFD(t *testing.T) {
+	t.Parallel()
+	w    := "not a file"
+	got  := getFD(w)
+	want := -1
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("getFD(%q) mismatch (-want +got):\n%s", w, diff)
+	}
+}
