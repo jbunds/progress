@@ -17,6 +17,8 @@ Incremental calculations retain high-precision, while imposing minimal overhead 
 
 See the [`examples`](./examples) directory for examples of the modal API.
 
+[Run](./examples/README.md) the example programs to see the UI in action.
+
 Here are a couple of real-world examples:
 - [github.com/jbunds/coverage/main.go](https://github.com/jbunds/coverage/blob/main/main.go#:~:text=progress.New)
 - [github.com/jbunds/coverage/tree.go](https://github.com/jbunds/coverage/blob/main/tree.go#:~:text=progress.New)
