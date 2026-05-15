@@ -49,6 +49,7 @@ func TestDraw(t *testing.T) {
 				tracker: getTracker(Standard, 0),
 				output:  got,
 			}
+			p.layout = p.tracker.baseLayout()
 			p.buf.Store(buf())
 
 			p.draw(tt.state, tt.statusText)
@@ -108,6 +109,7 @@ func TestPercentTrackerDraw(t *testing.T) {
 				tracker: getTracker(Percent, 0),
 				output:  got,
 			}
+			p.layout = p.tracker.baseLayout()
 			p.buf.Store(buf())
 
 			p.draw(tt.state, "")
@@ -144,6 +146,7 @@ func TestUniqueTrackerDraw(t *testing.T) {
 				tracker: getTracker(Unique, 0),
 				output:  got,
 			}
+			p.layout = p.tracker.baseLayout()
 			p.buf.Store(buf())
 
 			p.draw(tt.state, unique.Make(tt.statusText))
@@ -170,8 +173,9 @@ func TestFractionTrackerRedraw(t *testing.T) {
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
 	}
-
+	p.layout = p.tracker.baseLayout()
 	p.buf.Store(buf())
+
 	p.total.Store(73)
 	p.state.Store(pack(minWidth, 0))
 
@@ -310,10 +314,11 @@ func TestWriteStatus(t *testing.T) {
 				tracker:    getTracker(Standard, 3),
 				output:     got,
 				isTerminal: true,
-				termWidth:  30,
 				theme:      themeOrDefault("green"),
 			}
+			p.layout = p.tracker.baseLayout()
 			p.buf.Store(buf())
+			p.state.Store(uint32(30) << 16)
 			_ = p.writeStatus(tt.pctSigDigits, tt.status, tt.trunc)
 			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
 				t.Errorf("writeStatus(%d, %q, %t) mismatch (-want +got):\n%s", tt.pctSigDigits, tt.status, tt.trunc, diff)

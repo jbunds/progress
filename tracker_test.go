@@ -28,7 +28,7 @@ func TestGetTracker(t *testing.T) {
 			name:  "percent",
 			strat: Percent,
 			want:  &percentTracker{
-				lo: &layout{
+				lo: layout{
 					staticWidth:    17,
 					prefix:         "processing (",
 					suffix:         "%)",

@@ -18,7 +18,7 @@ type layout struct {
 	finalStatus    string // status message to display upon completion (e.g., "done")
 }
 
-func defaultLayout() *layout {
+func defaultLayout() layout {
 	layout := layout{
 		prefix:         prefix,
 		suffix:         defaultSuffix,
@@ -28,5 +28,5 @@ func defaultLayout() *layout {
 		finalStatus:    "done",
 	}
 	layout.staticWidth = len(layout.prefix) + pctFieldLen + len(layout.suffix)
-	return &layout
+	return layout
 }

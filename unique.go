@@ -9,12 +9,12 @@ import (
 
 // unique tracker for repetitive status strings.
 type uniqueTracker struct {
-	lo  *layout
+	lo  layout
 	val atomic.Value
 }
 
 func (u *uniqueTracker) init()                         { u.lo = defaultLayout()           }
-func (u *uniqueTracker) layout()              *layout  { return u.lo                      }
+func (u *uniqueTracker) baseLayout()           layout  { return u.lo                      }
 func (u *uniqueTracker) load()  any                    { return u.val.Load()              }
 func (u *uniqueTracker) store(_ uint64, status string) { u.val.Store(unique.Make(status)) }
 func (u *uniqueTracker) value(v any)           string  {

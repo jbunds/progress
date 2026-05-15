@@ -44,14 +44,14 @@ func TestPrepareTerminal(t *testing.T) {
 				isTerminalFunc: func(any) bool { return tt.isTerminal },
 			}
 			p.prepareTerminal()
-			layout := p.tracker.layout()
-			if diff := cmp.Diff(tt.wantClearSeq, layout.clearSeq); diff != "" {
+			got := p.layout
+			if diff := cmp.Diff(tt.wantClearSeq, got.clearSeq); diff != "" {
 				t.Errorf("prepareTerminal(%q) clearSeq mismatch (-want +got):\n%s", tt.name, diff)
 			}
-			if diff := cmp.Diff(tt.wantDoneSeq, layout.doneSeq); diff != "" {
+			if diff := cmp.Diff(tt.wantDoneSeq, got.doneSeq); diff != "" {
 				t.Errorf("prepareTerminal(%q) doneSeq mismatch (-want +got):\n%s", tt.name, diff)
 			}
-			if diff := cmp.Diff(tt.wantLineTerminator, layout.lineTerminator); diff != "" {
+			if diff := cmp.Diff(tt.wantLineTerminator, got.lineTerminator); diff != "" {
 				t.Errorf("prepareTerminal(%q) lineTerminator mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
@@ -95,7 +95,7 @@ func TestGetResizedTermWidth(t *testing.T) {
 	t.Parallel()
 	p := New(t.Context(), 0, io.Discard)
 	t.Cleanup(func() { p.Close() })
-	want := uint16(p.tracker.layout().staticWidth & 0xFFFF)
+	want := uint16(p.layout.staticWidth & 0xFFFF)
 	got  := p.getResizedTermWidth()
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("getResizedTermWidth() mismatch (-want +got):\n%s", diff)

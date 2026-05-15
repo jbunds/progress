@@ -316,9 +316,8 @@ func TestClose(t *testing.T) {
 			total:   100,
 			wantOut: "processing (100%): done\n",
 			wantProg: &Progress{
-				tracker:   getTracker(Standard, 100),
-				clock:     &realClock{ dur: 16 * time.Millisecond },
-				termWidth: 80,
+				tracker: getTracker(Standard, 100),
+				clock:   &realClock{ dur: 16 * time.Millisecond },
 			},
 		},
 		{
@@ -327,18 +326,18 @@ func TestClose(t *testing.T) {
 			err:      errors.New("aborted for some reason"),
 			wantOut:  "stopped (aborted for some reason)\n",
 			wantProg: &Progress{
-				tracker:   getTracker(Standard, 200),
-				clock:     &realClock{ dur: 16 * time.Millisecond },
-				termWidth: 80,
+				tracker: getTracker(Standard, 200),
+				clock:   &realClock{ dur: 16 * time.Millisecond },
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx, cancel := context.WithCancelCause(t.Context())
-			got         := new(bytes.Buffer)
-			p           := New(ctx, tt.total, got)
+			ctx, cancel       := context.WithCancelCause(t.Context())
+			got               := new(bytes.Buffer)
+			p                 := New(ctx, tt.total, got)
+			tt.wantProg.layout = p.layout
 			tt.wantProg.total.Store(tt.total)
 
 			cancel(tt.err)

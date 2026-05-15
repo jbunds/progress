@@ -58,7 +58,7 @@ type Progress struct {
 
 	// configuration (read-only after construction)
 	output         io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)
-	termWidth      uint16         // terminal width; falls back to 80 (per the minWidth package global) for pipes, redirections, and non-tty outputs
+	layout         layout         // terminal-aware layout state copy used for rendering progress status
 	stopChan       chan struct{}  // signals the background rendering loop to perform final cleanup
 	doneChan       chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
 	drawNotify     chan struct{}  // used in tests to signal the completion of a draw cycle
@@ -67,8 +67,8 @@ type Progress struct {
 	closeOnce      sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
 	clock          clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
 	isTerminalFunc func(any) bool // facilitates dependency injection for tests
-	isTerminal     bool
-	theme          *theme
+	isTerminal     bool           // boolean indicating whether or not output is a terminal
+	theme          *theme         // progress bar color theme
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress
@@ -90,19 +90,30 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		theme:          themeOrDefault("green"),
 	}
 
-	p.isTerminal = p.isTerminalFunc(p.output)
-	p.termWidth  = getTermWidth(p.output)
-	buf         := make([]byte, 0, 4 * int(p.termWidth) + p.tracker.layout().staticWidth) // assume worst case where all UTF-8 characters in status strings are 4-bytes each
-
-	p.buf.Store(&buf)
-	p.total.Store(min(totalUnits, scale)) // fall back to scale if totalUnits exceeds max precision
-	p.state.Store(uint32(p.termWidth) << 16)
 	p.resizeHandler = p.getResizedTermWidth
-	p.prepareTerminal()
+	p.isTerminal    = p.isTerminalFunc(p.output)
+	termWidth      := getTermWidth(p.output)
+
+	p.total.Store(min(totalUnits, scale)) // fall back to scale if totalUnits exceeds max precision
+	p.state.Store(uint32(termWidth) << 16)
 
 	for _, opt := range opts { opt(p) } // allows callers to override defaults via exported Options
 
+	p.prepareTerminal()
+
+	bufCap := (23 * int(termWidth)       ) + // 23 bytes per column for 24-bit color gradient blocks
+              ( 4 * int(termWidth)       ) + //  4 bytes per column for worst-case UTF-8 status text truncation thresholds
+              len(p.layout.prefix        ) + 
+              len(p.layout.suffix        ) + 
+              len(p.layout.clearSeq      ) + 
+              len(p.layout.lineTerminator)
+
+	buf := make([]byte, 0, bufCap)
+	p.buf.Store(&buf)
+
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // listen for a SIGWINCH signal to handle the terminal window being resized
+
+	if p.isTerminal { _, _ = io.WriteString(p.output, hideCursor) } // hide the cursor
 
 	go p.renderLoop(ctx)
 
@@ -198,10 +209,15 @@ func (p *Progress) renderLoop(parentCtx context.Context) {
 	defer signal.Stop(p.resizeChan)
 	defer p.finish(ctx) // render the final frame to the terminal and perform any necessary cleanup
 
-	if isTerminal(p.output) { _, _ = io.WriteString(p.output, "\033[?25l") } // hide the cursor
-
 	for {
-		select {
+		select {             // check high-priority exit boundaries first, before reading tickers
+		case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
+			return
+		case <-p.stopChan:   // Close() called
+			return
+		default:
+		}
+		select {             // non-blocking event collection loop
 		case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
 			return
 		case <-p.stopChan:   // Close() called
@@ -216,19 +232,18 @@ func (p *Progress) renderLoop(parentCtx context.Context) {
 
 // finish renders the final progress frame to the terminal.
 func (p *Progress) finish(ctx context.Context) {
-	cause  := context.Cause(ctx)
-	layout := p.tracker.layout()
+	cause := context.Cause(ctx)
 
 	var output string
 	if cause != nil && !errors.Is(cause, context.Canceled) {
-		output = layout.clearSeq                   +
+		output = p.layout.clearSeq                 +
 		         "stopped (" + cause.Error() + ")" +
-		         layout.doneSeq
+		         p.layout.doneSeq
 	} else {
-		output = layout.clearSeq                       +
-		         layout.prefix + "100" + layout.suffix +
-		         layout.finalStatus                    +
-		         layout.doneSeq
+		output = p.layout.clearSeq                         +
+		         p.layout.prefix + "100" + p.layout.suffix +
+		         p.layout.finalStatus                      +
+		         p.layout.doneSeq
 	}
 
 	_, _ = io.WriteString(p.output, output)

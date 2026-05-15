@@ -11,34 +11,35 @@ import (
 // prepareTerminal sets the line terminator character and ANSI escape sequences to
 // be used when p.output (nominally os.Stderr) has not been piped or redirected.
 func (p *Progress) prepareTerminal() {
+	baseLayout := p.tracker.baseLayout()
 	if p.isTerminalFunc(p.output) {
-		layout               := p.tracker.layout()
-		layout.clearSeq       = "\r\033[?2026h"            // move cursor to beginning of line; freeze screen rendering for this atomic update block
-		layout.doneSeq        = "\033[0m\r\033[?25h"       // restore all attributes to defaults; restore cursor
-		layout.lineTerminator = "\033[K\033[0m\033[?2026l" // erase line; restore all attributes to defaults; flush atomic update block
+		baseLayout.clearSeq       = clearSeq       // move cursor to beginning of line; freeze screen rendering for this atomic update block
+		baseLayout.doneSeq        = doneSeq        // restore all attributes to defaults; restore cursor
+		baseLayout.lineTerminator = lineTerminator // erase line; restore all attributes to defaults; flush atomic update block
 	}
+	p.layout = baseLayout
 }
 
 // handleResize records the new terminal width to be respected by subsequent render cycles.
 func (p *Progress) handleResize() {
-	bufPtr      := p.buf.Load()
-	p.termWidth  = p.resizeHandler()
-	bytesPerCol :=  4 // worst case
-	padding     := 64 // conservative
-	if p.isTerminal {
-		bytesPerCol =  40 // "\033[38;2;255;255;255;48;2;255;255;255;m" == 36 + 4 bytes (worst case) per UTF-8 rune == 40
-		padding     = 128 // additional capacity for layout.clearSeq and layout.lineTerminator sequences
-	}
-	reqCap := (bytesPerCol * int(p.termWidth)) + p.tracker.layout().staticWidth + padding
+	bufPtr    := p.buf.Load()
+	termWidth := p.resizeHandler()
 
-	if bufPtr == nil || cap(*bufPtr) < reqCap { // grow the buffer when the terminal width is increased
-		newBuf := make([]byte, 0, reqCap)
+	bufCap := (23 * int(termWidth))        +
+	          ( 4 * int(termWidth))        +
+	          len(p.layout.prefix        ) +
+	          len(p.layout.suffix        ) +
+	          len(p.layout.clearSeq      ) +
+	          len(p.layout.lineTerminator)
+
+	if bufPtr == nil || cap(*bufPtr) < bufCap { // grow the buffer when the terminal width is increased
+		newBuf := make([]byte, 0, bufCap)
 		p.buf.Store(&newBuf)
 	}
 
 	for { // atomically update termWidth while preserving concurrent percentage or status changes
 		oldState := p.state.Load()
-		newState := (oldState & 0xFFFF) | (uint32(p.termWidth) << 16) // pack p.termWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
+		newState := (oldState & 0xFFFF) | (uint32(termWidth) << 16) // pack p.termWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
 		if p.state.CompareAndSwap(oldState, newState) {
 			p.sync()
 			break
@@ -47,9 +48,9 @@ func (p *Progress) handleResize() {
 }
 
 // getResizedTermWidth returns the current terminal width, enforcing
-// p.tracker.layout().staticWidth as the minimum layout threshold.
+// p.layout.staticWidth as the minimum layout threshold.
 func (p *Progress) getResizedTermWidth() uint16 {
-	width := p.tracker.layout().staticWidth // assume a human manually resized the terminal, so support terminal widths as narrow as p.tracker.layout().staticWidth
+	width := p.layout.staticWidth // assume a human manually resized the terminal, so support terminal widths as narrow as p.layout.staticWidth
 	fd    := getFD(p.output)
 	if fd < 0 { return uint16(width & 0xFFFF) }
 	if w, _, err := term.GetSize(fd); err == nil && w > 0 {

@@ -8,13 +8,13 @@ import (
 
 // standard tracker for mostly unique status strings.
 type standardTracker struct {
-	lo  *layout
+	lo  layout
 	ptr atomic.Pointer[string]
 }
 
-func (s *standardTracker) init()           { s.lo = defaultLayout() }
-func (s *standardTracker) layout() *layout { return s.lo            }
-func (s *standardTracker) load()       any { return s.ptr.Load()    }
+func (s *standardTracker) init()              { s.lo = defaultLayout() }
+func (s *standardTracker) baseLayout() layout { return s.lo            }
+func (s *standardTracker) load()          any { return s.ptr.Load()    }
 func (s *standardTracker) store(_ uint64, status string) {
 	if p := s.ptr.Load(); p == nil || *p != status {
 		s.ptr.Store(&status)

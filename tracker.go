@@ -21,10 +21,10 @@ const (
 // statusTracker tracks the current work completion progress status.
 type statusTracker interface {
 	store(uint64, string) // handles interning / storage of the current status
-	load()      any       // returns the comparable value (e.g., *string or Handle)
-	value(any)  string    // converts the loaded value back to a string for display in the UI
+	load()       any      // returns the comparable value (e.g., *string or Handle)
+	value(any)   string   // converts the loaded value back to a string for display in the UI
 	init()                // initializes tracker-specific UI layout configuration and metadata
-	layout()    *layout   // returns the UI layout configuration and metadata for a tracker
+	baseLayout() layout   // returns the UI layout configuration and metadata for a tracker
 }
 
 func getTracker(strat strategy, totalUnits uint64) statusTracker {

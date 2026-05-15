@@ -1,5 +1,49 @@
 package progress
 
+// ANSI escape sequences
+//
+//   https://en.wikipedia.org/wiki/ANSI_escape_code#24-bit
+//   https://en.wikipedia.org/wiki/ANSI_escape_code#Select_Graphic_Rendition_parameters
+//   https://ecma-international.org/publications-and-standards/standards/ecma-48/
+//   https://jakob-bagterp.github.io/colorist-for-python/ansi-escape-codes/rgb-colors/
+//
+//   │ atom or sequence  │ description
+//   ├───────────────────┼───────────────────────────────────────────────────────────────
+//   │ \033              │ ESC character (octal)
+//   │ \033[             │ CSI (control sequence introducer)
+//   │ ?                 │ extended terminal mode prefix (per DEC / xterm specification)
+//   │                   │
+//   │ \033[K            │ EL (Erase in Line): erase from cursor position to end of line
+//   │ \033[0m           │ SGR 0 (select graphic rendition: reset):
+//   │                   │     0: deactivate all character attributes, styles, and colors
+//   │                   │     m: SGR terminator)
+//   │                   │
+//   │ \033[30;48;2;     │ SGR sequence:
+//   │                   │     30: set foreground (text) color to black
+//   │                   │     48: set background...
+//   │                   │      2: ...per incoming 24-bit RGB triplet
+//   │ \033[38;2;        │ SGR sequence:
+//   │                   │     38: set foreground (text) color...
+//   │                   │      2: ...per incoming 24-bit RGB triplet
+//   │                   │
+//   │ \033[?25h         │ DECTCEM (DEC Text Cursor Enable Mode) high: show the cursor
+//   │ \033[?25l         │ DECTCEM (DEC Text Cursor Enable Mode)  low: hide the cursor
+//   │                   │
+//   │   2026            │ synchronized updates mode designation number
+//   │ [?2026h           │ synchronized output high:   activate synchronized output mode
+//   │ [?2026l           │ synchronized output  low: deactivate synchronized output mode
+
+const (
+	hideCursor     = "\033[?25l"                // hide cursor
+	clearSeq       = "\r\033[?2026h"            // move cursor to beginning of line; activate synchronized output mode
+	doneSeq        = "\033[0m\r\033[?25h"       // reset all attributes to defaults; move cursor to beginning of line; restore cursor
+	lineTerminator = "\033[K\033[0m\033[?2026l" // erase from cursor position to end of line; reset all attributes; deactivate synchronized output mode
+	prepColorSeq   = "\033[30;48;2;"            // set foreground (text) color to black (30); set background color (48) per incoming 24-bit RGB triplet (2)
+	setFgColor     = "\033[38;2;"               // set foreground (text) color (38) per incoming 24-bit RGB triplet (2)
+	prepSetBgColor = ";48;2;"                   // prepare to set background color (48) per incoming 24-bit RGB triplet
+	resetAttr      = "\033[0m"                  // reset all attributes to defaults
+)
+
 // writeState encapsulates canvas boundaries, color theme, and cursor positions
 // across sequential draws in a stack-allocated block to prevent heap escaping.
 type writeState struct {
@@ -33,7 +77,7 @@ func (p *Progress) sync() {
 // draw formats and renders the current progress status to the terminal,
 // truncating text as needed to fit within the terminal width.
 func (p *Progress) draw(state uint32, val any) {
-	maxLen    := max(int(state >> 16) - p.tracker.layout().staticWidth, 0)
+	maxLen    := max(int(state >> 16) - p.layout.staticWidth, 0)
 	status    := ""
 	truncated := false
 
@@ -57,23 +101,24 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 	bufPtr := p.buf.Load()
 	if bufPtr == nil { return nil }
 
-	layout := p.tracker.layout()
-	buf    := (*bufPtr)[:0]
-	buf     = append(buf, layout.clearSeq...)
+	buf := (*bufPtr)[:0]
+	buf  = append(buf, p.layout.clearSeq...)
+
+	stateWord := p.state.Load()
+	termWidth := int(stateWord >> 16)
 
 	// cache loop-invariant bar gradient values
 	//
 	// global gradient: maps the color spectrum across the full terminal width.
 	//                  the color of any character depends strictly on its absolute screen column.
-	tWidth := int(p.termWidth)
 	var denom int
-	if tWidth > 1 { denom = tWidth - 1 }
+	if termWidth > 1 { denom = termWidth - 1 }
 
 	state := writeState{
 		buf:       buf,
 		visCols:   0,
-		cols:      (tWidth * int(pctSigDigits)) / 10000,
-		termWidth: tWidth,
+		cols:      (termWidth * int(pctSigDigits)) / 10000,
+		termWidth: termWidth,
 		denom:     denom,
 		theme:     p.theme,
 		isTerm:    p.isTerminal,
@@ -84,8 +129,7 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 //	//
 //	// dynamic bar gradient: stretches the full color spectrum to fit the active bar width.
 //	//                       the color gradient transitions completely from 0% to 100% inside the filled bar.
-//	tWidth  := uint32(p.termWidth)
-//	barCols := (tWidth * uint32(pctSigDigits)) / 10000
+//	barCols := (termWidth * uint32(pctSigDigits)) / 10000
 //	var denom uint32
 //	if barCols > 1 { denom = barCols - 1 }
 //
@@ -93,14 +137,14 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 //		buf:       buf,
 //		visCols:   0,
 //		cols:      barCols,
-//		termWidth: tWidth,
+//		termWidth: termWidth,
 //		denom:     denom,
 //		theme:     p.theme,
 //		isTerm:    p.isTerminal,
 //		isColored: false,
 //	}
 
-	state.writeString(layout.prefix)
+	state.writeString(p.layout.prefix)
 
 	switch {
 	case pctSigDigits >= 9950:           // 99.5% < pctSigDigits >  100% => "100%"
@@ -117,7 +161,7 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 		state.writeRune(rune('0' + (val % 10)))
 	}
 
-	state.writeString(layout.suffix)
+	state.writeString(p.layout.suffix)
 	if truncated { state.writeRune('…') }
 	state.writeString(status)
 
@@ -129,7 +173,7 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 		bgG := state.theme.startBgG + (state.theme.deltaBgG * factor) / 1000
 		bgB := state.theme.startBgB + (state.theme.deltaBgB * factor) / 1000
 
-		state.buf = append(state.buf, "\033[30;48;2;"...) // 30=black foreground (text), 48=prepare to set background color, 2=24-bit RGB triplet incoming
+		state.buf = append(state.buf, prepColorSeq...)
 		state.buf = appendIntIdxInline(state.buf, bgR)
 		state.buf = append(state.buf, ';')
 		state.buf = appendIntIdxInline(state.buf, bgG)
@@ -140,9 +184,9 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 		state.isColored = true
 	}
 
-	if p.isTerminal && state.isColored { state.buf = append(state.buf, "\033[0m"...) } // reset all attributes to defaults
+	if p.isTerminal && state.isColored { state.buf = append(state.buf, resetAttr...) } // reset all attributes to defaults
 
-	state.buf = append(state.buf, layout.lineTerminator...)
+	state.buf = append(state.buf, p.layout.lineTerminator...)
 
 	_, err := p.output.Write(state.buf)
 
@@ -165,13 +209,13 @@ func (s *writeState) writeRune(r rune) {
 		fgG  :=         startFgG + (s.theme.deltaFgG * factor) / 1000
 		fgB  :=         startFgB + (s.theme.deltaFgB * factor) / 1000
 
-		s.buf = append(s.buf, "\033[38;2;"...) // 38=set foreground (text) color, 2=24-bit RGB triplet incoming
+		s.buf = append(s.buf, setFgColor...)
 		s.buf = appendIntIdxInline(s.buf, fgR)
 		s.buf = append(s.buf, ';')
 		s.buf = appendIntIdxInline(s.buf, fgG)
 		s.buf = append(s.buf, ';')
 		s.buf = appendIntIdxInline(s.buf, fgB)
-		s.buf = append(s.buf, ";48;2;"...) // 48=prepare to set background color, 2=24-bit RGB triplet incoming
+		s.buf = append(s.buf, prepSetBgColor...)
 		s.buf = appendIntIdxInline(s.buf, bgR)
 		s.buf = append(s.buf, ';')
 		s.buf = appendIntIdxInline(s.buf, bgG)
@@ -180,7 +224,7 @@ func (s *writeState) writeRune(r rune) {
 		s.buf = append(s.buf, 'm')
 		s.isColored = true
 	} else if s.visCols >= s.cols && s.isColored {
-		s.buf       = append(s.buf, "\033[0m"...) // reset all attributes to defaults
+		s.buf       = append(s.buf, resetAttr...)
 		s.isColored = false
 	}
 
