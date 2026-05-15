@@ -78,3 +78,57 @@ func TestAppendRune(t *testing.T) {
 		})
 	}
 }
+
+func TestIsWideRune(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		inputRune rune
+		want      bool
+	}{
+		{ "ascii",           'a',     false },
+		{ "latin-1",         '©',     false },
+		{ "hangul",          'ㄱ',    true  },
+		{ "hangul jamo",     'ᅇ',    true  },
+		{ "hangul syllable", '가',    true  },
+		{ "lisu",            'ꓣ',     false },
+		{ "full-width",      'ｒ',    true  },
+		{ "emoji",           '🙃',    true  },
+		{ "private use area", 0xE000, false },
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := isWideRune(tt.inputRune)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("isWideRune(%q) mismatch (-want +got):\n%s", tt.inputRune, diff)
+			}
+		})
+	}
+}
+
+func TestTruncateFromLeft(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		str       string
+		maxLen    int
+		wantStr   string
+		wantTrunc bool
+	}{
+		{ "maxLen == 0", "foo",    0, "",       true  },
+		{ "wide runes",  "😐😕🙁", 3, "😐😕🙁", false },
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, trunc := truncateFromLeft(tt.str, tt.maxLen)
+			if diff := cmp.Diff(tt.wantStr, got); diff != "" {
+				t.Errorf("truncateFromLeft(%q, %d) mismatch (-want +got):\n%s", tt.str, tt.maxLen, diff)
+			}
+			if diff := cmp.Diff(tt.wantTrunc, trunc); diff != "" {
+				t.Errorf("truncateFromLeft(%q, %d) mismatch (-want +got):\n%s", tt.str, tt.maxLen, diff)
+			}
+		})
+	}
+}

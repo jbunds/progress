@@ -179,8 +179,10 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	t.Cleanup(func() { p.Close() })
 
 	p.Report(11, "completed 11 units of work") // first report: 11/73
-	tickTrigger <- time.Now()
+	tickTrigger <-time.Now()
 	<-notify
+
+	tickTrigger <-time.Now() // should skip redundant redraw
 
 	want := "processing ( 15%): 11/73\n"
 	if diff := cmp.Diff(want, got.String()); diff != "" {
@@ -190,11 +192,132 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	got.Reset()
 
 	p.Report(34, "completed another 34 units of work") // second report: 45/73
-	tickTrigger <- time.Now()
+	tickTrigger <-time.Now()
 	<-notify
 
 	want = "processing ( 62%): 45/73\n"
 	if diff := cmp.Diff(want, got.String()); diff != "" {
 		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestWriteString(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name          string
+		cols          int
+		denom         int
+		visCols       int
+		isColored     bool
+		str           string
+		wantBuf       []byte
+		wantIsColored bool
+	}{
+		{
+			name:    "wide load",
+			cols:    30,
+			denom:   30 - 1,
+			visCols: 20,
+			str:     "🙃",
+			wantBuf:       []byte("\033[38;2;94;100;94;48;2;30;152;62m🙃"),
+			wantIsColored: true,
+		},
+		{
+			name:      "reset",
+			cols:      30,
+			denom:     30 - 1,
+			visCols:   30,
+			isColored: true,
+			str:       "foo",
+			wantBuf:   []byte("\033[0mfoo"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := &writeState{
+				buf:       make([]byte, 0),
+				isTerm:    true,
+				termWidth: tt.cols,
+				cols:      tt.cols,
+				denom:     tt.denom,
+				visCols:   tt.visCols,
+				isColored: tt.isColored,
+				theme:     themeOrDefault("green"),
+			}
+			s.writeString(tt.str)
+			if diff := cmp.Diff(tt.wantBuf, s.buf); diff != "" {
+				t.Errorf("writeString(%q) mismatch (-want +got):\n%s", tt.str, diff)
+			}
+			if diff := cmp.Diff(tt.wantIsColored, s.isColored); diff != "" {
+				t.Errorf("writeString(%q) mismatch (-want +got):\n%s", tt.str, diff)
+			}
+		})
+	}
+}
+
+func TestWriteStatus(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		pctSigDigits uint16
+		status       string
+		trunc        bool
+		want         string
+		wantErr      bool
+	}{
+		{
+			name:         "succeeds",
+			pctSigDigits: 10000,
+			status:       "working...",
+			want:         "\033[38;2;255;255;255;48;2;10;25;12mp"  +
+			              "\033[38;2;248;248;248;48;2;11;31;14mr"  +
+			              "\033[38;2;240;240;240;48;2;12;37;16mo"  +
+			              "\033[38;2;231;232;231;48;2;13;44;19mc"  +
+			              "\033[38;2;223;225;223;48;2;14;50;22me"  +
+			              "\033[38;2;215;217;215;48;2;15;56;24ms"  +
+			              "\033[38;2;207;209;207;48;2;16;63;27ms"  +
+			              "\033[38;2;199;201;199;48;2;17;69;29mi"  +
+			              "\033[38;2;191;194;191;48;2;18;75;32mn"  +
+			              "\033[38;2;183;186;183;48;2;19;82;34mg"  +
+			              "\033[38;2;175;178;175;48;2;20;88;37m "  +
+			              "\033[38;2;166;170;166;48;2;21;95;39m("  +
+			              "\033[38;2;158;163;158;48;2;22;101;42m1" +
+			              "\033[38;2;150;155;150;48;2;23;107;44m0" +
+			              "\033[38;2;142;147;142;48;2;24;114;47m0" +
+			              "\033[38;2;134;139;134;48;2;25;120;49m%" +
+			              "\033[38;2;126;132;126;48;2;26;126;52m)" +
+			              "\033[38;2;118;124;118;48;2;27;133;54m:" +
+			              "\033[38;2;110;116;110;48;2;28;139;57m " +
+			              "\033[38;2;102;108;102;48;2;29;146;59mw" +
+			              "\033[38;2;94;100;94;48;2;30;152;62mo"   +
+			              "\033[38;2;85;93;85;48;2;31;158;64mr"    +
+			              "\033[38;2;77;85;77;48;2;32;165;67mk"    +
+			              "\033[38;2;69;77;69;48;2;33;171;69mi"    +
+			              "\033[38;2;61;69;61;48;2;34;177;72mn"    +
+			              "\033[38;2;53;62;53;48;2;35;184;74mg"    +
+			              "\033[38;2;45;54;45;48;2;36;190;77m."    +
+			              "\033[38;2;37;46;37;48;2;37;197;79m."    +
+			              "\033[38;2;29;38;29;48;2;38;203;82m."    +
+			              "\033[30;48;2;40;210;85m \033[0m\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := new(bytes.Buffer)
+			p   := &Progress{
+				tracker:    getTracker(Standard, 3),
+				output:     got,
+				isTerminal: true,
+				termWidth:  30,
+				theme:      themeOrDefault("green"),
+			}
+			p.buf.Store(buf())
+			_ = p.writeStatus(tt.pctSigDigits, tt.status, tt.trunc)
+			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
+				t.Errorf("writeStatus(%d, %q, %t) mismatch (-want +got):\n%s", tt.pctSigDigits, tt.status, tt.trunc, diff)
+			}
+		})
 	}
 }

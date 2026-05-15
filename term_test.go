@@ -72,6 +72,7 @@ func TestHandleResize(t *testing.T) {
 
 	p := New(ctx, 0, io.Discard, withClock(fakeClock), withResizeHandler(mockResizeHandler))
 	t.Cleanup(func() { p.Close() })
+	p.isTerminal = true
 	p.drawNotify = notify // drawNotify signals the completion of a draw cycle in the renderLoop
 
 	mockTermWidth = 120

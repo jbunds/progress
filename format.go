@@ -47,7 +47,7 @@ func appendUintIdxFallback(b []byte, v uint32) []byte {
 
 // appendRune is a fast, zero-allocation inline implementation of utf8.EncodeRune.
 func appendRune(p []byte, r rune) []byte {
-	switch {
+	switch {          // https://en.wikipedia.org/wiki/UTF-8#Description
 	case r <=   0x7F: // 1-byte ASCII                 (U+0000 - U+007F)
 		return append(p, byte(r & 0x7F))
 	case r <=  0x7FF: // 2-bytes Latin-1              (U+0080 - U+07FF)
@@ -71,15 +71,15 @@ func appendRune(p []byte, r rune) []byte {
 // isWideRune provides a fast O(1) fallback check for east asian wide characters and emojis.
 // Optimized to reduce branch depth for common western / emoji character streams.
 func isWideRune(r rune) bool {
-	if r < 0x1100 { return false } // exit early for common Western, Cyrillic, and Arabic blocks
-
-	if r <= 0xFFFF {                          // BMP
-		switch {                                // binary partition: separate BMP from supplementary planes
-		case r <= 0x115F: return true           // Hangul Jamo (U+1100 - U+115F)
-		case r <  0x2E80: return false          // skip non-wide symbols like phonetic extensions
-		case r <= 0xA4CF: return r != 0x303F    // CJK radicals, symbols, extensions, ideographs (exclude half fill space)
-		case r <  0xAC00: return false          // skip modified tone marks and other small blocks
-		case r <= 0xD7A3: return true           // Hangul syllables (U+AC00 - U+D7A3)
+	// https://en.wikipedia.org/wiki/Plane_(Unicode)#Basic_Multilingual_Plane
+	if r <  0x1100 { return false }               // exit early for common Western, Cyrillic, and Arabic blocks
+	if r <= 0xFFFF {                              // BMP
+		switch {                                  // binary partition: separate BMP from supplementary planes
+		case r <= 0x115F: return true             // Hangul Jamo (U+1100 - U+115F)
+		case r <  0x2E80: return false            // skip non-wide symbols like phonetic extensions
+		case r <= 0xA4CF: return r != 0x303F      // CJK radicals, symbols, extensions, ideographs (exclude half fill space)
+		case r <  0xAC00: return false            // skip modified tone marks and other small blocks
+		case r <= 0xD7A3: return true             // Hangul syllables (U+AC00 - U+D7A3)
 		case r >= 0xF900:
 			// group late BMP blocks: CJK compatibility, vertical forms, and full-width variants
 			return r <= 0xFAFF                 || // CJK compatibility ideographs
@@ -90,7 +90,7 @@ func isWideRune(r rune) bool {
 		}
 	}
 
-	return r >= 0x1F300 && r <= 0x1FAFF // supplementary planes: modern emojis, pictographs, and transport symbols up to U+1FAFF
+	return r >= 0x1F300 && r <= 0x1FAFF // SMPs (modern emojis, pictographs, and transport symbols up to U+1FAFF)
 }
 
 // truncateFromLeft constrains the length of progress status messages
