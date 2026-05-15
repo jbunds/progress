@@ -71,7 +71,7 @@ func (p *Progress) sync() {
 	p.draw(currentState, currentVal)
 
 	p.lastState.Store(currentState)
-	if currentVal != nil { p.lastStatusVal.Store(currentVal) }
+	p.lastStatusVal.Store(currentVal)
 }
 
 // draw formats and renders the current progress status to the terminal,

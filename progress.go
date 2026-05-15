@@ -3,7 +3,6 @@ package progress
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"os/signal"
@@ -195,13 +194,7 @@ func (p *Progress) Close() {
 }
 
 // renderLoop periodically renders progress status updates at ~60 FPS without impeding workers.
-func (p *Progress) renderLoop(parentCtx context.Context) {
-	ctx, stop := signal.NotifyContext(parentCtx,
-		os.Interrupt,    // interrupt signal (ctrl+c)
-		syscall.SIGTERM, // kill signal
-		syscall.SIGHUP)  // terminal closed signal
-	defer stop()         // restore default signal behavior when the loop exits; the *Progress instance is assumed to be a per-process singleton
-
+func (p *Progress) renderLoop(ctx context.Context) {
 	ticker := p.clock.tick()
 	defer ticker.Stop()
 
@@ -210,14 +203,16 @@ func (p *Progress) renderLoop(parentCtx context.Context) {
 	defer p.finish(ctx) // render the final frame to the terminal and perform any necessary cleanup
 
 	for {
-		select {             // check high-priority exit boundaries first, before reading tickers
+
+		select {             // exit immediately if canceled or explicitly stopped per a Close() call
 		case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
 			return
 		case <-p.stopChan:   // Close() called
 			return
 		default:
 		}
-		select {             // non-blocking event collection loop
+
+		select {             // main blocking event loop
 		case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
 			return
 		case <-p.stopChan:   // Close() called
@@ -232,14 +227,14 @@ func (p *Progress) renderLoop(parentCtx context.Context) {
 
 // finish renders the final progress frame to the terminal.
 func (p *Progress) finish(ctx context.Context) {
-	cause := context.Cause(ctx)
-
 	var output string
-	if cause != nil && !errors.Is(cause, context.Canceled) {
-		output = p.layout.clearSeq                 +
-		         "stopped (" + cause.Error() + ")" +
+	if err := ctx.Err(); err != nil { // context was aborted via signal, timeout, or parent cancelation
+		errStr := err.Error()
+		if cause := context.Cause(ctx); cause != nil { errStr = cause.Error() }
+		output = p.layout.clearSeq          +
+		         "stopped (" + errStr + ")" +
 		         p.layout.doneSeq
-	} else {
+	} else { // clean exit via p.Close() while context still active
 		output = p.layout.clearSeq                         +
 		         p.layout.prefix + "100" + p.layout.suffix +
 		         p.layout.finalStatus                      +

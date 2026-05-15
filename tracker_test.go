@@ -2,6 +2,7 @@ package progress
 
 import (
 	"testing"
+	"unique"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -56,6 +57,10 @@ func TestGetTracker(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := getTracker(tt.strat, tt.total)
+			switch want := tt.want.(type) {
+			case *standardTracker: want.val.Store("")
+			case *uniqueTracker:   want.val.Store(unique.Make(""))
+			}
 			if diff := cmp.Diff(tt.want, got, getCmpOpts()); diff != "" {
 				t.Errorf("getTracker(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}

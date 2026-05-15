@@ -9,25 +9,25 @@ import (
 // standard tracker for mostly unique status strings.
 type standardTracker struct {
 	lo  layout
-	ptr atomic.Pointer[string]
+	val atomic.Value
 }
 
-func (s *standardTracker) init()              { s.lo = defaultLayout() }
-func (s *standardTracker) baseLayout() layout { return s.lo            }
-func (s *standardTracker) load()          any { return s.ptr.Load()    }
-func (s *standardTracker) store(_ uint64, status string) {
-	if p := s.ptr.Load(); p == nil || *p != status {
-		s.ptr.Store(&status)
-	}
+func (s *standardTracker) init() {
+	s.val.Store("")
+	s.lo = defaultLayout()
 }
+
+func (s *standardTracker) baseLayout()           layout  { return s.lo            }
+func (s *standardTracker) load()                    any  { return s.val.Load()    }
+func (s *standardTracker) store(_ uint64, status string) { s.val.Store(status)    }
 
 func (s *standardTracker) value(v any) string {
-	if p, ok := v.(*string); ok && p != nil { return *p }
+	if str, ok := v.(string); ok { return str }
 	return ""
 }
 
 func (s *standardTracker) Equal(other *standardTracker) bool { // workaround cmp's draconian strictures
 	if s == nil || other == nil { return s == other }
-	return cmp.Equal(s.load(), other.load()) &&
-	       cmp.Equal(s.lo,     other.lo, cmp.AllowUnexported(layout{}))
+	return cmp.Equal(s.val.Load(), other.val.Load()) &&
+	       cmp.Equal(s.lo,         other.lo, cmp.AllowUnexported(layout{}))
 }

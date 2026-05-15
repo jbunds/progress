@@ -309,49 +309,47 @@ func TestClose(t *testing.T) {
 		total    uint64
 		err      error
 		wantOut  string
-		wantProg *Progress
 	}{
 		{
 			name:    "succeeds",
 			total:   100,
 			wantOut: "processing (100%): done\n",
-			wantProg: &Progress{
-				tracker: getTracker(Standard, 100),
-				clock:   &realClock{ dur: 16 * time.Millisecond },
-			},
 		},
 		{
-			name:     "progress tracking was aborted",
-			total:    200,
-			err:      errors.New("aborted for some reason"),
-			wantOut:  "stopped (aborted for some reason)\n",
-			wantProg: &Progress{
-				tracker: getTracker(Standard, 200),
-				clock:   &realClock{ dur: 16 * time.Millisecond },
-			},
+			name:    "progress tracking was aborted",
+			total:   200,
+			err:     errors.New("aborted for some reason"),
+			wantOut: "stopped (aborted for some reason)\n",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			ctx, cancel       := context.WithCancelCause(t.Context())
-			got               := new(bytes.Buffer)
-			p                 := New(ctx, tt.total, got)
-			tt.wantProg.layout = p.layout
-			tt.wantProg.total.Store(tt.total)
+			t.Cleanup(func() { cancel(nil) })
 
-			cancel(tt.err)
+			got := new(bytes.Buffer)
+			p   := New(ctx, tt.total, got)
+
+			wantProg := &Progress{
+				tracker: getTracker(Standard, tt.total),
+				clock:   &realClock{ dur: 16 * time.Millisecond },
+				layout:  p.layout,
+			}
+			wantProg.total.Store(tt.total)
+
+			if tt.err != nil { cancel(tt.err) }
 			p.Close()
 			<-p.doneChan
 
 			finalState := p.state.Load() // capture final state
-			tt.wantProg.state.Store(     // sync tt.wantProg to match final state
+			wantProg.state.Store(        // sync wantProg to match final state
 				pack(int(finalState >> 16), float64(finalState & 0xFFFF) / 10000))
 
 			if diff := cmp.Diff(tt.wantOut, got.String()); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
-			if diff := cmp.Diff(tt.wantProg, p, getCmpOpts()); diff != "" {
+			if diff := cmp.Diff(wantProg, p, getCmpOpts()); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})

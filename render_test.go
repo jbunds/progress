@@ -19,25 +19,25 @@ func TestDraw(t *testing.T) {
 	tests := []struct {
 		name       string
 		state      uint32
-		statusText *string
+		statusText string
 		want       string
 	}{
 		{
 			name:       "nominal terminal width of 80", // minWidth == 80
 			state:      pack(80, 0.47),                 // 80 - len("processing (100%): ") == 61
-			statusText: new("just a small fish in a big sea"),
+			statusText: "just a small fish in a big sea",
 			want:       "processing ( 47%): just a small fish in a big sea\n",
 		},
 		{
 			name:       "status message truncated from the left and prepended with an ellipsis",
 			state:      pack(40, 0.71), // 40 - len("processing (100%): ") == 21
-			statusText: new("this is a very long status message that must be truncated"),
+			statusText: "this is a very long status message that must be truncated",
 			want:       "processing ( 71%): …at must be truncated\n",
 		},
 		{
 			name:       "status message truncated from the left with no ellipsis prepended (terminal too narrow)",
 			state:      pack(22, 0.93), // 22 - len("processing (100%): ") == 3
-			statusText: new("short message"),
+			statusText: "short message",
 			want:       "processing ( 93%): …ge\n",
 		},
 	}
