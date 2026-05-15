@@ -69,7 +69,8 @@ Limitations:
 - the precision of percentage calculations starts to progressively degrade at ~1 quadrillion (1e15) units of work
   - a workload capacity limited to 1 quadrillion units still allows for extremely fine-grained budget splitting and / or extremely deep recursion
 - handling of terminal resize events on Windows systems is not supported
-- truncated status updates may render incorrectly in terminals which lack UTF-8 support
+- truncated status updates may render incorrectly in terminal emulators which lack UTF-8 support
+- has not been tested on terminal emulators which lack support for rendering 24-bit colors
 
 See [![Go Reference](https://pkg.go.dev/badge/github.com/jbunds/progress.svg)](https://pkg.go.dev/github.com/jbunds/progress) for API documentation and [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jbunds/progress) for technical internal implementation details.
 
