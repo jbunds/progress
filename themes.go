@@ -1,5 +1,7 @@
 package progress
 
+import "github.com/google/go-cmp/cmp"
+
 // https://jakob-bagterp.github.io/colorist-for-python/ansi-escape-codes/rgb-colors/
 
 const (
@@ -57,4 +59,20 @@ func getTheme(name string) (*theme, bool) {
 	default:
 		return &theme{}, false
 	}
+}
+
+func (t *theme) Equal(other *theme) bool { // workaround cmp's draconian strictures
+	if t == nil || other == nil { return t == other }
+	return cmp.Equal(t.startBgR, other.startBgR) &&
+	       cmp.Equal(t.startBgG, other.startBgG) &&
+	       cmp.Equal(t.startBgB, other.startBgB) &&
+	       cmp.Equal(t.endBgR,   other.endBgR  ) &&
+	       cmp.Equal(t.endBgG,   other.endBgG  ) &&
+	       cmp.Equal(t.endBgB,   other.endBgB  ) &&
+	       cmp.Equal(t.deltaBgR, other.deltaBgR) &&
+	       cmp.Equal(t.deltaBgG, other.deltaBgG) &&
+	       cmp.Equal(t.deltaBgB, other.deltaBgB) &&
+	       cmp.Equal(t.deltaFgR, other.deltaFgR) &&
+	       cmp.Equal(t.deltaFgG, other.deltaFgG) &&
+	       cmp.Equal(t.deltaFgB, other.deltaFgB)
 }

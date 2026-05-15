@@ -19,7 +19,6 @@ import (
 
 func getCmpOpts() cmp.Options {
 	return cmp.Options{
-		cmpopts.EquateEmpty(),
 		cmpopts.IgnoreFields(Progress{}, // non-trivial to compare or irrelevant to this set of tests
 			"buf",        "output",        "theme",     "stopChan",   "doneChan", 
 			"resizeChan", "resizeHandler", "closeOnce", "drawNotify", "isTerminalFunc"),
@@ -61,31 +60,36 @@ func TestNew(t *testing.T) {
 		opts        []Option
 		wantTotal   uint64
 		wantTracker statusTracker
+		wantTheme   *theme
 	}{
 		{
 			name:        "weight-based accumulation",
 			totalUnits:  100,
 			wantTotal:   100,
 			wantTracker: getTracker(Standard, 0),
+			wantTheme:   themeOrDefault("green"),
 		},
 		{
 			name:        "fractional path allocation",
 			totalUnits:  0,
 			wantTotal:   0,
 			wantTracker: getTracker(Standard, 0),
+			wantTheme:   themeOrDefault("green"),
 		},
 		{
 			name:        "verify overflow safety",
 			totalUnits:  scale + 1000,
 			wantTotal:   scale,
 			wantTracker: getTracker(Standard, 0),
+			wantTheme:   themeOrDefault("green"),
 		},
 		{
-			name:        "verify WithTracker",
+			name:        "verify WithTracker and WithTheme",
 			totalUnits:  0,
 			wantTotal:   0,
-			opts:        []Option{WithTracker(Unique)},
+			opts:        []Option{WithTracker(Unique), WithTheme("red")},
 			wantTracker: getTracker(Unique, 0),
+			wantTheme:   themeOrDefault("red"),
 		},
 	}
 	for _, tt := range tests {
@@ -102,6 +106,9 @@ func TestNew(t *testing.T) {
 				t.Errorf("one or more channels were not initialized")
 			}
 			if diff := cmp.Diff(tt.wantTracker, got.tracker); diff != "" {
+				t.Errorf("New(%q) mismatch (-want +got):\n%s", tt.name, diff)
+			}
+			if diff := cmp.Diff(tt.wantTheme, got.theme); diff != "" {
 				t.Errorf("New(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
