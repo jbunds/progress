@@ -104,9 +104,7 @@ func (p *Progress) draw(state uint32, val any) {
 
 // lastRenderedFrame returns the last rendered frame string.
 func (p *Progress) lastRenderedFrame() string {
-	val := p.lastFrame.Load()
-	if val == nil { return "" }
-	if v, ok := val.(string); ok { return v }
+	if v, ok := p.lastFrame.Load().(string); ok { return v }
 	return ""
 }
 
