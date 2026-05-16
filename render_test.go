@@ -9,11 +9,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func buf() *[]byte {
-	buf := make([]byte, 0, 128)
-	return &buf
-}
-
 func TestDraw(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -24,19 +19,19 @@ func TestDraw(t *testing.T) {
 	}{
 		{
 			name:       "nominal terminal width of 80", // minWidth == 80
-			state:      pack(80, 0.47),                 // 80 - len("processing (100%): ") == 61
+			state:      pack(t, 80, 0.47),              // 80 - len("processing (100%): ") == 61
 			statusText: "just a small fish in a big sea",
 			want:       "processing ( 47%): just a small fish in a big sea\n",
 		},
 		{
 			name:       "status message truncated from the left and prepended with an ellipsis",
-			state:      pack(40, 0.71), // 40 - len("processing (100%): ") == 21
+			state:      pack(t, 40, 0.71), // 40 - len("processing (100%): ") == 21
 			statusText: "this is a very long status message that must be truncated",
 			want:       "processing ( 71%): …at must be truncated\n",
 		},
 		{
 			name:       "status message truncated from the left with no ellipsis prepended (terminal too narrow)",
-			state:      pack(22, 0.93), // 22 - len("processing (100%): ") == 3
+			state:      pack(t, 22, 0.93), // 22 - len("processing (100%): ") == 3
 			statusText: "short message",
 			want:       "processing ( 93%): …ge\n",
 		},
@@ -50,7 +45,6 @@ func TestDraw(t *testing.T) {
 				output:  got,
 			}
 			p.layout = p.tracker.baseLayout()
-			p.buf.Store(buf())
 
 			p.draw(tt.state, tt.statusText)
 
@@ -72,32 +66,32 @@ func TestPercentTrackerDraw(t *testing.T) {
 	}{
 		{
 			name:  "0.9%",
-			state: pack(termWidth, 0.0094),
+			state: pack(t, termWidth, 0.0094),
 			want:  "processing (0.9%)\n",
 		},
 		{
 			name:  "1.0%",
-			state: pack(termWidth, 0.0095),
+			state: pack(t, termWidth, 0.0095),
 			want:  "processing (1.0%)\n",
 		},
 		{
 			name:  "9.9%",
-			state: pack(termWidth, 0.0994),
+			state: pack(t, termWidth, 0.0994),
 			want:  "processing (9.9%)\n",
 		},
 		{
 			name:  "10%",
-			state: pack(termWidth, 0.0995),
+			state: pack(t, termWidth, 0.0995),
 			want:  "processing ( 10%)\n",
 		},
 		{
 			name:  "99%",
-			state: pack(termWidth, 0.9949),
+			state: pack(t, termWidth, 0.9949),
 			want:  "processing ( 99%)\n",
 		},
 		{
 			name:  "100%",
-			state: pack(termWidth, 0.9950),
+			state: pack(t, termWidth, 0.9950),
 			want:  "processing (100%)\n",
 		},
 	}
@@ -110,7 +104,6 @@ func TestPercentTrackerDraw(t *testing.T) {
 				output:  got,
 			}
 			p.layout = p.tracker.baseLayout()
-			p.buf.Store(buf())
 
 			p.draw(tt.state, "")
 
@@ -133,7 +126,7 @@ func TestUniqueTrackerDraw(t *testing.T) {
 		{
 			name:       "succeeds",
 			total:      100,
-			state:      pack(minWidth, 0.37),
+			state:      pack(t, minWidth, 0.37),
 			statusText: "working...",
 			want:       "processing ( 37%): working...\n",
 		},
@@ -147,7 +140,6 @@ func TestUniqueTrackerDraw(t *testing.T) {
 				output:  got,
 			}
 			p.layout = p.tracker.baseLayout()
-			p.buf.Store(buf())
 
 			p.draw(tt.state, unique.Make(tt.statusText))
 
@@ -174,10 +166,9 @@ func TestFractionTrackerRedraw(t *testing.T) {
 		doneChan:   make(chan struct{}),
 	}
 	p.layout = p.tracker.baseLayout()
-	p.buf.Store(buf())
 
 	p.total.Store(73)
-	p.state.Store(pack(minWidth, 0))
+	p.state.Store(pack(t, minWidth, 0))
 
 	go p.renderLoop(t.Context())
 	t.Cleanup(func() { p.Close() })
@@ -196,10 +187,15 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	got.Reset()
 
 	p.Report(34, "completed another 34 units of work") // second report: 45/73
-	tickTrigger <-time.Now()
-	<-notify
 
 	want = "processing ( 62%): 45/73\n"
+
+	for range 5 { // accommodate scheduler jitter and frame queuing by consuming notifications until we reach the expected state, otherwise fail fast
+		tickTrigger <-time.Now()
+		<-notify
+		if p.lastRenderedFrame() == want { break }
+	}
+
 	if diff := cmp.Diff(want, got.String()); diff != "" {
 		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
 	}
@@ -239,21 +235,22 @@ func TestWriteString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s := &writeState{
-				buf:       make([]byte, 0),
-				isTerm:    true,
-				termWidth: tt.cols,
-				cols:      tt.cols,
-				denom:     tt.denom,
-				visCols:   tt.visCols,
-				isColored: tt.isColored,
-				theme:     themeOrDefault("green"),
+			buf := make([]byte, 0)
+			ws  := &writeState{
+				buf:        &buf,
+				theme:      themeOrDefault("green"),
+				cols:       tt.cols,
+				visCols:    tt.visCols,
+				denom:      tt.denom,
+				termWidth:  tt.cols,
+				isTerminal: true,
+				isColored:  tt.isColored,
 			}
-			s.writeString(tt.str)
-			if diff := cmp.Diff(tt.wantBuf, s.buf); diff != "" {
+			ws.writeString(tt.str)
+			if diff := cmp.Diff(tt.wantBuf, *ws.buf); diff != "" {
 				t.Errorf("writeString(%q) mismatch (-want +got):\n%s", tt.str, diff)
 			}
-			if diff := cmp.Diff(tt.wantIsColored, s.isColored); diff != "" {
+			if diff := cmp.Diff(tt.wantIsColored, ws.isColored); diff != "" {
 				t.Errorf("writeString(%q) mismatch (-want +got):\n%s", tt.str, diff)
 			}
 		})
@@ -264,46 +261,50 @@ func TestWriteStatus(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name         string
+		isTerminal   bool
 		pctSigDigits uint32
 		status       string
-		trunc        bool
 		want         string
 		wantErr      bool
 	}{
 		{
+			name:         "output not a terminal",
+			isTerminal:   false,
+			pctSigDigits: 5377,
+			status:       "shouting into the void",
+			want:         "processing ( 54%): shouting into the void\n",
+		},
+		{
 			name:         "succeeds",
-			pctSigDigits: 10000,
+			isTerminal:   true,
+			pctSigDigits: 7731,
 			status:       "working...",
-			want:         "\033[38;2;255;255;255;48;2;10;25;12mp"  +
-			              "\033[38;2;248;248;248;48;2;11;31;14mr"  +
-			              "\033[38;2;240;240;240;48;2;12;37;16mo"  +
-			              "\033[38;2;231;232;231;48;2;13;44;19mc"  +
-			              "\033[38;2;223;225;223;48;2;14;50;22me"  +
-			              "\033[38;2;215;217;215;48;2;15;56;24ms"  +
-			              "\033[38;2;207;209;207;48;2;16;63;27ms"  +
-			              "\033[38;2;199;201;199;48;2;17;69;29mi"  +
-			              "\033[38;2;191;194;191;48;2;18;75;32mn"  +
-			              "\033[38;2;183;186;183;48;2;19;82;34mg"  +
-			              "\033[38;2;175;178;175;48;2;20;88;37m "  +
-			              "\033[38;2;166;170;166;48;2;21;95;39m("  +
-			              "\033[38;2;158;163;158;48;2;22;101;42m1" +
-			              "\033[38;2;150;155;150;48;2;23;107;44m0" +
-			              "\033[38;2;142;147;142;48;2;24;114;47m0" +
-			              "\033[38;2;134;139;134;48;2;25;120;49m%" +
-			              "\033[38;2;126;132;126;48;2;26;126;52m)" +
-			              "\033[38;2;118;124;118;48;2;27;133;54m:" +
-			              "\033[38;2;110;116;110;48;2;28;139;57m " +
-			              "\033[38;2;102;108;102;48;2;29;146;59mw" +
-			              "\033[38;2;94;100;94;48;2;30;152;62mo"   +
-			              "\033[38;2;85;93;85;48;2;31;158;64mr"    +
-			              "\033[38;2;77;85;77;48;2;32;165;67mk"    +
-			              "\033[38;2;69;77;69;48;2;33;171;69mi"    +
-			              "\033[38;2;61;69;61;48;2;34;177;72mn"    +
-			              "\033[38;2;53;62;53;48;2;35;184;74mg"    +
-			              "\033[38;2;45;54;45;48;2;36;190;77m."    +
-			              "\033[38;2;37;46;37;48;2;37;197;79m."    +
-			              "\033[38;2;29;38;29;48;2;38;203;82m."    +
-			              "\033[30;48;2;40;210;85m \033[0m\n",
+			want:         "\033[38;2;255;255;255;48;2;10;25;12mp" + "\033[38;2;253;253;253;48;2;10;27;12mr" +
+			              "\033[38;2;250;250;250;48;2;10;29;13mo" + "\033[38;2;247;247;247;48;2;11;31;14mc" +
+			              "\033[38;2;244;244;244;48;2;11;34;15me" + "\033[38;2;241;241;241;48;2;11;36;16ms" +
+			              "\033[38;2;238;239;238;48;2;12;38;17ms" + "\033[38;2;235;236;235;48;2;12;41;18mi" +
+			              "\033[38;2;232;233;232;48;2;13;43;19mn" + "\033[38;2;229;230;229;48;2;13;45;20mg" +
+			              "\033[38;2;226;227;226;48;2;13;48;21m " + "\033[38;2;223;224;223;48;2;14;50;22m(" +
+			              "\033[38;2;220;222;220;48;2;14;52;23m " + "\033[38;2;217;219;217;48;2;14;55;23m7" +
+			              "\033[38;2;214;216;214;48;2;15;57;24m7" + "\033[38;2;211;213;211;48;2;15;59;25m%" +
+			              "\033[38;2;208;210;208;48;2;16;62;26m)" + "\033[38;2;205;207;205;48;2;16;64;27m:" +
+			              "\033[38;2;202;204;202;48;2;16;66;28m " + "\033[38;2;199;201;199;48;2;17;69;29mw" +
+			              "\033[38;2;196;199;196;48;2;17;71;30mo" + "\033[38;2;193;196;193;48;2;17;74;31mr" +
+			              "\033[38;2;190;193;190;48;2;18;76;32mk" + "\033[38;2;187;190;187;48;2;18;78;33mi" +
+			              "\033[38;2;184;187;184;48;2;19;81;34mn" + "\033[38;2;181;184;181;48;2;19;83;35mg" +
+			              "\033[38;2;178;181;178;48;2;19;85;36m." + "\033[38;2;175;179;175;48;2;20;88;36m." +
+			              "\033[38;2;172;176;172;48;2;20;90;37m." +
+			              "\033[30;48;2;21;92;38m "  + "\033[30;48;2;21;95;39m "  + "\033[30;48;2;21;97;40m "  +
+			              "\033[30;48;2;22;99;41m "  + "\033[30;48;2;22;102;42m " + "\033[30;48;2;22;104;43m " +
+			              "\033[30;48;2;23;106;44m " + "\033[30;48;2;23;109;45m " + "\033[30;48;2;24;111;46m " +
+			              "\033[30;48;2;24;113;47m " + "\033[30;48;2;24;116;47m " + "\033[30;48;2;25;118;48m " +
+			              "\033[30;48;2;25;120;49m " + "\033[30;48;2;25;123;50m " + "\033[30;48;2;26;125;51m " +
+			              "\033[30;48;2;26;127;52m " + "\033[30;48;2;27;130;53m " + "\033[30;48;2;27;132;54m " +
+			              "\033[30;48;2;27;134;55m " + "\033[30;48;2;28;137;56m " + "\033[30;48;2;28;139;57m " +
+			              "\033[30;48;2;28;141;58m " + "\033[30;48;2;29;144;59m " + "\033[30;48;2;29;146;60m " +
+			              "\033[30;48;2;30;148;60m " + "\033[30;48;2;30;151;61m " + "\033[30;48;2;30;153;62m " +
+			              "\033[30;48;2;31;155;63m " + "\033[30;48;2;31;158;64m " + "\033[30;48;2;32;160;65m " +
+			              "\033[30;48;2;32;163;66m " + "\033[30;48;2;32;165;67m " + "\033[0m\n",
 		},
 	}
 	for _, tt := range tests {
@@ -313,15 +314,14 @@ func TestWriteStatus(t *testing.T) {
 			p   := &Progress{
 				tracker:    getTracker(Standard, 3),
 				output:     got,
-				isTerminal: true,
+				isTerminal: tt.isTerminal,
 				theme:      themeOrDefault("green"),
 			}
 			p.layout = p.tracker.baseLayout()
-			p.buf.Store(buf())
-			p.state.Store(uint32(30) << 16)
-			_ = p.writeStatus(tt.pctSigDigits, tt.status, tt.trunc)
+			p.state.Store(pack(t, 80, 0))
+			_ = p.writeStatus(tt.pctSigDigits, tt.status, false)
 			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
-				t.Errorf("writeStatus(%d, %q, %t) mismatch (-want +got):\n%s", tt.pctSigDigits, tt.status, tt.trunc, diff)
+				t.Errorf("writeStatus(%d, %q, %t) mismatch (-want +got):\n%s", tt.pctSigDigits, tt.status, false, diff)
 			}
 		})
 	}

@@ -22,14 +22,14 @@ func (p *Progress) prepareTerminal() {
 
 // handleResize records the new terminal width to be respected by subsequent render cycles.
 func (p *Progress) handleResize() {
-	bufPtr    := p.buf.Load()
+//	bufPtr    := p.buf.Load()
 	termWidth := p.resizeHandler()
 
-	bufCap := p.layout.bufCap(termWidth)
-	if bufPtr == nil || cap(*bufPtr) < bufCap { // grow the buffer when the terminal width is increased
-		newBuf := make([]byte, 0, bufCap)
-		p.buf.Store(&newBuf)
-	}
+//	bufCap := p.layout.bufCap(termWidth)
+//	if bufPtr == nil || cap(*bufPtr) < bufCap { // grow the buffer when the terminal width is increased
+//		newBuf := make([]byte, 0, bufCap)
+//		p.buf.Store(&newBuf)
+//	}
 
 	for { // atomically update termWidth while preserving concurrent percentage or status changes
 		oldState := p.state.Load()

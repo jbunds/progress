@@ -20,7 +20,7 @@ import (
 func getCmpOpts() cmp.Options {
 	return cmp.Options{
 		cmpopts.IgnoreFields(Progress{}, // non-trivial to compare or irrelevant to this set of tests
-			"buf",        "output",        "theme",     "stopChan",   "doneChan", 
+			"output",     "theme",         "stopChan",  "doneChan", 
 			"resizeChan", "resizeHandler", "closeOnce", "drawNotify", "isTerminalFunc"),
 		cmp.AllowUnexported(
 			Progress{},        realClock{},     layout{},
@@ -52,7 +52,10 @@ func getCmpOpts() cmp.Options {
 	}
 }
 
-func pack(termWidth int, percent float64) uint32 {
+// convenience & readability test helper to allow percentages to be
+// expressed as a decimal fraction of 100, e.g., 12.3456% == 0.123456.
+func pack(t *testing.T, termWidth int, percent float64) uint32 {
+	t.Helper()
 	return uint32(termWidth & 0xFFFF) << 16 | uint32(percent * 10000)
 }
 
@@ -289,7 +292,7 @@ func TestRenderLoop(t *testing.T) {
 	}
 
 	p.total.Store(100)
-	p.state.Store(pack(minWidth, 0))
+	p.state.Store(pack(t, minWidth, 0))
 
 	go p.renderLoop(t.Context())
 
@@ -344,7 +347,7 @@ func TestClose(t *testing.T) {
 
 			finalState := p.state.Load() // capture final state
 			wantProg.state.Store(        // sync wantProg to match final state
-				pack(int(finalState >> 16), float64(finalState & 0xFFFF) / 10000))
+				pack(t, int(finalState >> 16), float64(finalState & 0xFFFF) / 10000))
 
 			if diff := cmp.Diff(tt.wantOut, got.String()); diff != "" {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)

@@ -46,13 +46,13 @@ const (
 // writeState encapsulates canvas boundaries, color theme, and cursor positions
 // across sequential draws in a stack-allocated block to prevent heap escaping.
 type writeState struct {
-	buf        []byte
+	buf        *[]byte
+	theme      *theme
 	cols       int
 	visCols    int
-	termWidth  int
 	denom      int
-	theme      *theme
-	isTerm     bool
+	termWidth  int
+	isTerminal bool
 	isColored  bool
 }
 
@@ -71,6 +71,21 @@ func (p *Progress) sync() {
 
 	p.lastState.Store(currentState)
 	p.lastStatusVal.Store(currentVal)
+
+	// TODO(jeff); eliminate the drawNotify field by refactoring to separate the concerns
+	//             of state calculations and UI rendering, so the logic can be tested
+	//             synchronously by passing in a state to a pure function, and, e.g.,
+	//             the renderLoop can be tested as a separate, thin integration layer
+	//
+	//             maybe provide a mechanism to allow callers to register a callback
+	//             that fires when the desired state is reached (a callback would be
+	//             better than forcing callers to poll the state via p.lastFrame)
+	if p.drawNotify != nil {
+		select {
+		case p.drawNotify <- struct{}{}: // ensures synchronous, deterministic tests by signaling the completion of a draw cycle
+		default:
+		}
+	}
 }
 
 // draw formats and renders the current progress status to the terminal,
@@ -84,27 +99,23 @@ func (p *Progress) draw(state uint32, val any) {
 		status, truncated = truncateFromLeft(p.tracker.value(val), int(maxLen)) // truncate from left to show most relevant portion (e.g., file basename)
 	}
 
-	err := p.writeStatus(state & 0xFFFF, status, truncated)
-
-	if p.drawNotify != nil && err == nil {
-		select {
-		case p.drawNotify <- struct{}{}: // ensures synchronous, deterministic tests by signaling the completion of a draw cycle
-		default:
-		}
-	}
+	_ = p.writeStatus(state & 0xFFFF, status, truncated)
 }
 
-// writeStatus writes the progress status to to p.output (nominally os.Stderr)
-// using the shared internal buffer to ensure an atomic system call.
-func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated bool) error {
-	bufPtr := p.buf.Load()
-	if bufPtr == nil { return nil }
+// lastRenderedFrame returns the last rendered frame string.
+func (p *Progress) lastRenderedFrame() string {
+	val := p.lastFrame.Load()
+	if val == nil { return "" }
+	if v, ok := val.(string); ok { return v }
+	return ""
+}
 
-	buf := (*bufPtr)[:0]
+// writeStatus writes the progress status to to p.output (nominally os.Stderr) per an atomic system call.
+func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated bool) error {
+	buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
 	buf  = append(buf, p.layout.clearSeq...)
 
-	stateWord := p.state.Load()
-	termWidth := int(stateWord >> 16)
+	termWidth := int(p.state.Load() >> 16)
 
 	// cache loop-invariant bar gradient values
 	//
@@ -113,15 +124,15 @@ func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated boo
 	var denom int
 	if termWidth > 1 { denom = termWidth - 1 }
 
-	state := writeState{
-		buf:       buf,
-		visCols:   0,
-		cols:      (termWidth * int(pctSigDigits)) / 10000,
-		termWidth: termWidth,
-		denom:     denom,
-		theme:     p.theme,
-		isTerm:    p.isTerminal,
-		isColored: false,
+	ws := writeState{
+		buf:        &buf,
+		theme:      p.theme,
+		cols:       (termWidth * int(pctSigDigits)) / 10000,
+		visCols:    0,
+		denom:      denom,
+		termWidth:  termWidth,
+		isTerminal: p.isTerminal,
+		isColored:  false,
 	}
 
 //	// cache loop-invariant bar gradient values
@@ -132,110 +143,111 @@ func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated boo
 //	var denom int
 //	if barCols > 1 { denom = barCols - 1 }
 //
-//	state := writeState{
-//		buf:       buf,
-//		visCols:   0,
-//		cols:      barCols,
-//		termWidth: termWidth,
-//		denom:     denom,
-//		theme:     p.theme,
-//		isTerm:    p.isTerminal,
-//		isColored: false,
+//	ws := writeState{
+//		buf:        &buf,
+//		theme:      p.theme,
+//		cols:       barCols,
+//		visCols:    0,
+//		denom:      denom,
+//		termWidth:  termWidth,
+//		isTerminal: p.isTerminal,
+//		isColored:  false,
 //	}
 
-	state.writeString(p.layout.prefix)
+	ws.writeString(p.layout.prefix)
 
 	switch {
 	case pctSigDigits >= 9950:           // 99.5% < pctSigDigits >  100% => "100%"
-		state.writeString("100")
+		ws.writeString("100")
 	case pctSigDigits >= 995:            // 9.95% < pctSigDigits > 99.4% => " 10%" - " 99%"
 		val := (pctSigDigits + 50) / 100 // round to the nearest 1% (995 -> 10; 9949 -> 99)
-		state.writeRune(' ')
-		state.writeRune(rune('0' + (val / 10)))
-		state.writeRune(rune('0' + (val % 10)))
+		ws.writeRune(' ')
+		ws.writeRune(rune('0' + (val / 10)))
+		ws.writeRune(rune('0' + (val % 10)))
 	default:                             // 0.00% < pctSigDigits > 9.94% => "0.0%" - "9.9%"
 		val := (pctSigDigits +  5) /  10 // round to the nearest 0.1% (994 -> 9.9; 0 -> 0.0)
-		state.writeRune(rune('0' + (val / 10)))
-		state.writeRune('.')
-		state.writeRune(rune('0' + (val % 10)))
+		ws.writeRune(rune('0' + (val / 10)))
+		ws.writeRune('.')
+		ws.writeRune(rune('0' + (val % 10)))
 	}
 
-	state.writeString(p.layout.suffix)
-	if truncated { state.writeRune('…') }
-	state.writeString(status)
+	ws.writeString(p.layout.suffix)
+	if truncated { ws.writeRune('…') }
+	ws.writeString(status)
 
-	for p.isTerminal && state.visCols < state.cols { // fill remaining bar space with clean gradient padding
+	for p.isTerminal && ws.visCols < ws.cols { // fill remaining bar space with clean gradient padding
 		var factor int
-		if state.denom > 0 { factor = (state.visCols * 1000) / state.denom }
+		if ws.denom > 0 { factor = (ws.visCols * 1000) / ws.denom }
 
-		bgR := state.theme.startBgR + (state.theme.deltaBgR * factor) / 1000
-		bgG := state.theme.startBgG + (state.theme.deltaBgG * factor) / 1000
-		bgB := state.theme.startBgB + (state.theme.deltaBgB * factor) / 1000
+		bgR := p.theme.startBgR + (p.theme.deltaBgR * factor) / 1000
+		bgG := p.theme.startBgG + (p.theme.deltaBgG * factor) / 1000
+		bgB := p.theme.startBgB + (p.theme.deltaBgB * factor) / 1000
 
-		state.buf = append(state.buf, prepColorSeq...)
-		state.buf = appendIntIdxInline(state.buf, bgR)
-		state.buf = append(state.buf, ';')
-		state.buf = appendIntIdxInline(state.buf, bgG)
-		state.buf = append(state.buf, ';')
-		state.buf = appendIntIdxInline(state.buf, bgB)
-		state.buf = append(state.buf, 'm', ' ')
-		state.visCols++
-		state.isColored = true
+		*ws.buf = append(*ws.buf, prepColorSeq...)
+		*ws.buf = appendIntIdxInline(*ws.buf, bgR)
+		*ws.buf = append(*ws.buf, ';')
+		*ws.buf = appendIntIdxInline(*ws.buf, bgG)
+		*ws.buf = append(*ws.buf, ';')
+		*ws.buf = appendIntIdxInline(*ws.buf, bgB)
+		*ws.buf = append(*ws.buf, 'm', ' ')
+		ws.visCols++
+		ws.isColored = true
 	}
 
-	if p.isTerminal && state.isColored { state.buf = append(state.buf, resetAttr...) } // reset all attributes to defaults
+	if p.isTerminal && ws.isColored { buf = append(buf, resetAttr...) } // reset all attributes to defaults
 
-	state.buf = append(state.buf, p.layout.lineTerminator...)
+	buf = append(buf, p.layout.lineTerminator...)
 
-	_, err := p.output.Write(state.buf)
+	_, err := p.output.Write(buf)
+	if err == nil { p.lastFrame.Store(string(buf)) }
 
 	return err
 }
 
-func (s *writeState) writeRune(r rune) {
+func (ws *writeState) writeRune(r rune) {
 	rWidth := 1
 	if r > 0x1100 && isWideRune(r) { rWidth = 2 }
 
-	if s.isTerm && s.termWidth > 0 && s.visCols < s.cols {
+	if ws.isTerminal && ws.termWidth > 0 && ws.visCols < ws.cols {
 		var factor int
-		if s.denom > 0 { factor = (s.visCols * 1000) / s.denom }
+		if ws.denom > 0 { factor = (ws.visCols * 1000) / ws.denom }
 
-		bgR  := s.theme.startBgR + (s.theme.deltaBgR * factor) / 1000
-		bgG  := s.theme.startBgG + (s.theme.deltaBgG * factor) / 1000
-		bgB  := s.theme.startBgB + (s.theme.deltaBgB * factor) / 1000
+		bgR  := ws.theme.startBgR + (ws.theme.deltaBgR * factor) / 1000
+		bgG  := ws.theme.startBgG + (ws.theme.deltaBgG * factor) / 1000
+		bgB  := ws.theme.startBgB + (ws.theme.deltaBgB * factor) / 1000
 
-		fgR  :=         startFgR + (s.theme.deltaFgR * factor) / 1000
-		fgG  :=         startFgG + (s.theme.deltaFgG * factor) / 1000
-		fgB  :=         startFgB + (s.theme.deltaFgB * factor) / 1000
+		fgR  :=          startFgR + (ws.theme.deltaFgR * factor) / 1000
+		fgG  :=          startFgG + (ws.theme.deltaFgG * factor) / 1000
+		fgB  :=          startFgB + (ws.theme.deltaFgB * factor) / 1000
 
-		s.buf = append(s.buf, setFgColor...)
-		s.buf = appendIntIdxInline(s.buf, fgR)
-		s.buf = append(s.buf, ';')
-		s.buf = appendIntIdxInline(s.buf, fgG)
-		s.buf = append(s.buf, ';')
-		s.buf = appendIntIdxInline(s.buf, fgB)
-		s.buf = append(s.buf, prepSetBgColor...)
-		s.buf = appendIntIdxInline(s.buf, bgR)
-		s.buf = append(s.buf, ';')
-		s.buf = appendIntIdxInline(s.buf, bgG)
-		s.buf = append(s.buf, ';')
-		s.buf = appendIntIdxInline(s.buf, bgB)
-		s.buf = append(s.buf, 'm')
-		s.isColored = true
-	} else if s.visCols >= s.cols && s.isColored {
-		s.buf       = append(s.buf, resetAttr...)
-		s.isColored = false
+		*ws.buf = append(*ws.buf, setFgColor...)
+		*ws.buf = appendIntIdxInline(*ws.buf, fgR)
+		*ws.buf = append(*ws.buf, ';')
+		*ws.buf = appendIntIdxInline(*ws.buf, fgG)
+		*ws.buf = append(*ws.buf, ';')
+		*ws.buf = appendIntIdxInline(*ws.buf, fgB)
+		*ws.buf = append(*ws.buf, prepSetBgColor...)
+		*ws.buf = appendIntIdxInline(*ws.buf, bgR)
+		*ws.buf = append(*ws.buf, ';')
+		*ws.buf = appendIntIdxInline(*ws.buf, bgG)
+		*ws.buf = append(*ws.buf, ';')
+		*ws.buf = appendIntIdxInline(*ws.buf, bgB)
+		*ws.buf = append(*ws.buf, 'm')
+		ws.isColored = true
+	} else if ws.visCols >= ws.cols && ws.isColored {
+		*ws.buf      = append(*ws.buf, resetAttr...)
+		ws.isColored = false
 	}
 
 	if r < 0x80 {
-		s.buf = append(s.buf, byte(r & 0x7F))
+		*ws.buf = append(*ws.buf, byte(r & 0x7F))
 	} else {
-		s.buf = appendRune(s.buf, r)
+		*ws.buf = appendRune(*ws.buf, r)
 	}
 
-	s.visCols += rWidth
+	ws.visCols += rWidth
 }
 
-func (s *writeState) writeString(str string) {
-	for _, r := range str { s.writeRune(r) }
+func (ws *writeState) writeString(str string) {
+	for _, r := range str { ws.writeRune(r) }
 }
