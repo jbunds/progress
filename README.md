@@ -30,39 +30,40 @@ Features include:
 - race-free and lock-free by design:
   - concurrency-safe and well-suited to highly-scaled concurrent processing systems
   - uses Go concurrency primitives for synchronization
-  - uses `atomic.Uint64` and `atomic.Pointer` types to:
+  - uses atomic operations to:
     - provide lock-free updates of internal state for highly-scaled concurrent workloads
     - obviate mutex contention
     - minimize memory allocation and impose minimal GC overhead
     - enable fast and efficient UI synchronization via comparisons of:
-      - string pointers (`atomic.Pointer[string]`)
-      - string handles (`unique.Handle[string]`)
-      - `atomic.Uint64` values
+      - precise internal progress values via `atomic.Uint32` and `atomic.Uint64` types
+      - progress status strings (`atomic.Value` per the `progress.Standard` tracker), or
+      - canonicalized (interned) progress status string handles (`unique.Handle[string]` guarded by `atomic.Value` per the `progress.Unique` tracker)
 - context-aware:
   - correctly handles cancellation of the parent context, ensuring a clean exit under reasonable circumstances
 - very efficient with minimal memory footprint:
-  - optimized for low CPU usage, even at refresh rates beyond human perception
+  - optimized for very low CPU usage, even at refresh rates beyond human perception
   - the use of a background rendering loop throttled at ~60 FPS combined with `atomic` types:
     - decouples the progress status tracker from the workers processing the workload
     - allows workers to report progress updates to the tracker asynchronously
-    - ensures that UI rendering (which involves I/O and syscalls) never blocks the workers
-  - dynamically pre-allocates a concurrency-safe, optimally-sized reusable `atomic.Pointer[[]byte]` buffer for all I/O:
-    - increased dynamically as needed by a terminal window resize event listener
+    - ensures that UI rendering (which involves I/O and syscalls) never blocks workers
   - condenses all I/O operations into a single, atomic system call per frame, minimizing I/O latency
-  - skips redundant UI redraws, further minimizing I/O and ensuring the terminal is never overwhelmed
-  - uses bit-packed `atomic.Uint32` types and bitwise operations to further reduce memory allocation and efficiently handle updates of internal state
+  - skips redundant UI redraws, further minimizing I/O and ensuring the terminal is never overwhelmed with I/O
+  - uses bit-packed `atomic.Uint32` types and bitwise operations to further reduce memory allocation and efficiently handle precise updates of internal state
 - supports two tracking modes:
   - **weight-based accumulation**: callers specify the total known amount of work (e.g., 100 tasks)
   - **fractional allocation**: callers add the relative share of the total budget as work is discovered (e.g., recursively traversing a directory to process its contents)
 - supports multiple progress status tracking implementations which are well-suited to different sets of inputs:
-  - `progress.Standard`: suitable for mostly unique status updates (uses `atomic.Pointer[string]`)
-  - `progress.Unique`:   suitable for mostly repetitive status updates (uses `atomic.Value` and `unique.Handle[string]` to canonicalize status, further reducing memory footprint)
+  - `progress.Standard`: suitable for mostly unique status updates (uses `atomic.Value`)
+  - `progress.Unique`:   suitable for mostly repetitive status updates (uses `atomic.Value` and `unique.Handle[string]` to canonicalize (intern) status
 - supports multiple progress status formats:
   - `progress.Fraction`: writes progress status as a proper fraction (`x/y`) given a prescribed fixed total units of work (`y`)
   - `progress.Percent`:  writes only the percentage calculation to the terminal
 - transparently handles pipes, redirections, and non-TTY environments
-- correctly handles UTF-8 strings passed by callers
-- supports concurrency-safe terminal window resizing, dynamically adapting the layout, formatting the rendered output accordingly, and ensuring layout and output integrity during concurrent writes to the terminal
+- correctly and efficiently handles UTF-8 status strings passed by callers
+- supports concurrency-safe terminal window resizing by:
+  - dynamically adapting the layout
+  - formatting the rendered output accordingly
+  - ensuring layout and output integrity during concurrent writes to the terminal
 
 Limitations:
 
