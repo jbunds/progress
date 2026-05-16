@@ -47,13 +47,13 @@ func WithTheme(c string) Option {
 // high-precision status indicator for workloads.
 type Progress struct {
 	// shared state (atomic)
-	tracker        statusTracker  // tracks the current progress status
-	total          atomic.Uint64  // total work units; 0 for fractional path allocation; > 0 for weight-based accumulation
-	current        atomic.Uint64  // accumulates shares of scale as work is completed
-	state          atomic.Uint32  // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
-	lastState      atomic.Uint32  // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
-	lastStatusVal  atomic.Value   // stores the result of the last tracker.load()
-	lastFrame      atomic.Value   // stores the last rendered frame as a string
+	tracker        statusTracker          // tracks the current progress status
+	total          atomic.Uint64          // total work units; 0 for fractional path allocation; > 0 for weight-based accumulation
+	current        atomic.Uint64          // accumulates shares of scale as work is completed
+	state          atomic.Uint32          // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
+	lastState      atomic.Uint32          // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
+	lastStatusVal  atomic.Value           // stores the result of the last tracker.load()
+	lastFrame      atomic.Pointer[string] // stores the last rendered frame as a string (used in tests)
 
 	// configuration (read-only after construction)
 	output         io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)

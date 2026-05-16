@@ -104,7 +104,7 @@ func (p *Progress) draw(state uint32, val any) {
 
 // lastRenderedFrame returns the last rendered frame string.
 func (p *Progress) lastRenderedFrame() string {
-	if v, ok := p.lastFrame.Load().(string); ok { return v }
+	if v := p.lastFrame.Load(); v != nil { return *v }
 	return ""
 }
 
@@ -197,7 +197,11 @@ func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated boo
 	buf = append(buf, p.layout.lineTerminator...)
 
 	_, err := p.output.Write(buf)
-	if err == nil { p.lastFrame.Store(string(buf)) }
+
+	if err == nil {
+		str := string(buf)
+		p.lastFrame.Store(&str)
+	}
 
 	return err
 }

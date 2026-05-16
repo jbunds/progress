@@ -30,7 +30,8 @@ func getCmpOpts() cmp.Options {
 		cmpopts.EquateComparable(
 			atomic.Value{},
 			atomic.Uint32{},
-			atomic.Uint64{}),
+			atomic.Uint64{},
+			atomic.Pointer[string]{}),
 		cmp.FilterValues(func(x, _ any) bool { // recursively unwraps atomic types to facilitate deep comparison of underlying values
 			_, ok := x.(interface{ Load() any })
 			if !ok && reflect.ValueOf(x).CanAddr() {
