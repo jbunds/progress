@@ -1,10 +1,13 @@
 package progress
 
 const (
-	minWidth      = 80             // fallback for pipes, redirects, and non-tty outputs
-	pctFieldLen   = 3              // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
-	prefix        = "processing (" // prepended to each progress status line rendered to the terminal
-	defaultSuffix = "%): "         // appended to each percentage status calculation rendered to the terminal
+	prefix               = "processing (" // prepended to each progress status line rendered to the terminal
+	defaultSuffix        = "%): "         // appended to each percentage status calculation rendered to the terminal
+
+	minWidth             = 80 // fallback for pipes, redirects, and non-tty outputs
+	pctFieldLen          =  3 // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
+	colorBlockMultiplier = 23 // 23 bytes per column for 24-bit color gradient blocks
+	utf8TruncMultiplier  =  4 //  4 bytes per column for worst-case UTF-8 status text truncation thresholds
 )
 
 // layout encapsulates the terminal-specific rendering layout configuration.
@@ -29,4 +32,13 @@ func defaultLayout() layout {
 	}
 	layout.staticWidth = len(layout.prefix) + pctFieldLen + len(layout.suffix)
 	return layout
+}
+
+func (l layout) bufCap(termWidth int) int {
+	return (colorBlockMultiplier * termWidth) +
+	       (utf8TruncMultiplier  * termWidth) +
+	       len(l.prefix                     ) +
+	       len(l.suffix                     ) +
+	       len(l.clearSeq                   ) +
+	       len(l.lineTerminator             )
 }

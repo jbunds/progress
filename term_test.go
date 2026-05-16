@@ -64,8 +64,8 @@ func TestHandleResize(t *testing.T) {
 	fakeClock := &fakeClock{ c: make(chan time.Time, 1) }
 	notify    := make(chan struct{}, 1)
 
-	mockTermWidth     := uint16(minWidth)
-	mockResizeHandler := func() uint16 { return mockTermWidth }
+	mockTermWidth     := minWidth
+	mockResizeHandler := func() int { return mockTermWidth }
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -95,7 +95,7 @@ func TestGetResizedTermWidth(t *testing.T) {
 	t.Parallel()
 	p := New(t.Context(), 0, io.Discard)
 	t.Cleanup(func() { p.Close() })
-	want := uint16(p.layout.staticWidth & 0xFFFF)
+	want := p.layout.staticWidth
 	got  := p.getResizedTermWidth()
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("getResizedTermWidth() mismatch (-want +got):\n%s", diff)
@@ -113,12 +113,12 @@ func TestGetTermWidth(t *testing.T) {
 	tests := []struct {
 		name   string
 		output *os.File
-		want   uint16
+		want   int
 	}{
 		{
 			name:  "falls back to minWidth for non-terminal files",
 			output: w, // pipes have no width
-			want:   uint16(minWidth),
+			want:   minWidth,
 		},
 	}
 	for _, tt := range tests {

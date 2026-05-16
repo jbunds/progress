@@ -52,6 +52,10 @@ func getCmpOpts() cmp.Options {
 	}
 }
 
+func pack(termWidth int, percent float64) uint32 {
+	return uint32(termWidth & 0xFFFF) << 16 | uint32(percent * 10000)
+}
+
 func TestNew(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -249,10 +253,6 @@ func TestReportContention(t *testing.T) {
 	if diff := cmp.Diff(want, p.state.Load()); diff != "" {
 		t.Errorf("p.state.Load() mismatch (-want +got):\n%s", diff)
 	}
-}
-
-func pack(termWidth int, percent float64) uint32 {
-	return uint32(termWidth & 0xFFFF) << 16 | uint32(percent * 10000)
 }
 
 func TestRenderLoop(t *testing.T) {

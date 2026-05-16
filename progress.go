@@ -94,20 +94,13 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 	termWidth      := getTermWidth(p.output)
 
 	p.total.Store(min(totalUnits, scale)) // fall back to scale if totalUnits exceeds max precision
-	p.state.Store(uint32(termWidth) << 16)
+	p.state.Store(uint32(termWidth & 0xFFFF) << 16)
 
 	for _, opt := range opts { opt(p) } // allows callers to override defaults via exported Options
 
 	p.prepareTerminal()
 
-	bufCap := (23 * int(termWidth)       ) + // 23 bytes per column for 24-bit color gradient blocks
-              ( 4 * int(termWidth)       ) + //  4 bytes per column for worst-case UTF-8 status text truncation thresholds
-              len(p.layout.prefix        ) + 
-              len(p.layout.suffix        ) + 
-              len(p.layout.clearSeq      ) + 
-              len(p.layout.lineTerminator)
-
-	buf := make([]byte, 0, bufCap)
+	buf := make([]byte, 0, p.layout.bufCap(termWidth))
 	p.buf.Store(&buf)
 
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // listen for a SIGWINCH signal to handle the terminal window being resized
@@ -176,9 +169,9 @@ syncState: // derive the UI state from the successfully-committed p.current upda
 
 	oldState        := p.state.Load()
 	scaledSigDigits := (newCurrent * 10000 + (scale / 2)) / scale
-	oldSigDigits    := uint16(oldState        & 0xFFFF)
-	newSigDigits    := uint16(scaledSigDigits & 0xFFFF) // satisfy gosec
-	newState        := (oldState & 0xFFFF0000) | uint32(max(newSigDigits, oldSigDigits)) // ensure motonicity and preserve termWidth
+	oldSigDigits    := oldState & 0xFFFF
+	newSigDigits    := uint32(scaledSigDigits & 0xFFFF)
+	newState        := (oldState & 0xFFFF0000) | max(newSigDigits, oldSigDigits) // ensure motonicity and preserve terminal width
 
 	if !p.state.CompareAndSwap(oldState, newState) {
 		goto syncState // handle concurrent Report call or terminal resize event

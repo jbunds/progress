@@ -25,13 +25,7 @@ func (p *Progress) handleResize() {
 	bufPtr    := p.buf.Load()
 	termWidth := p.resizeHandler()
 
-	bufCap := (23 * int(termWidth))        +
-	          ( 4 * int(termWidth))        +
-	          len(p.layout.prefix        ) +
-	          len(p.layout.suffix        ) +
-	          len(p.layout.clearSeq      ) +
-	          len(p.layout.lineTerminator)
-
+	bufCap := p.layout.bufCap(termWidth)
 	if bufPtr == nil || cap(*bufPtr) < bufCap { // grow the buffer when the terminal width is increased
 		newBuf := make([]byte, 0, bufCap)
 		p.buf.Store(&newBuf)
@@ -39,7 +33,7 @@ func (p *Progress) handleResize() {
 
 	for { // atomically update termWidth while preserving concurrent percentage or status changes
 		oldState := p.state.Load()
-		newState := (oldState & 0xFFFF) | (uint32(termWidth) << 16) // pack p.termWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
+		newState := (oldState & 0xFFFF) | (uint32(termWidth & 0xFFFF) << 16) // pack p.termWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
 		if p.state.CompareAndSwap(oldState, newState) {
 			p.sync()
 			break
@@ -49,25 +43,25 @@ func (p *Progress) handleResize() {
 
 // getResizedTermWidth returns the current terminal width, enforcing
 // p.layout.staticWidth as the minimum layout threshold.
-func (p *Progress) getResizedTermWidth() uint16 {
+func (p *Progress) getResizedTermWidth() int {
 	width := p.layout.staticWidth // assume a human manually resized the terminal, so support terminal widths as narrow as p.layout.staticWidth
 	fd    := getFD(p.output)
-	if fd < 0 { return uint16(width & 0xFFFF) }
+	if fd < 0 { return width }
 	if w, _, err := term.GetSize(fd); err == nil && w > 0 {
 		width = max(width, w)
 	}
-	return uint16(width & 0xFFFF)
+	return width
 }
 
 // getTermWidth determines the width of the terminal
 // window, which is used to format status messages.
-func getTermWidth(w io.Writer) uint16 {
+func getTermWidth(w io.Writer) int {
 	fd := getFD(w)
 	if fd < 0 { return minWidth }
 	if width, _, err := term.GetSize(fd); err == nil {
-			return uint16(max(minWidth, width) & 0xFFFF)
+			return max(minWidth, width)
 	}
-	return uint16(minWidth)
+	return minWidth
 }
 
 // isTerminal determines if the specified writer is connected to a terminal.
@@ -88,6 +82,6 @@ func getFD(w any) int {
 
 // helpers for synchronous, deterministic tests
 
-type resizeHandler func() uint16
+type resizeHandler func() int
 
 func withResizeHandler(rh resizeHandler) Option { return func(p *Progress) { p.resizeHandler = rh } }

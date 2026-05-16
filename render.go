@@ -5,7 +5,6 @@ package progress
 //   https://en.wikipedia.org/wiki/ANSI_escape_code#24-bit
 //   https://en.wikipedia.org/wiki/ANSI_escape_code#Select_Graphic_Rendition_parameters
 //   https://ecma-international.org/publications-and-standards/standards/ecma-48/
-//   https://jakob-bagterp.github.io/colorist-for-python/ansi-escape-codes/rgb-colors/
 //
 //   │ atom or sequence  │ description
 //   ├───────────────────┼───────────────────────────────────────────────────────────────
@@ -77,15 +76,15 @@ func (p *Progress) sync() {
 // draw formats and renders the current progress status to the terminal,
 // truncating text as needed to fit within the terminal width.
 func (p *Progress) draw(state uint32, val any) {
-	maxLen    := max(int(state >> 16) - p.layout.staticWidth, 0)
+	maxLen    := state >> 16 - uint32(p.layout.staticWidth & 0xFFFF)
 	status    := ""
 	truncated := false
 
 	if maxLen > 0 {
-		status, truncated = truncateFromLeft(p.tracker.value(val), maxLen) // truncate from left to show most relevant portion (e.g., file basename)
+		status, truncated = truncateFromLeft(p.tracker.value(val), int(maxLen)) // truncate from left to show most relevant portion (e.g., file basename)
 	}
 
-	err := p.writeStatus(uint16(state & 0xFFFF), status, truncated)
+	err := p.writeStatus(state & 0xFFFF, status, truncated)
 
 	if p.drawNotify != nil && err == nil {
 		select {
@@ -97,7 +96,7 @@ func (p *Progress) draw(state uint32, val any) {
 
 // writeStatus writes the progress status to to p.output (nominally os.Stderr)
 // using the shared internal buffer to ensure an atomic system call.
-func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated bool) error {
+func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated bool) error {
 	bufPtr := p.buf.Load()
 	if bufPtr == nil { return nil }
 
@@ -129,8 +128,8 @@ func (p *Progress) writeStatus(pctSigDigits uint16, status string, truncated boo
 //	//
 //	// dynamic bar gradient: stretches the full color spectrum to fit the active bar width.
 //	//                       the color gradient transitions completely from 0% to 100% inside the filled bar.
-//	barCols := (termWidth * uint32(pctSigDigits)) / 10000
-//	var denom uint32
+//	barCols := (termWidth * int(pctSigDigits)) / 10000
+//	var denom int
 //	if barCols > 1 { denom = barCols - 1 }
 //
 //	state := writeState{

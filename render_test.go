@@ -264,7 +264,7 @@ func TestWriteStatus(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name         string
-		pctSigDigits uint16
+		pctSigDigits uint32
 		status       string
 		trunc        bool
 		want         string
