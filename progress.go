@@ -12,17 +12,15 @@ import (
 	"time"
 )
 
-const (
-	// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
-	//
-	// The choice of 1e15 balances high-precision fractional shares in the context
-	// of, e.g., deep recursion, with sufficient uint64 headroom to prevent overflow
-	// when performing intermediate percentage calculations (newCurrent * 10000).
-	//
-	// Precision starts to degrade as the total number of work units approaches scale,
-	// but even at this limit, each unit of work represents at least 1 unit of scale.
-	scale uint64 = 1e15
-)
+// scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
+//
+// The choice of 1e15 balances high-precision fractional shares in the context
+// of, e.g., deep recursion, with sufficient uint64 headroom to prevent overflow
+// when performing intermediate percentage calculations (newCurrent * 10000).
+//
+// Precision starts to degrade as the total number of work units approaches scale,
+// but even at this limit, each unit of work represents at least 1 unit of scale.
+const scale uint64 = 1e15
 
 // Option defines a functional configuration for Progress.
 type Option func(*Progress) // exported to allow callers to create []*progress.Option to pass to New(...)
@@ -235,7 +233,7 @@ func (p *Progress) finish(ctx context.Context) {
 		output = p.layout.clearSeq          +
 		         "stopped (" + errStr + ")" +
 		         p.layout.doneSeq
-	} else { // clean exit via p.Close() while context still active
+	} else {                          // clean exit via p.Close() while context still active
 		output = p.layout.clearSeq                         +
 		         p.layout.prefix + "100" + p.layout.suffix +
 		         p.layout.finalStatus                      +

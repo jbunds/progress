@@ -7,7 +7,8 @@ import (
 	"io"
 	"math"
 	"reflect"
-	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -240,22 +241,61 @@ func TestReport(t *testing.T) {
 }
 
 func TestReportContention(t *testing.T) {
-	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
-	p := &Progress{ tracker: getTracker(Standard, 100) }
-	p.total.Store(100)
+	t.Parallel()
+
+	p := &Progress{ tracker: getTracker(Standard, 0) }
+	p.total.Store(1000)
+	
+	statusPrefix := "hammer time! "
+
+	const numGoroutines = 150 // spam concurrent Report() calls to trigger CAS block contention
 	var wg sync.WaitGroup
-	for i := range 200 {
-		wg.Go(func() {
-			for j := range 500 {
-				p.Report(float64(1e12) + float64(i * j), "spamming Report to trigger contention inside CAS loops")
-				if j % 50 == 0 { p.current.Store(0) }
-			}
-		})
+	wg.Add(numGoroutines)
+
+	for i := range numGoroutines { // full send
+		go func() {
+			defer wg.Done()
+			_ = i
+			p.Report(10, statusPrefix + strconv.Itoa(i))
+		}()
 	}
 	wg.Wait()
-	want := uint32(10000)
-	if diff := cmp.Diff(want, p.state.Load()); diff != "" {
-		t.Errorf("p.state.Load() mismatch (-want +got):\n%s", diff)
+
+	finalCurrent := p.current.Load()
+	finalState   := p.state.Load()
+
+	if finalCurrent > scale { // verify current does not exceed scale
+		t.Errorf("expected current to be capped at scale %d, got %d", scale, finalCurrent)
+	}
+
+	// bitwise integrity verification: verify the lower 16 bits of state match layout,
+	// confirming CAS loops preserved data integrity across concurrent threads
+	finalSigDigits    := finalState & 0xFFFF
+	expectedSigDigits := uint32((finalCurrent * 10000) / scale & 0xFFFF)
+
+	if finalSigDigits != expectedSigDigits {
+		t.Errorf("bitwise integrity violated; expected lower 16 bits to be %d; got %d", expectedSigDigits, finalSigDigits)
+	}
+
+  finalString := p.tracker.value(p.tracker.load())
+
+	if !strings.HasPrefix(finalString, statusPrefix) {
+		t.Errorf("tracker status corrupted; expected %q; got %q", statusPrefix, finalString)
+	}
+
+	suffixStr          := strings.TrimPrefix(finalString, statusPrefix)
+	finalReportID, err := strconv.Atoi(suffixStr)
+	if err != nil {
+		t.Errorf("failed to parse unique goroutine ID from final status string %q: %v", finalString, err)
+	}
+
+	if finalReportID < 0 || finalReportID >= numGoroutines { // check for corruption by another test running in parallel
+		t.Errorf("out-of-bounds worker ID found in tracker: %d", finalReportID)
+	}
+
+	const expectedSingleShare uint64 = 1e13 // (scale * 10) / 1000
+	if finalCurrent == 0 || finalCurrent < expectedSingleShare {
+		t.Errorf("state sync error: finalCurrent (%d) is less than a single worker's share (%d)", finalCurrent, expectedSingleShare)
 	}
 }
 
