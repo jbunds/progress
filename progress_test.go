@@ -290,7 +290,7 @@ func TestReportContention(t *testing.T) {
 	}
 
 	if finalReportID < 0 || finalReportID >= numGoroutines { // check for corruption by another test running in parallel
-		t.Errorf("out-of-bounds worker ID found in tracker: %d", finalReportID)
+		t.Errorf("out-of-bounds worker ID written to final status report: %d", finalReportID)
 	}
 
 	const expectedSingleShare uint64 = 1e13 // (scale * 10) / 1000

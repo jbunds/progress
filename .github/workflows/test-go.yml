@@ -31,7 +31,7 @@ jobs:
 
     - name: test                # https://pkg.go.dev/cmd/go#hdr-Testing_functions
       id:   test
-      run:  go test -v -count 3 -race ./...
+      run:  go test -v -count 100 -race ./...
 
     - name: coverage report
       id:   coverage_report

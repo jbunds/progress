@@ -21,7 +21,7 @@ repos:
       - language:       system
         id:             go-test
         name:           go test
-        entry:          go test -v -count 3 -race ./...
+        entry:          go test -v -count 100 -race ./...
         files:          \.go$|^go\.(?:mod|sum)$
         pass_filenames: false
         require_serial: true
