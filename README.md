@@ -79,7 +79,7 @@ See [![Go Reference](https://pkg.go.dev/badge/github.com/jbunds/progress.svg)](h
 
 #### Motivation
 
-This library originated as an experiement to satisfy the author's curiosity about the practical application of modern, idiomatic Go features (e.g., `context`, `sync/atomic`, `unique`) in a context where concurrency is paramount after a nearly eight-year break from coding Go, back when 1.10 was the latest release.
+This library originated as an experiement to satisfy the author's curiosity about the practical application of modern, idiomatic Go features (e.g., `context` for modern handling of cancelation and deadlines across API boundaries, lock-free concurrency via `sync/atomic` and CAS loops, set canonicalization (interning) via `unique` and `comparable`, etc) in a context where concurrency is paramount after a nearly eight-year break from coding Go, back when 1.10 was the latest release.
 
 The implementation was then iteratively optimized well beyond the point of overengineering, for fun and as a learning exercise.
 

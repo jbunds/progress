@@ -16,6 +16,7 @@
 ├── fraction.go
 ├── go.mod
 ├── go.sum
+├── init_test.go
 ├── layout.go
 ├── percent.go
 ├── progress.go
@@ -31,5 +32,5 @@
 ├── tracker_test.go
 └── unique.go
 
-5 directories, 26 files
+5 directories, 27 files
 ```
