@@ -316,12 +316,13 @@ func TestWriteStatus(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := &Progress{
-				tracker:    getTracker(Standard, 3),
-				output:     io.Discard,
-				isTerminal: tt.isTerminal,
-				theme:      themeOrDefault("green"),
+				tracker:        getTracker(Standard, 3),
+				output:         io.Discard,
+				isTerminal:     tt.isTerminal,
+				isTerminalFunc: isTerminal,
+				theme:          themeOrDefault("green"),
 			}
-			p.layout = p.tracker.baseLayout()
+			p.prepareTerminal()
 			p.state.Store(pack(t, 80, 0))
 
 			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
