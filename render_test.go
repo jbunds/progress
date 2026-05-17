@@ -2,6 +2,7 @@ package progress
 
 import (
 	"bytes"
+	"io"
 	"testing"
 	"time"
 	"unique"
@@ -39,16 +40,17 @@ func TestDraw(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := new(bytes.Buffer)
-			p   := &Progress{
-				tracker: getTracker(Standard, 0),
-				output:  got,
+			p := &Progress{
+				tracker:        getTracker(Standard, 0),
+				output:         io.Discard,
+				isTerminalFunc: isTerminal,
 			}
-			p.layout = p.tracker.baseLayout()
+			p.prepareTerminal()
 
-			p.draw(tt.state, tt.statusText)
+			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+			p.draw(&buf, tt.state, tt.statusText)
 
-			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
+			if diff := cmp.Diff(tt.want, p.lastRenderedFrame()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
@@ -98,16 +100,17 @@ func TestPercentTrackerDraw(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := new(bytes.Buffer)
-			p   := &Progress{
-				tracker: getTracker(Percent, 0),
-				output:  got,
+			p := &Progress{
+				tracker:        getTracker(Percent, 0),
+				output:         io.Discard,
+				isTerminalFunc: isTerminal,
 			}
-			p.layout = p.tracker.baseLayout()
+			p.prepareTerminal()
 
-			p.draw(tt.state, "")
+			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+			p.draw(&buf, tt.state, "")
 
-			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
+			if diff := cmp.Diff(tt.want, p.lastRenderedFrame()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
@@ -134,16 +137,17 @@ func TestUniqueTrackerDraw(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := new(bytes.Buffer)
-			p   := &Progress{
-				tracker: getTracker(Unique, 0),
-				output:  got,
+			p := &Progress{
+				tracker:        getTracker(Unique, 0),
+				output:         io.Discard,
+				isTerminalFunc: isTerminal,
 			}
-			p.layout = p.tracker.baseLayout()
+			p.prepareTerminal()
 
-			p.draw(tt.state, unique.Make(tt.statusText))
+			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+			p.draw(&buf, tt.state, unique.Make(tt.statusText))
 
-			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
+			if diff := cmp.Diff(tt.want, p.lastRenderedFrame()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
@@ -155,17 +159,18 @@ func TestFractionTrackerRedraw(t *testing.T) {
 
 	got         := new(bytes.Buffer)
 	tickTrigger := make(chan time.Time, 1)
-	notify      := make(chan struct{}, 1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
+	notify      := make(chan struct{},  1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
 
 	p := &Progress{
-		tracker:    getTracker(Fraction, 73),
-		output:     got,
-		clock:      &fakeClock{ c: tickTrigger },
-		drawNotify: notify,
-		stopChan:   make(chan struct{}),
-		doneChan:   make(chan struct{}),
+		tracker:        getTracker(Fraction, 73),
+		output:         got,
+		isTerminalFunc: isTerminal,
+		clock:          &fakeClock{ c: tickTrigger },
+		drawNotify:     notify,
+		stopChan:       make(chan struct{}),
+		doneChan:       make(chan struct{}),
 	}
-	p.layout = p.tracker.baseLayout()
+	p.prepareTerminal()
 
 	p.total.Store(73)
 	p.state.Store(pack(t, minWidth, 0))
@@ -178,22 +183,23 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	<-notify
 
 	tickTrigger <-time.Now() // should skip redundant redraw
+	<-notify
 
-	want := "processing ( 15%): 11/73\n"
-	if diff := cmp.Diff(want, got.String()); diff != "" {
+	wantFrame := "processing ( 15%): 11/73\n"
+	want      := wantFrame
+	if diff := cmp.Diff(wantFrame, p.lastRenderedFrame()); diff != "" {
 		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
 	}
 
-	got.Reset()
-
 	p.Report(34, "completed another 34 units of work") // second report: 45/73
 
-	want = "processing ( 62%): 45/73\n"
+	wantFrame = "processing ( 62%): 45/73\n"
+	want     += wantFrame
 
-	for range 5 { // accommodate scheduler jitter and frame queuing by consuming notifications until we reach the expected state, otherwise fail fast
+	for range 10 { // accommodate scheduler jitter and frame queuing by consuming notifications until we reach the expected state, otherwise fail fast
 		tickTrigger <-time.Now()
 		<-notify
-		if p.lastRenderedFrame() == want { break }
+		if p.lastRenderedFrame() == wantFrame { break }
 	}
 
 	if diff := cmp.Diff(want, got.String()); diff != "" {
@@ -210,16 +216,16 @@ func TestWriteString(t *testing.T) {
 		visCols       int
 		isColored     bool
 		str           string
-		wantBuf       []byte
+		want          string
 		wantIsColored bool
 	}{
 		{
-			name:    "wide load",
-			cols:    30,
-			denom:   30 - 1,
-			visCols: 20,
-			str:     "🙃",
-			wantBuf:       []byte("\033[38;2;94;100;94;48;2;30;152;62m🙃"),
+			name:          "wide load",
+			cols:          30,
+			denom:         30 - 1,
+			visCols:       20,
+			str:           "🙃",
+			want:          "\033[38;2;94;100;94;48;2;30;152;62m🙃",
 			wantIsColored: true,
 		},
 		{
@@ -229,7 +235,7 @@ func TestWriteString(t *testing.T) {
 			visCols:   30,
 			isColored: true,
 			str:       "foo",
-			wantBuf:   []byte("\033[0mfoo"),
+			want:      "\033[0mfoo",
 		},
 	}
 	for _, tt := range tests {
@@ -237,7 +243,6 @@ func TestWriteString(t *testing.T) {
 			t.Parallel()
 			buf := make([]byte, 0)
 			ws  := &writeState{
-				buf:        &buf,
 				theme:      themeOrDefault("green"),
 				cols:       tt.cols,
 				visCols:    tt.visCols,
@@ -246,8 +251,8 @@ func TestWriteString(t *testing.T) {
 				isTerminal: true,
 				isColored:  tt.isColored,
 			}
-			ws.writeString(tt.str)
-			if diff := cmp.Diff(tt.wantBuf, *ws.buf); diff != "" {
+			ws.writeString(&buf, tt.str)
+			if diff := cmp.Diff(tt.want, string(buf)); diff != "" {
 				t.Errorf("writeString(%q) mismatch (-want +got):\n%s", tt.str, diff)
 			}
 			if diff := cmp.Diff(tt.wantIsColored, ws.isColored); diff != "" {
@@ -275,7 +280,7 @@ func TestWriteStatus(t *testing.T) {
 			want:         "processing ( 54%): shouting into the void\n",
 		},
 		{
-			name:         "succeeds",
+			name:         "output is a terminal",
 			isTerminal:   true,
 			pctSigDigits: 7731,
 			status:       "working...",
@@ -310,17 +315,19 @@ func TestWriteStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := new(bytes.Buffer)
-			p   := &Progress{
+			p := &Progress{
 				tracker:    getTracker(Standard, 3),
-				output:     got,
+				output:     io.Discard,
 				isTerminal: tt.isTerminal,
 				theme:      themeOrDefault("green"),
 			}
 			p.layout = p.tracker.baseLayout()
 			p.state.Store(pack(t, 80, 0))
-			_ = p.writeStatus(tt.pctSigDigits, tt.status, false)
-			if diff := cmp.Diff(tt.want, got.String()); diff != "" {
+
+			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+			_ = p.writeStatus(&buf, tt.pctSigDigits, tt.status, false)
+
+			if diff := cmp.Diff(tt.want, p.lastRenderedFrame()); diff != "" {
 				t.Errorf("writeStatus(%d, %q, %t) mismatch (-want +got):\n%s", tt.pctSigDigits, tt.status, false, diff)
 			}
 		})

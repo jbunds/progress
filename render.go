@@ -43,10 +43,18 @@ const (
 	resetAttr      = "\033[0m"                  // reset all attributes to defaults
 )
 
+// zero-overhead production / default no-op stubs:
+// - decoupled from the production runtime path via compiler optimization.
+// - overridden during test execution per init_test.go.
+// - enables instrumentation hooks to be injected to ensure synchronous, deterministic tests.
+var (
+	syncCompleteHook   = func(*Progress         ) {}
+	storeLastFrameHook = func(*Progress, *[]byte) {}
+)
+
 // writeState encapsulates canvas boundaries, color theme, and cursor positions
 // across sequential draws in a stack-allocated block to prevent heap escaping.
 type writeState struct {
-	buf        *[]byte
 	theme      *theme
 	cols       int
 	visCols    int
@@ -58,7 +66,9 @@ type writeState struct {
 
 // sync performs a state-aware redraw, skipping redundant redraws if the
 // progress and status values haven't changed since the last render.
-func (p *Progress) sync() {
+func (p *Progress) sync(buf *[]byte) {
+	defer func() { syncCompleteHook(p) }()
+
 	currentState := p.state.Load()
 	currentVal   := p.tracker.load()
 	lastState    := p.lastState.Load()
@@ -67,30 +77,15 @@ func (p *Progress) sync() {
 	if currentState == lastState &&
 	   currentVal   == lastVal { return } // status unchanged; skip redundant redraw
 
-	p.draw(currentState, currentVal)
+	p.draw(buf, currentState, currentVal)
 
 	p.lastState.Store(currentState)
 	p.lastStatusVal.Store(currentVal)
-
-	// TODO(jeff); eliminate the drawNotify field by refactoring to separate the concerns
-	//             of state calculations and UI rendering, so the logic can be tested
-	//             synchronously by passing in a state to a pure function, and, e.g.,
-	//             the renderLoop can be tested as a separate, thin integration layer
-	//
-	//             maybe provide a mechanism to allow callers to register a callback
-	//             that fires when the desired state is reached (a callback would be
-	//             better than forcing callers to poll the state via p.lastFrame)
-	if p.drawNotify != nil {
-		select {
-		case p.drawNotify <- struct{}{}: // ensures synchronous, deterministic tests by signaling the completion of a draw cycle
-		default:
-		}
-	}
 }
 
 // draw formats and renders the current progress status to the terminal,
 // truncating text as needed to fit within the terminal width.
-func (p *Progress) draw(state uint32, val any) {
+func (p *Progress) draw(buf *[]byte, state uint32, val any) {
 	maxLen    := state >> 16 - uint32(p.layout.staticWidth & 0xFFFF)
 	status    := ""
 	truncated := false
@@ -99,7 +94,7 @@ func (p *Progress) draw(state uint32, val any) {
 		status, truncated = truncateFromLeft(p.tracker.value(val), int(maxLen)) // truncate from left to show most relevant portion (e.g., file basename)
 	}
 
-	_ = p.writeStatus(state & 0xFFFF, status, truncated)
+	_ = p.writeStatus(buf, state & 0xFFFF, status, truncated)
 }
 
 // lastRenderedFrame returns the last rendered frame string.
@@ -109,9 +104,8 @@ func (p *Progress) lastRenderedFrame() string {
 }
 
 // writeStatus writes the progress status to to p.output (nominally os.Stderr) per an atomic system call.
-func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated bool) error {
-	buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
-	buf  = append(buf, p.layout.clearSeq...)
+func (p *Progress) writeStatus(buf *[]byte, pctSigDigits uint32, status string, truncated bool) error {
+	*buf = append(*buf, p.layout.clearSeq...)
 
 	termWidth := int(p.state.Load() >> 16)
 
@@ -123,7 +117,6 @@ func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated boo
 	if termWidth > 1 { denom = termWidth - 1 }
 
 	ws := writeState{
-		buf:        &buf,
 		theme:      p.theme,
 		cols:       (termWidth * int(pctSigDigits)) / 10000,
 		visCols:    0,
@@ -142,7 +135,6 @@ func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated boo
 //	if barCols > 1 { denom = barCols - 1 }
 //
 //	ws := writeState{
-//		buf:        &buf,
 //		theme:      p.theme,
 //		cols:       barCols,
 //		visCols:    0,
@@ -152,26 +144,26 @@ func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated boo
 //		isColored:  false,
 //	}
 
-	ws.writeString(p.layout.prefix)
+	ws.writeString(buf, p.layout.prefix)
 
 	switch {
 	case pctSigDigits >= 9950:           // 99.5% < pctSigDigits >  100% => "100%"
-		ws.writeString("100")
+		ws.writeString(buf, "100")
 	case pctSigDigits >= 995:            // 9.95% < pctSigDigits > 99.4% => " 10%" - " 99%"
 		val := (pctSigDigits + 50) / 100 // round to the nearest 1% (995 -> 10; 9949 -> 99)
-		ws.writeRune(' ')
-		ws.writeRune(rune('0' + (val / 10)))
-		ws.writeRune(rune('0' + (val % 10)))
+		ws.writeRune(buf, ' ')
+		ws.writeRune(buf, rune('0' + (val / 10)))
+		ws.writeRune(buf, rune('0' + (val % 10)))
 	default:                             // 0.00% < pctSigDigits > 9.94% => "0.0%" - "9.9%"
 		val := (pctSigDigits +  5) /  10 // round to the nearest 0.1% (994 -> 9.9; 0 -> 0.0)
-		ws.writeRune(rune('0' + (val / 10)))
-		ws.writeRune('.')
-		ws.writeRune(rune('0' + (val % 10)))
+		ws.writeRune(buf, rune('0' + (val / 10)))
+		ws.writeRune(buf, '.')
+		ws.writeRune(buf, rune('0' + (val % 10)))
 	}
 
-	ws.writeString(p.layout.suffix)
-	if truncated { ws.writeRune('…') }
-	ws.writeString(status)
+	ws.writeString(buf, p.layout.suffix)
+	if truncated { ws.writeRune(buf, '…') }
+	ws.writeString(buf, status)
 
 	for p.isTerminal && ws.visCols < ws.cols { // fill remaining bar space with clean gradient padding
 		var factor int
@@ -181,32 +173,29 @@ func (p *Progress) writeStatus(pctSigDigits uint32, status string, truncated boo
 		bgG := p.theme.startBgG + (p.theme.deltaBgG * factor) / 1000
 		bgB := p.theme.startBgB + (p.theme.deltaBgB * factor) / 1000
 
-		*ws.buf = append(*ws.buf, prepColorSeq...)
-		*ws.buf = appendIntIdxInline(*ws.buf, bgR)
-		*ws.buf = append(*ws.buf, ';')
-		*ws.buf = appendIntIdxInline(*ws.buf, bgG)
-		*ws.buf = append(*ws.buf, ';')
-		*ws.buf = appendIntIdxInline(*ws.buf, bgB)
-		*ws.buf = append(*ws.buf, 'm', ' ')
+		*buf = append(*buf, prepColorSeq...)
+		*buf = appendIntIdxInline(*buf, bgR)
+		*buf = append(*buf, ';')
+		*buf = appendIntIdxInline(*buf, bgG)
+		*buf = append(*buf, ';')
+		*buf = appendIntIdxInline(*buf, bgB)
+		*buf = append(*buf, 'm', ' ')
 		ws.visCols++
 		ws.isColored = true
 	}
 
-	if p.isTerminal && ws.isColored { buf = append(buf, resetAttr...) } // reset all attributes to defaults
+	if p.isTerminal && ws.isColored { *buf = append(*buf, resetAttr...) } // reset all attributes to defaults
 
-	buf = append(buf, p.layout.lineTerminator...)
+	*buf = append(*buf, p.layout.lineTerminator...)
 
-	_, err := p.output.Write(buf)
+	_, err := p.output.Write(*buf)
 
-	if err == nil {
-		str := string(buf)
-		p.lastFrame.Store(&str)
-	}
+	if err == nil { storeLastFrameHook(p, buf) }
 
 	return err
 }
 
-func (ws *writeState) writeRune(r rune) {
+func (ws *writeState) writeRune(buf *[]byte, r rune) {
 	rWidth := 1
 	if r > 0x1100 && isWideRune(r) { rWidth = 2 }
 
@@ -222,34 +211,35 @@ func (ws *writeState) writeRune(r rune) {
 		fgG  :=          startFgG + (ws.theme.deltaFgG * factor) / 1000
 		fgB  :=          startFgB + (ws.theme.deltaFgB * factor) / 1000
 
-		*ws.buf = append(*ws.buf, setFgColor...)
-		*ws.buf = appendIntIdxInline(*ws.buf, fgR)
-		*ws.buf = append(*ws.buf, ';')
-		*ws.buf = appendIntIdxInline(*ws.buf, fgG)
-		*ws.buf = append(*ws.buf, ';')
-		*ws.buf = appendIntIdxInline(*ws.buf, fgB)
-		*ws.buf = append(*ws.buf, prepSetBgColor...)
-		*ws.buf = appendIntIdxInline(*ws.buf, bgR)
-		*ws.buf = append(*ws.buf, ';')
-		*ws.buf = appendIntIdxInline(*ws.buf, bgG)
-		*ws.buf = append(*ws.buf, ';')
-		*ws.buf = appendIntIdxInline(*ws.buf, bgB)
-		*ws.buf = append(*ws.buf, 'm')
+		*buf = append(*buf, setFgColor...)
+		*buf = appendIntIdxInline(*buf, fgR)
+		*buf = append(*buf, ';')
+		*buf = appendIntIdxInline(*buf, fgG)
+		*buf = append(*buf, ';')
+		*buf = appendIntIdxInline(*buf, fgB)
+		*buf = append(*buf, prepSetBgColor...)
+		*buf = appendIntIdxInline(*buf, bgR)
+		*buf = append(*buf, ';')
+		*buf = appendIntIdxInline(*buf, bgG)
+		*buf = append(*buf, ';')
+		*buf = appendIntIdxInline(*buf, bgB)
+		*buf = append(*buf, 'm')
+
 		ws.isColored = true
 	} else if ws.visCols >= ws.cols && ws.isColored {
-		*ws.buf      = append(*ws.buf, resetAttr...)
+		*buf = append(*buf, resetAttr...)
 		ws.isColored = false
 	}
 
 	if r < 0x80 {
-		*ws.buf = append(*ws.buf, byte(r & 0x7F))
+		*buf = append(*buf, byte(r & 0x7F))
 	} else {
-		*ws.buf = appendRune(*ws.buf, r)
+		*buf = appendRune(*buf, r)
 	}
 
 	ws.visCols += rWidth
 }
 
-func (ws *writeState) writeString(str string) {
-	for _, r := range str { ws.writeRune(r) }
+func (ws *writeState) writeString(buf *[]byte, str string) {
+	for _, r := range str { ws.writeRune(buf, r) }
 }

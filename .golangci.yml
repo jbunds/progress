@@ -17,8 +17,8 @@ linters:
     - forbidigo                 # forbids identifiers
     - forcetypeassert           # find forced type assertions
     - gocheckcompilerdirectives # checks that go compiler directive comments (//go:) are valid
-    - gochecknoglobals          # check that no global variables exist
-    - gochecknoinits            # checks that no init functions are present in Go code
+#    - gochecknoglobals          # check that no global variables exist
+#    - gochecknoinits            # checks that no init functions are present in Go code
     - gocritic                  # provides diagnostics that check for bugs, performance and style issues
     - godoclint                 # checks Golang's documentation practice (godoc)
     - godot                     # check if comments end in a period

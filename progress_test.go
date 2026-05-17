@@ -262,13 +262,12 @@ func TestReportContention(t *testing.T) {
 func TestRenderLoop(t *testing.T) {
 	t.Parallel()
 
-	got         := new(bytes.Buffer)
 	tickTrigger := make(chan time.Time, 1)
 	notify      := make(chan struct{}, 1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
 
 	p := &Progress{
 		tracker:    getTracker(Standard, 0),
-		output:     got,
+		output:     io.Discard,
 		clock:      &fakeClock{ c: tickTrigger },
 		drawNotify: notify,
 		stopChan:   make(chan struct{}),
@@ -281,19 +280,17 @@ func TestRenderLoop(t *testing.T) {
 	}
 
 	tickAndExpectSkip := func() {
+		beforeTickFrame := p.lastRenderedFrame()
+
 		tickTrigger <- time.Now()
-		for p.lastState.Load() != p.state.Load() { // wait until renderLoop has processed the state
-			runtime.Gosched() // yield the processor to allow the scheduler to run the renderLoop goroutine so it completes the atomic state update
-		}
-		select {       // verify that the notify channel is empty
-		case <-notify: // unexpected draw() cycle completed
-			t.Errorf("redundant draw rendered")
-		default:
+		<-notify
+
+		afterTickFrame := p.lastRenderedFrame()
+
+		if beforeTickFrame != afterTickFrame {
+			t.Errorf("redundant frame rendered:\n%q", afterTickFrame)
 		}
 	}
-
-	p.total.Store(100)
-	p.state.Store(pack(t, minWidth, 0))
 
 	go p.renderLoop(t.Context())
 

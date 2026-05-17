@@ -192,7 +192,18 @@ func (p *Progress) renderLoop(ctx context.Context) {
 	defer signal.Stop(p.resizeChan)
 	defer p.finish(ctx) // render the final frame to the terminal and perform any necessary cleanup
 
+	// the naked []byte buffer is unprotected by design:
+	//
+	// - goroutine-confined;     owned exclusively by this execution context
+	// - synchronously mutated;  loop events process sequentially
+	// - lexically-scoped;       lifetime is structurally bound to this function frame
+	// - no reference retention; downstream methods never cache or leak the slice pointer
+
+	buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+
 	for {
+
+		buf = buf[:0]
 
 		select {             // exit immediately if canceled or explicitly stopped per a Close() call
 		case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
@@ -208,9 +219,9 @@ func (p *Progress) renderLoop(ctx context.Context) {
 		case <-p.stopChan:   // Close() called
 			return
 		case <-ticker.ch():  // check for a status update
-			p.sync()
+			p.sync(&buf)
 		case <-p.resizeChan: // SIGWINCH received
-			p.handleResize()
+			p.handleResize(&buf)
 		}
 	}
 }
