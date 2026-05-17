@@ -255,7 +255,6 @@ func TestReportContention(t *testing.T) {
 	for i := range numGoroutines { // full send
 		go func() {
 			defer wg.Done()
-			_ = i
 			p.Report(10, statusPrefix + strconv.Itoa(i))
 		}()
 	}

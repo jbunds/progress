@@ -28,7 +28,7 @@ func main() {
 	prog := progress.New(ctx, 0, os.Stderr)
 	defer prog.Close()
 
-	workload := randWork(100)          // 100 random tasks of varying weight
+	workload := randomWork(100)        // 100 random tasks of varying weight
 
 	for _, task := range workload {    // workload discovery
 		prog.AddTotal(task.weight)     // report to the progress tracker that a weighted task was discovered
@@ -44,7 +44,7 @@ func main() {
 	}
 }
 
-func randWork(n int) []*task {
+func randomWork(n int) []*task {
 	tasks := make([]*task, n)
 	for i := range n {
 		tasks[i] = &task{
