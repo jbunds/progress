@@ -21,7 +21,7 @@ repos:
       - language:       system
         id:             go-test
         name:           go test
-        entry:          go test -v -count 100 -race .
+        entry:          go test -race -count=100 -gcflags=-d=checkptr .
         files:          \.go$|^go\.(?:mod|sum)$
         pass_filenames: false
         require_serial: true

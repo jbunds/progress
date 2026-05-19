@@ -26,7 +26,7 @@ func (f *fractionTracker) load()  string {
 	b  = strconv.AppendUint(b, f.status.Load(), 10)
 	b  = append(b, '/')
 	b  = append(b, f.total...)
-	// #nosec G103 -- string consumed synchronously before buffer reuse; audited per `go test -gcflags="-d=checkptr" -count=100 .`
+	// #nosec G103 -- string consumed synchronously before buffer reuse; audited per `go test -count=100 -gcflags=-d=checkptr .`
 	return unsafe.String(&b[0], len(b)) // zero-alloc cast: directly convert stack bytes into a string header
 }
 
