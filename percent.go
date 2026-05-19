@@ -15,7 +15,7 @@ func (p *percentTracker) init() {
 	p.lo.staticWidth = len(prefix) + pctFieldLen + len(p.lo.suffix)
 }
 
-func (p *percentTracker) baseLayout()      layout  { return p.lo }
-func (p *percentTracker) load()  any               { return nil  }
-func (p *percentTracker) store(_ uint64, _ string) {             }
-func (p *percentTracker) value(_ any)      string  { return ""   }
+func (p *percentTracker) baseLayout()           layout { return p.lo }
+func (p *percentTracker) load()                 string { return ""   }
+func (p *percentTracker) appendStatus(_ []byte) []byte { return nil  }
+func (p *percentTracker) store(_ uint64, _ string)     {             }

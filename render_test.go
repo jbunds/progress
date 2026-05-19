@@ -5,7 +5,6 @@ import (
 	"io"
 	"testing"
 	"time"
-	"unique"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -41,16 +40,17 @@ func TestDraw(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := &Progress{
-				tracker:        getTracker(Standard, 0),
-				output:         io.Discard,
-				isTerminalFunc: isTerminal,
+				tracker:    getTracker(Standard, 0),
+				output:     io.Discard,
+				isTerminal: isTerminal,
 			}
+			p.tracker.store(0, tt.statusText)
 			p.prepareTerminal()
 
 			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
-			p.draw(&buf, tt.state, tt.statusText)
+			p.draw(&buf, tt.state)
 
-			if diff := cmp.Diff(tt.want, p.lastRenderedFrame()); diff != "" {
+			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
@@ -101,16 +101,16 @@ func TestPercentTrackerDraw(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := &Progress{
-				tracker:        getTracker(Percent, 0),
-				output:         io.Discard,
-				isTerminalFunc: isTerminal,
+				tracker:    getTracker(Percent, 0),
+				output:     io.Discard,
+				isTerminal: isTerminal,
 			}
 			p.prepareTerminal()
 
 			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
-			p.draw(&buf, tt.state, "")
+			p.draw(&buf, tt.state)
 
-			if diff := cmp.Diff(tt.want, p.lastRenderedFrame()); diff != "" {
+			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
@@ -138,16 +138,17 @@ func TestUniqueTrackerDraw(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := &Progress{
-				tracker:        getTracker(Unique, 0),
-				output:         io.Discard,
-				isTerminalFunc: isTerminal,
+				tracker:    getTracker(Unique, 0),
+				output:     io.Discard,
+				isTerminal: isTerminal,
 			}
+			p.tracker.store(0, tt.statusText)
 			p.prepareTerminal()
 
 			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
-			p.draw(&buf, tt.state, unique.Make(tt.statusText))
+			p.draw(&buf, tt.state)
 
-			if diff := cmp.Diff(tt.want, p.lastRenderedFrame()); diff != "" {
+			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
@@ -162,13 +163,13 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	notify      := make(chan struct{},  1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
 
 	p := &Progress{
-		tracker:        getTracker(Fraction, 73),
-		output:         got,
-		isTerminalFunc: isTerminal,
-		clock:          &fakeClock{ c: tickTrigger },
-		drawNotify:     notify,
-		stopChan:       make(chan struct{}),
-		doneChan:       make(chan struct{}),
+		tracker:    getTracker(Fraction, 73),
+		output:     got,
+		isTerminal: isTerminal,
+		clock:      fakeClock{ c: tickTrigger },
+		drawNotify: notify,
+		stopChan:   make(chan struct{}),
+		doneChan:   make(chan struct{}),
 	}
 	p.prepareTerminal()
 
@@ -187,7 +188,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 
 	wantFrame := "processing ( 15%): 11/73\n"
 	want      := wantFrame
-	if diff := cmp.Diff(wantFrame, p.lastRenderedFrame()); diff != "" {
+	if diff := cmp.Diff(wantFrame, p.lastFrameRendered()); diff != "" {
 		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
 	}
 
@@ -199,7 +200,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	for range 10 { // accommodate scheduler jitter and frame queuing by consuming notifications until we reach the expected state, otherwise fail fast
 		tickTrigger <-time.Now()
 		<-notify
-		if p.lastRenderedFrame() == wantFrame { break }
+		if p.lastFrameRendered() == wantFrame { break }
 	}
 
 	if diff := cmp.Diff(want, got.String()); diff != "" {
@@ -284,7 +285,8 @@ func TestWriteStatus(t *testing.T) {
 			isTerminal:   true,
 			pctSigDigits: 7731,
 			status:       "working...",
-			want:         "\033[38;2;255;255;255;48;2;10;25;12mp" + "\033[38;2;253;253;253;48;2;10;27;12mr" +
+			want:         clearSeq +
+			              "\033[38;2;255;255;255;48;2;10;25;12mp" + "\033[38;2;253;253;253;48;2;10;27;12mr" +
 			              "\033[38;2;250;250;250;48;2;10;29;13mo" + "\033[38;2;247;247;247;48;2;11;31;14mc" +
 			              "\033[38;2;244;244;244;48;2;11;34;15me" + "\033[38;2;241;241;241;48;2;11;36;16ms" +
 			              "\033[38;2;238;239;238;48;2;12;38;17ms" + "\033[38;2;235;236;235;48;2;12;41;18mi" +
@@ -309,18 +311,18 @@ func TestWriteStatus(t *testing.T) {
 			              "\033[30;48;2;28;141;58m " + "\033[30;48;2;29;144;59m " + "\033[30;48;2;29;146;60m " +
 			              "\033[30;48;2;30;148;60m " + "\033[30;48;2;30;151;61m " + "\033[30;48;2;30;153;62m " +
 			              "\033[30;48;2;31;155;63m " + "\033[30;48;2;31;158;64m " + "\033[30;48;2;32;160;65m " +
-			              "\033[30;48;2;32;163;66m " + "\033[30;48;2;32;165;67m " + "\033[0m\n",
+			              "\033[30;48;2;32;163;66m " + "\033[30;48;2;32;165;67m " + "\033[0m" +
+			              lineTerminator,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := &Progress{
-				tracker:        getTracker(Standard, 3),
-				output:         io.Discard,
-				isTerminal:     tt.isTerminal,
-				isTerminalFunc: isTerminal,
-				theme:          themeOrDefault("green"),
+				tracker:    getTracker(Standard, 3),
+				output:     io.Discard,
+				isTerminal: func(any) bool { return tt.isTerminal },
+				theme:      themeOrDefault("green"),
 			}
 			p.prepareTerminal()
 			p.state.Store(pack(t, 80, 0))
@@ -328,7 +330,7 @@ func TestWriteStatus(t *testing.T) {
 			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
 			_ = p.writeStatus(&buf, tt.pctSigDigits, tt.status, false)
 
-			if diff := cmp.Diff(tt.want, p.lastRenderedFrame()); diff != "" {
+			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
 				t.Errorf("writeStatus(%d, %q, %t) mismatch (-want +got):\n%s", tt.pctSigDigits, tt.status, false, diff)
 			}
 		})

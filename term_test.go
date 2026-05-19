@@ -39,9 +39,9 @@ func TestPrepareTerminal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			p := &Progress{
-				output:         os.Stderr,
-				tracker:        getTracker(Standard, 0),
-				isTerminalFunc: func(any) bool { return tt.isTerminal },
+				output:     os.Stderr,
+				tracker:    getTracker(Standard, 0),
+				isTerminal: func(any) bool { return tt.isTerminal },
 			}
 			p.prepareTerminal()
 			got := p.layout
@@ -61,7 +61,7 @@ func TestPrepareTerminal(t *testing.T) {
 func TestHandleResize(t *testing.T) {
 	t.Parallel()
 
-	fakeClock := &fakeClock{ c: make(chan time.Time, 1) }
+	fakeClock := fakeClock{ c: make(chan time.Time, 1) }
 	notify    := make(chan struct{}, 1)
 
 	mockTermWidth     := minWidth
@@ -70,9 +70,11 @@ func TestHandleResize(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	p := New(ctx, 0, io.Discard, withClock(fakeClock), withResizeHandler(mockResizeHandler))
+	p := New(ctx, 0, io.Discard,
+		withClock(fakeClock),
+		withResizeHandler(mockResizeHandler),
+		WithIsTerminalFunc(func(any) bool { return true }))
 	t.Cleanup(func() { p.Close() })
-	p.isTerminal = true
 	p.drawNotify = notify // drawNotify signals the completion of a draw cycle
 
 	mockTermWidth = 120

@@ -1,4 +1,6 @@
 //go:build examples
+
+// example program demonstrating the progress package API.
 package main
 
 import (
@@ -47,9 +49,9 @@ func main() {
 func randomWork(n int) []*task {
 	tasks := make([]*task, n)
 	for i := range n {
-		tasks[i] = &task{
-			weight: uint64(rand.IntN(50) + 1), // tasks have non-uniform weights ranging from 1 to 50
-			delay:  rand.N(250 * time.Millisecond),
+		tasks[i] = &task{ // tasks have non-uniform weights ranging from 1 to 50
+			weight: rand.Uint64N(50) + 1,           // #nosec G404
+			delay:  rand.N(250 * time.Millisecond), // #nosec G404
 		}
 	}
 	return tasks

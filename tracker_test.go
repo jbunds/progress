@@ -41,7 +41,7 @@ func TestGetTracker(t *testing.T) {
 		{
 			name:  "fraction",
 			strat: Fraction,
-			want:  &standardTracker{ lo: defaultLayout() },
+			want:  &standardTracker{ lo:  defaultLayout() },
 		},
 		{
 			name:  "fraction",
@@ -49,6 +49,7 @@ func TestGetTracker(t *testing.T) {
 			strat: Fraction,
 			want:  &fractionTracker{
 				total: "1",
+				buf:   []uint8{},
 				lo:    defaultLayout(),
 			},
 		},
@@ -58,8 +59,8 @@ func TestGetTracker(t *testing.T) {
 			t.Parallel()
 			got := getTracker(tt.strat, tt.total)
 			switch want := tt.want.(type) {
-			case *standardTracker: want.val.Store("")
-			case *uniqueTracker:   want.val.Store(unique.Make(""))
+			case *standardTracker: want.status.Store(new(""))
+			case   *uniqueTracker: want.status.Store(unique.Make(""))
 			}
 			if diff := cmp.Diff(tt.want, got, getCmpOpts()); diff != "" {
 				t.Errorf("getTracker(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -68,13 +69,13 @@ func TestGetTracker(t *testing.T) {
 	}
 }
 
-func TestUniqueTrackerStoresAndLoads(t *testing.T) {
+func TestUniqueTrackerStoreAndLoad(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name   string
 		status string
-		want1   string
-		want2   string
+		want1  string
+		want2  string
 	}{
 		{
 			name:   "succeeds",
@@ -86,13 +87,13 @@ func TestUniqueTrackerStoresAndLoads(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			u := getTracker(Unique, 0)
-			got := u.value(u.load())
+			u   := getTracker(Unique, 0)
+			got := u.load()
 			if diff := cmp.Diff(tt.want1, got); diff != "" {
 				t.Errorf("load(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 			u.store(0, tt.status)
-			got = u.value(u.load())
+			got = u.load()
 			if diff := cmp.Diff(tt.want2, got); diff != "" {
 				t.Errorf("store(%q} / load() mismatch (-want +got):\n%s", tt.name, diff)
 			}
@@ -124,41 +125,41 @@ func TestStandardTrackerEqualMethod(t *testing.T) {
 	})
 }
 
-func TestPercentTrackerMethods(t *testing.T) {
+func TestPercentTrackerStoreAndLoad(t *testing.T) {
 	t.Parallel()
-	t.Run("percentTracker store, load, value", func(t *testing.T) {
+	t.Run("percentTracker store, load", func(t *testing.T) {
 		t.Parallel()
 		p := getTracker(Percent, 0)
-		if diff := cmp.Diff(nil, p.load()); diff != "" {
+		if diff := cmp.Diff("", p.load()); diff != "" {
 			t.Errorf("load() mismatch (-want +got):\n%s", diff)
 		}
-		p.store(0, "")
-		if diff := cmp.Diff("", p.value(p.load())); diff != "" {
+		p.store(0, "discarded")
+		if diff := cmp.Diff("", p.load()); diff != "" {
 			t.Errorf("store(%d, %q) / load() mismatch (-want +got):\n%s", 0, "", diff)
 		}
 	})
 }
 
-func TestUniqueTrackerValue(t *testing.T) {
+func TestUniqueTrackerLoad(t *testing.T) {
 	t.Parallel()
-	t.Run("uniqueTracker.value", func(t *testing.T) {
+	t.Run("uniqueTracker.load", func(t *testing.T) {
 		t.Parallel()
 		u   := getTracker(Unique, 0)
-		got := u.value("bogus")
+		got := u.load()
 		if diff := cmp.Diff("", got); diff != "" {
-			t.Errorf("value(%q) mismatch (-want +got):\n%s", "bogus", diff)
+			t.Errorf("load() mismatch (-want +got):\n%s", diff)
 		}
 	})
 }
 
-func TestFractionTrackerValue(t *testing.T) {
+func TestFractionTrackerLoad(t *testing.T) {
 	t.Parallel()
-	t.Run("fractionTracker.value", func(t *testing.T) {
+	t.Run("fractionTracker.load", func(t *testing.T) {
 		t.Parallel()
 		f   := getTracker(Fraction, 3)
-		got := f.value("bogus")
+		got := f.load()
 		if diff := cmp.Diff("0/3", got); diff != "" {
-			t.Errorf("value(%q) mismatch (-want +got):\n%s", "bogus", diff)
+			t.Errorf("load() mismatch (-want +got):\n%s", diff)
 		}
 	})
 }

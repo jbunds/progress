@@ -1,4 +1,6 @@
 //go:build examples
+
+// example program demonstrating the progress package API.
 package main
 
 import (
@@ -33,7 +35,7 @@ func simulateDiscovery(ctx context.Context, prog *progress.Progress, name string
 		return
 	}
 
-	numChildren := rand.IntN(4) + 2
+	numChildren := rand.IntN(4) + 2 // #nosec G404
 	childShare  := budget / float64(numChildren)
 	remaining   := budget
 
@@ -55,7 +57,7 @@ func simulateDiscovery(ctx context.Context, prog *progress.Progress, name string
 			remaining   -= currentShare
 		}
 
-		if rand.Float64() > 0.4 {
+		if rand.Float64() > 0.4 { // #nosec G404
 			simulateDiscovery(ctx, prog, childName, currentShare, depth + 1)
 		} else {
 			processLeaf(ctx, prog, childName, currentShare)
@@ -68,6 +70,6 @@ func processLeaf(ctx context.Context, prog *progress.Progress, name string, budg
 	case <-ctx.Done():
 		return
 	case <-time.After(500 * time.Millisecond):
-		prog.Report(budget, fmt.Sprintf("finished: %s", name))
+		prog.Report(budget, "finished: " + name)
 	}
 }

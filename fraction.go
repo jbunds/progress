@@ -3,22 +3,38 @@ package progress
 import (
 	"strconv"
 	"sync/atomic"
+	"unsafe"
 )
 
 // tracker for cases where status strings are a proper fraction of the completed versus total work.
 type fractionTracker struct {
-	lo      layout
-	current atomic.Uint64 // numerator
-	total   string        // denominator (static)
+	lo     layout
+	status atomic.Uint64 // numerator
+	total  string        // denominator (static)
+	buf    []byte        // pre-allocated buffer for building strings
 }
 
-func (f *fractionTracker) init()                    { f.lo = defaultLayout()  }
-func (f *fractionTracker) baseLayout()      layout  { return f.lo             }
-func (f *fractionTracker) load()  any               { return f.current.Load() } //    returns the numerator
-func (f *fractionTracker) store(n uint64, _ string) { f.current.Add(n)        } // increments the numerator
-func (f *fractionTracker) value(v any)      string  {
-	if n, ok := v.(uint64); ok {
-		return strconv.FormatUint(n, 10) + "/" + f.total
-	}
-	return "0/" + f.total
+func (f *fractionTracker) init() {
+	f.lo  = defaultLayout()
+	f.buf = make([]byte, 0, 32)
 }
+
+func (f *fractionTracker) baseLayout() layout { return f.lo }
+
+func (f *fractionTracker) load()  string {
+	b := f.buf[:0]
+	b  = strconv.AppendUint(b, f.status.Load(), 10)
+	b  = append(b, '/')
+	b  = append(b, f.total...)
+	// #nosec G103 -- string consumed synchronously before buffer reuse; audited per `go test -gcflags="-d=checkptr" -count=100 .`
+	return unsafe.String(&b[0], len(b)) // zero-alloc cast: directly convert stack bytes into a string header
+}
+
+func (f *fractionTracker) appendStatus(buf []byte) []byte {
+	buf = strconv.AppendUint(buf, f.status.Load(), 10)
+	buf = append(buf, '/')
+	buf = append(buf, f.total...)
+	return buf
+}
+
+func (f *fractionTracker) store(n uint64, _ string) { f.status.Add(n) } // increments the numerator

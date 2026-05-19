@@ -22,7 +22,7 @@ func getCmpOpts() cmp.Options {
 	return cmp.Options{
 		cmpopts.IgnoreFields(Progress{}, // non-trivial to compare or irrelevant to this set of tests
 			"output",     "theme",         "stopChan",  "doneChan", 
-			"resizeChan", "resizeHandler", "closeOnce", "drawNotify", "isTerminalFunc"),
+			"resizeChan", "resizeHandler", "closeOnce", "drawNotify", "isTerminal"),
 		cmp.AllowUnexported(
 			Progress{},        realClock{},     layout{},
 			standardTracker{}, uniqueTracker{},
@@ -54,7 +54,7 @@ func getCmpOpts() cmp.Options {
 	}
 }
 
-// convenience & readability test helper to allow percentages to be
+// convenience / readability test helper to allow percentages to be
 // expressed as a decimal fraction of 100, e.g., 12.3456% == 0.123456.
 func pack(t *testing.T, termWidth int, percent float64) uint32 {
 	t.Helper()
@@ -276,7 +276,7 @@ func TestReportContention(t *testing.T) {
 		t.Errorf("bitwise integrity violated; expected lower 16 bits to be %d; got %d", expectedSigDigits, finalSigDigits)
 	}
 
-  finalString := p.tracker.value(p.tracker.load())
+	finalString := p.tracker.load()
 
 	if !strings.HasPrefix(finalString, statusPrefix) {
 		t.Errorf("tracker status corrupted; expected %q; got %q", statusPrefix, finalString)
@@ -302,12 +302,13 @@ func TestRenderLoop(t *testing.T) {
 	t.Parallel()
 
 	tickTrigger := make(chan time.Time, 1)
-	notify      := make(chan struct{}, 1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
+	notify      := make(chan struct{},  1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
 
 	p := &Progress{
-		tracker:    getTracker(Standard, 0),
+		tracker:    getTracker(Standard, 100),
 		output:     io.Discard,
-		clock:      &fakeClock{ c: tickTrigger },
+		isTerminal: isTerminal,
+		clock:      fakeClock{ c: tickTrigger },
 		drawNotify: notify,
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
@@ -319,12 +320,12 @@ func TestRenderLoop(t *testing.T) {
 	}
 
 	tickAndExpectSkip := func() {
-		beforeTickFrame := p.lastRenderedFrame()
+		beforeTickFrame := p.lastFrameRendered()
 
 		tickTrigger <- time.Now()
 		<-notify
 
-		afterTickFrame := p.lastRenderedFrame()
+		afterTickFrame := p.lastFrameRendered()
 
 		if beforeTickFrame != afterTickFrame {
 			t.Errorf("redundant frame rendered:\n%q", afterTickFrame)
@@ -332,14 +333,13 @@ func TestRenderLoop(t *testing.T) {
 	}
 
 	go p.renderLoop(t.Context())
+	t.Cleanup(func() { p.Close() })
 
 	p.Report(10, "working...")
 	tickAndExpectDraw()
 
 	p.Report(0, "working...") // redundant report
 	tickAndExpectSkip()
-
-	t.Cleanup(func() { p.Close() })
 }
 
 func TestClose(t *testing.T) {

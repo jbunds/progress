@@ -41,6 +41,7 @@ linters:
             - bytes
             - context
             - errors
+            - fmt
             - io
             - math
             - os
@@ -56,6 +57,9 @@ linters:
             - time
             - unicode/utf8
             - unique
+            - unsafe
             - github.com/google/go-cmp/cmp
             - github.com/google/go-cmp/cmp/cmpopts
+            - github.com/hashicorp/golang-lru/v2
+            - github.com/jbunds/progress
             - golang.org/x/term

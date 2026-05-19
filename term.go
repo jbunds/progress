@@ -8,11 +8,16 @@ import (
 	"golang.org/x/term"
 )
 
+// WithIsTerminalFunc allows callers to override internal terminal detection, e.g.:
+//
+//   progress.New(ctx, 100, os.Stderr, progress.WithIsTerminalFunc(func(any) bool { return true }))
+func WithIsTerminalFunc(f func(any) bool) Option { return func(p *Progress) { p.isTerminal = f } }
+
 // prepareTerminal sets the line terminator character and ANSI escape sequences to
 // be used when p.output (nominally os.Stderr) has not been piped or redirected.
 func (p *Progress) prepareTerminal() {
 	baseLayout := p.tracker.baseLayout()
-	if p.isTerminalFunc(p.output) {
+	if p.isTerminal(p.output) {
 		baseLayout.clearSeq       = clearSeq       // move cursor to beginning of line; freeze screen rendering for this atomic update block
 		baseLayout.doneSeq        = doneSeq        // restore all attributes to defaults; restore cursor
 		baseLayout.lineTerminator = lineTerminator // erase line; restore all attributes to defaults; flush atomic update block

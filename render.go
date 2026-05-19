@@ -1,5 +1,10 @@
 package progress
 
+import (
+	"unique"
+	"unsafe"
+)
+
 // ANSI escape sequences
 //
 //   https://en.wikipedia.org/wiki/ANSI_escape_code#24-bit
@@ -70,14 +75,32 @@ func (p *Progress) sync(buf *[]byte) {
 	defer func() { syncCompleteHook(p) }()
 
 	currentState := p.state.Load()
-	currentVal   := p.tracker.load()
 	lastState    := p.lastState.Load()
 	lastVal      := p.lastStatusVal.Load()
+
+	// TODO(jeff): fix the leaky tracker abstraction originally designed to provide transparent polymorphism
+	var currentVal uint64
+	switch t := p.tracker.(type) {
+	case *standardTracker:
+		if ptr := t.status.Load(); ptr != nil {
+			// #nosec G103 -- audited: stable heap pointer address used strictly as an identity token
+			currentVal = uint64(uintptr(unsafe.Pointer(ptr)))
+		}
+	case *uniqueTracker:
+		if val, ok := t.status.Load().(unique.Handle[string]); ok {
+			// #nosec G103 -- audited: extracting underlying internal handle pointer for stable identity comparison
+			currentVal = uint64(*(*uintptr)(unsafe.Pointer(&val)))
+		}
+	case *fractionTracker:
+		currentVal = t.status.Load()
+	case *percentTracker:
+		currentVal = 0
+	}
 
 	if currentState == lastState &&
 	   currentVal   == lastVal { return } // status unchanged; skip redundant redraw
 
-	p.draw(buf, currentState, currentVal)
+	p.draw(buf, currentState)
 
 	p.lastState.Store(currentState)
 	p.lastStatusVal.Store(currentVal)
@@ -85,20 +108,20 @@ func (p *Progress) sync(buf *[]byte) {
 
 // draw formats and renders the current progress status to the terminal,
 // truncating text as needed to fit within the terminal width.
-func (p *Progress) draw(buf *[]byte, state uint32, val any) {
+func (p *Progress) draw(buf *[]byte, state uint32) {
 	maxLen    := state >> 16 - uint32(p.layout.staticWidth & 0xFFFF)
 	status    := ""
 	truncated := false
 
 	if maxLen > 0 {
-		status, truncated = truncateFromLeft(p.tracker.value(val), int(maxLen)) // truncate from left to show most relevant portion (e.g., file basename)
+		status, truncated = truncateFromLeft(p.tracker.load(), int(maxLen)) // truncate from left to show most relevant portion (e.g., file basename)
 	}
 
 	_ = p.writeStatus(buf, state & 0xFFFF, status, truncated)
 }
 
-// lastRenderedFrame returns the last rendered frame string.
-func (p *Progress) lastRenderedFrame() string {
+// lastFrameRendered returns the last rendered frame string.
+func (p *Progress) lastFrameRendered() string {
 	if v := p.lastFrame.Load(); v != nil { return *v }
 	return ""
 }
@@ -122,7 +145,7 @@ func (p *Progress) writeStatus(buf *[]byte, pctSigDigits uint32, status string, 
 		visCols:    0,
 		denom:      denom,
 		termWidth:  termWidth,
-		isTerminal: p.isTerminal,
+		isTerminal: p.isTerminal(p.output),
 		isColored:  false,
 	}
 
@@ -140,7 +163,7 @@ func (p *Progress) writeStatus(buf *[]byte, pctSigDigits uint32, status string, 
 //		visCols:    0,
 //		denom:      denom,
 //		termWidth:  termWidth,
-//		isTerminal: p.isTerminal,
+//		isTerminal: p.isTerminal(p.output),
 //		isColored:  false,
 //	}
 
@@ -165,7 +188,7 @@ func (p *Progress) writeStatus(buf *[]byte, pctSigDigits uint32, status string, 
 	if truncated { ws.writeRune(buf, '…') }
 	ws.writeString(buf, status)
 
-	for p.isTerminal && ws.visCols < ws.cols { // fill remaining bar space with clean gradient padding
+	for p.isTerminal(p.output) && ws.visCols < ws.cols { // fill remaining bar space with clean gradient padding
 		var factor int
 		if ws.denom > 0 { factor = (ws.visCols * 1000) / ws.denom }
 
@@ -184,7 +207,7 @@ func (p *Progress) writeStatus(buf *[]byte, pctSigDigits uint32, status string, 
 		ws.isColored = true
 	}
 
-	if p.isTerminal && ws.isColored { *buf = append(*buf, resetAttr...) } // reset all attributes to defaults
+	if p.isTerminal(p.output) && ws.isColored { *buf = append(*buf, resetAttr...) } // reset all attributes to defaults
 
 	*buf = append(*buf, p.layout.lineTerminator...)
 

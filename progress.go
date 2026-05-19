@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unique"
 )
 
 // scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
@@ -50,22 +51,21 @@ type Progress struct {
 	current        atomic.Uint64          // accumulates shares of scale as work is completed
 	state          atomic.Uint32          // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
 	lastState      atomic.Uint32          // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
-	lastStatusVal  atomic.Value           // stores the result of the last tracker.load()
+	lastStatusVal  atomic.Uint64          // stores the result of the last tracker.load()
 	lastFrame      atomic.Pointer[string] // stores the last rendered frame as a string (used in tests)
 
 	// configuration (read-only after construction)
-	output         io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)
-	layout         layout         // terminal-aware layout state copy used for rendering progress status
-	stopChan       chan struct{}  // signals the background rendering loop to perform final cleanup
-	doneChan       chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
-	drawNotify     chan struct{}  // used in tests to signal the completion of a draw cycle
-	resizeChan     chan os.Signal // handles terminal window resizing events via the syscall.SIGWINCH signal
-	resizeHandler  resizeHandler  // handles terminal resize events (enables dependency injection in tests)
-	closeOnce      sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
-	clock          clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
-	isTerminalFunc func(any) bool // facilitates dependency injection for tests
-	isTerminal     bool           // boolean indicating whether or not output is a terminal
-	theme          *theme         // progress bar color theme
+	output        io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)
+	layout        layout         // terminal-aware layout state copy used for rendering progress status
+	stopChan      chan struct{}  // signals the background rendering loop to perform final cleanup
+	doneChan      chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
+	drawNotify    chan struct{}  // used in tests to signal the completion of a draw cycle
+	resizeChan    chan os.Signal // handles terminal window resizing events via the syscall.SIGWINCH signal
+	resizeHandler resizeHandler  // handles terminal resize events (enables dependency injection in tests)
+	closeOnce     sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
+	clock         clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
+	isTerminal    func(any) bool // facilitates dependency injection for tests
+	theme         *theme         // progress bar color theme
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress
@@ -83,12 +83,16 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		doneChan:       make(chan struct{}),
 		resizeChan:     make(chan os.Signal, 1),
 		clock:          &realClock{dur: 16 * time.Millisecond},
-		isTerminalFunc: isTerminal,
 		theme:          themeOrDefault("green"),
 	}
 
+	p.isTerminal = func(v any) bool {
+		isTerminal  := isTerminal(v)
+		p.isTerminal = func(any) bool { return isTerminal }
+		return isTerminal
+	}
+
 	p.resizeHandler = p.getResizedTermWidth
-	p.isTerminal    = p.isTerminalFunc(p.output)
 	termWidth      := getTermWidth(p.output)
 
 	p.total.Store(min(totalUnits, scale)) // fall back to scale if totalUnits exceeds max precision
@@ -100,7 +104,7 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // listen for a SIGWINCH signal to handle the terminal window being resized
 
-	if p.isTerminal { _, _ = io.WriteString(p.output, hideCursor) } // hide the cursor
+	if p.isTerminal(p.output) { _, _ = io.WriteString(p.output, hideCursor) } // hide the cursor
 
 	go p.renderLoop(ctx)
 
@@ -130,7 +134,13 @@ func (p *Progress) AddTotal(n uint64) {
 //   - If total == 0: weight represents the portion of the InitialBudget(),
 //     which must be divided among all sub-tasks by the caller.
 func (p *Progress) Report(weight float64, status string) {
-	p.tracker.store(uint64(weight), status)
+	// TODO(jeff): fix the leaky tracker abstraction originally designed to provide transparent polymorphism
+	switch t := p.tracker.(type) { // execute zero-alloc dynamic dispatch by unpacking the concrete tracker types
+	case *standardTracker: t.store(uint64(weight), status)
+	case   *uniqueTracker: t.status.Store(unique.Make(status))
+	case *fractionTracker: t.status.Add(uint64(weight))
+	case  *percentTracker: // no-op since percentTracker does not store status
+	}
 
 syncCurrent:
 	total := p.total.Load()
@@ -183,12 +193,17 @@ func (p *Progress) Close() {
 
 // renderLoop periodically renders progress status updates at ~60 FPS without impeding workers.
 func (p *Progress) renderLoop(ctx context.Context) {
+
+	// defer statements are executed in reverse (LIFO) order:
+	//
+	//   https://go.dev/ref/spec#Defer_statements
+	//   https://go.dev/blog/defer-panic-and-recover
+
 	ticker := p.clock.tick()
 	defer ticker.Stop()
 
 	defer close(p.doneChan)
 	defer signal.Stop(p.resizeChan)
-	defer p.finish(ctx) // render the final frame to the terminal and perform any necessary cleanup
 
 	// the naked []byte buffer is unprotected by design:
 	//
@@ -199,48 +214,69 @@ func (p *Progress) renderLoop(ctx context.Context) {
 
 	buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
 
-	for {
+	running := true
+
+	for running {
 
 		buf = buf[:0]
 
-		select {             // exit immediately if canceled or explicitly stopped per a Close() call
-		case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
-			return
-		case <-p.stopChan:   // Close() called
-			return
+		select {                 // exit immediately if canceled or explicitly stopped per a Close() call
+		case <-ctx.Done():       // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
+			running = false
+		case <-p.stopChan:       // Close() called
+			running = false
+		default:
+			select {             // process events normally while running
+			case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
+				running = false
+			case <-p.stopChan:   // Close() called
+				running = false
+			case <-ticker.ch():  // check for a status update
+				p.sync(&buf)
+			case <-p.resizeChan: // SIGWINCH received
+				p.handleResize(&buf)
+			}
+		}
+
+		select { // post-loop drain: ensure any final pending tick is flushed before deferred cleanup routines execute
+		case <-ticker.ch():
+			p.sync(&buf)
 		default:
 		}
-
-		select {             // main blocking event loop
-		case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
-			return
-		case <-p.stopChan:   // Close() called
-			return
-		case <-ticker.ch():  // check for a status update
-			p.sync(&buf)
-		case <-p.resizeChan: // SIGWINCH received
-			p.handleResize(&buf)
-		}
 	}
+
+	p.finish(ctx, &buf) // render the final frame to the terminal and perform any necessary cleanup
 }
 
+var (
+	stoppedPrefix = []byte("stopped (")
+	oneHundredPct = []byte("100")
+)
+
 // finish renders the final progress frame to the terminal.
-func (p *Progress) finish(ctx context.Context) {
-	var output string
+func (p *Progress) finish(ctx context.Context, buf *[]byte) {
+	*buf = (*buf)[:0]
 	if err := ctx.Err(); err != nil { // context was aborted via signal, timeout, or parent cancelation
 		errStr := err.Error()
 		if cause := context.Cause(ctx); cause != nil { errStr = cause.Error() }
-		output = p.layout.clearSeq          +
-		         "stopped (" + errStr + ")" +
-		         p.layout.doneSeq
+		*buf = append(*buf, p.layout.clearSeq...)
+		*buf = append(*buf, stoppedPrefix...)
+		*buf = append(*buf, errStr...)
+		*buf = append(*buf, ')')
+		*buf = append(*buf, p.layout.doneSeq...)
 	} else {                          // clean exit via p.Close() while context still active
-		output = p.layout.clearSeq                         +
-		         p.layout.prefix + "100" + p.layout.suffix +
-		         p.layout.finalStatus                      +
-		         p.layout.doneSeq
+		*buf = append(*buf, p.layout.clearSeq...)
+		*buf = append(*buf, p.layout.prefix...)
+		*buf = append(*buf, oneHundredPct...)
+		*buf = append(*buf, p.layout.suffix...)
+		*buf = append(*buf, p.layout.finalStatus...)
+		*buf = append(*buf, p.layout.doneSeq...)
+		if (*buf)[len(*buf) - 1] != '\n' {
+			*buf = append(*buf, p.layout.lineTerminator...)
+		}
 	}
 
-	_, _ = io.WriteString(p.output, output)
+	_, _ = p.output.Write(*buf)
 }
 
 // helpers for synchronous, deterministic tests
@@ -261,9 +297,9 @@ type realClock  struct { dur time.Duration } // throttles UI updates
 type fakeClock  struct { c  chan time.Time } // simulates the passage of time in tests
 
 func (r *realTicker) ch() <-chan time.Time { return r.C }
-func (f *fakeTicker) ch() <-chan time.Time { return f.c }
+func (f  fakeTicker) ch() <-chan time.Time { return f.c }
 
 func (r *realClock ) tick() ticker { return &realTicker{ Ticker: time.NewTicker(r.dur) }}
-func (f *fakeClock ) tick() ticker { return &fakeTicker{ c:      f.c                   }}
+func (f  fakeClock ) tick() ticker { return  fakeTicker(f)                              }
 
-func (f *fakeTicker) Stop() {}
+func (f  fakeTicker) Stop() {}
