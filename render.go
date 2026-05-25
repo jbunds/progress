@@ -33,14 +33,22 @@ package progress
 //   │ [?2026l           │ synchronized output  low: deactivate synchronized output mode
 
 const (
-	hideCursor     = "\033[?25l"                // hide cursor
-	clearSeq       = "\r\033[?2026h"            // move cursor to beginning of line; activate synchronized output mode
-	doneSeq        = "\033[0m\r\033[?25h"       // reset all attributes to defaults; move cursor to beginning of line; restore cursor
-	lineTerminator = "\033[K\033[0m\033[?2026l" // erase from cursor position to end of line; reset all attributes; deactivate synchronized output mode
-	prepColorSeq   = "\033[30;48;2;"            // set foreground (text) color to black (30); set background color (48) per incoming 24-bit RGB triplet (2)
-	setFgColor     = "\033[38;2;"               // set foreground (text) color (38) per incoming 24-bit RGB triplet (2)
-	prepSetBgColor = ";48;2;"                   // prepare to set background color (48) per incoming 24-bit RGB triplet
-	resetAttr      = "\033[0m"                  // reset all attributes to defaults
+	prefix               = "processing (" // prepended to each progress status line rendered to the terminal
+	defaultSuffix        = "%): "         // appended to each percentage status calculation rendered to the terminal
+
+	minWidth             = 80 // fallback for pipes, redirects, and non-tty outputs
+	pctFieldLen          =  3 // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
+	colorBlockMultiplier = 23 // 23 bytes per column for 24-bit color gradient blocks
+	utf8TruncMultiplier  =  4 //  4 bytes per column for worst-case UTF-8 status text truncation thresholds
+
+	ansiHideCursor     = "\033[?25l"                // hide cursor
+	ansiClearSeq       = "\r\033[?2026h"            // move cursor to beginning of line; activate synchronized output mode
+	ansiDoneSeq        = "\033[0m\r\033[?25h"       // reset all attributes to defaults; move cursor to beginning of line; restore cursor
+	ansiLineTerminator = "\033[K\033[0m\033[?2026l" // erase from cursor position to end of line; reset all attributes; deactivate synchronized output mode
+	ansiPrepColorSeq   = "\033[30;48;2;"            // set foreground (text) color to black (30); set background color (48) per incoming 24-bit RGB triplet (2)
+	ansiSetFgColor     = "\033[38;2;"               // set foreground (text) color (38) per incoming 24-bit RGB triplet (2)
+	ansiPrepSetBgColor = ";48;2;"                   // prepare to set background color (48) per incoming 24-bit RGB triplet
+	ansiResetAttr      = "\033[0m"                  // reset all attributes to defaults
 )
 
 // zero-overhead production / default no-op stubs:
@@ -177,7 +185,7 @@ func (p *Progress) writeStatus(buf *[]byte, pctSigDigits uint32, status string, 
 		bgG := p.theme.startBgG + (p.theme.deltaBgG * factor) / 1000
 		bgB := p.theme.startBgB + (p.theme.deltaBgB * factor) / 1000
 
-		*buf = append(*buf, prepColorSeq...)
+		*buf = append(*buf, ansiPrepColorSeq...)
 		*buf = appendIntIdxInline(*buf, bgR)
 		*buf = append(*buf, ';')
 		*buf = appendIntIdxInline(*buf, bgG)
@@ -188,7 +196,7 @@ func (p *Progress) writeStatus(buf *[]byte, pctSigDigits uint32, status string, 
 		ws.isColored = true
 	}
 
-	if p.isTerminal(p.output) && ws.isColored { *buf = append(*buf, resetAttr...) } // reset all attributes to defaults
+	if p.isTerminal(p.output) && ws.isColored { *buf = append(*buf, ansiResetAttr...) } // reset all attributes to defaults
 
 	*buf = append(*buf, p.layout.lineTerminator...)
 
@@ -215,13 +223,13 @@ func (ws *writeState) writeRune(buf *[]byte, r rune) {
 		fgG  :=          startFgG + (ws.theme.deltaFgG * factor) / 1000
 		fgB  :=          startFgB + (ws.theme.deltaFgB * factor) / 1000
 
-		*buf = append(*buf, setFgColor...)
+		*buf = append(*buf, ansiSetFgColor...)
 		*buf = appendIntIdxInline(*buf, fgR)
 		*buf = append(*buf, ';')
 		*buf = appendIntIdxInline(*buf, fgG)
 		*buf = append(*buf, ';')
 		*buf = appendIntIdxInline(*buf, fgB)
-		*buf = append(*buf, prepSetBgColor...)
+		*buf = append(*buf, ansiPrepSetBgColor...)
 		*buf = appendIntIdxInline(*buf, bgR)
 		*buf = append(*buf, ';')
 		*buf = appendIntIdxInline(*buf, bgG)
@@ -231,7 +239,7 @@ func (ws *writeState) writeRune(buf *[]byte, r rune) {
 
 		ws.isColored = true
 	} else if ws.visCols >= ws.cols && ws.isColored {
-		*buf = append(*buf, resetAttr...)
+		*buf = append(*buf, ansiResetAttr...)
 		ws.isColored = false
 	}
 

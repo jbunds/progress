@@ -18,9 +18,9 @@ func WithIsTerminalFunc(f func(any) bool) Option { return func(p *Progress) { p.
 func (p *Progress) prepareTerminal() {
 	baseLayout := p.tracker.baseLayout()
 	if p.isTerminal(p.output) {
-		baseLayout.clearSeq       = clearSeq       // move cursor to beginning of line; freeze screen rendering for this atomic update block
-		baseLayout.doneSeq        = doneSeq        // restore all attributes to defaults; restore cursor
-		baseLayout.lineTerminator = lineTerminator // erase line; restore all attributes to defaults; flush atomic update block
+		baseLayout.clearSeq       = ansiClearSeq       // move cursor to beginning of line; freeze screen rendering for this atomic update block
+		baseLayout.doneSeq        = ansiDoneSeq        // restore all attributes to defaults; restore cursor
+		baseLayout.lineTerminator = ansiLineTerminator // erase line; restore all attributes to defaults; flush atomic update block
 	}
 	p.layout = baseLayout
 }

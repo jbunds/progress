@@ -103,7 +103,7 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // listen for a SIGWINCH signal to handle the terminal window being resized
 
-	if p.isTerminal(p.output) { _, _ = io.WriteString(p.output, hideCursor) } // hide the cursor
+	if p.isTerminal(p.output) { _, _ = io.WriteString(p.output, ansiHideCursor) } // hide the cursor
 
 	go p.renderLoop(ctx)
 
