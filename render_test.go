@@ -180,10 +180,10 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	t.Cleanup(func() { p.Close() })
 
 	p.Report(11, "completed 11 units of work") // first report: 11/73
-	tickTrigger <-time.Now()
+	tickTrigger <-time.Time{}
 	<-notify
 
-	tickTrigger <-time.Now() // should skip redundant redraw
+	tickTrigger <-time.Time{} // should skip redundant redraw
 	<-notify
 
 	wantFrame := "processing ( 15%): 11/73\n"
@@ -198,7 +198,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 	want     += wantFrame
 
 	for range 10 { // accommodate scheduler jitter and frame queuing by consuming notifications until we reach the expected state, otherwise fail fast
-		tickTrigger <-time.Now()
+		tickTrigger <-time.Time{}
 		<-notify
 		if p.lastFrameRendered() == wantFrame { break }
 	}

@@ -315,14 +315,14 @@ func TestRenderLoop(t *testing.T) {
 	}
 
 	tickAndExpectDraw := func() {
-		tickTrigger <- time.Now()
+		tickTrigger <-time.Time{}
 		<-notify // draw() cycle completed
 	}
 
 	tickAndExpectSkip := func() {
 		beforeTickFrame := p.lastFrameRendered()
 
-		tickTrigger <- time.Now()
+		tickTrigger <-time.Time{}
 		<-notify
 
 		afterTickFrame := p.lastFrameRendered()
