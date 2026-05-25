@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unique"
 )
 
 // scale represents 100% as a large fixed-point integer to support high-precision fractional updates.
@@ -51,8 +50,8 @@ type Progress struct {
 	current        atomic.Uint64          // accumulates shares of scale as work is completed
 	state          atomic.Uint32          // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
 	lastState      atomic.Uint32          // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
-	lastStatusVal  atomic.Uint64          // stores the result of the last tracker.load()
-	lastFrame      atomic.Pointer[string] // stores the last rendered frame as a string (used in tests)
+	lastStatusVal  atomic.Value           // stores the last Report()ed status (i.e., the result of the last tracker.load())
+  lastFrame      atomic.Pointer[string] // stores the last rendered frame string (test observability channel hook)
 
 	// configuration (read-only after construction)
 	output        io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)
@@ -134,13 +133,7 @@ func (p *Progress) AddTotal(n uint64) {
 //   - If total == 0: weight represents the portion of the InitialBudget(),
 //     which must be divided among all sub-tasks by the caller.
 func (p *Progress) Report(weight float64, status string) {
-	// TODO(jeff): fix the leaky tracker abstraction originally designed to provide transparent polymorphism
-	switch t := p.tracker.(type) { // execute zero-alloc dynamic dispatch by unpacking the concrete tracker types
-	case *standardTracker: t.store(uint64(weight), status)
-	case   *uniqueTracker: t.status.Store(unique.Make(status))
-	case *fractionTracker: t.status.Add(uint64(weight))
-	case  *percentTracker: // no-op since percentTracker does not store status
-	}
+	p.tracker.store(uint64(weight), status)
 
 syncCurrent:
 	total := p.total.Load()

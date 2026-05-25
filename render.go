@@ -1,10 +1,5 @@
 package progress
 
-import (
-	"unique"
-	"unsafe"
-)
-
 // ANSI escape sequences
 //
 //   https://en.wikipedia.org/wiki/ANSI_escape_code#24-bit
@@ -74,36 +69,22 @@ type writeState struct {
 func (p *Progress) sync(buf *[]byte) {
 	defer func() { syncCompleteHook(p) }()
 
-	currentState := p.state.Load()
-	lastState    := p.lastState.Load()
-	lastVal      := p.lastStatusVal.Load()
+	currentState     := p.state.Load()
+	lastState        := p.lastState.Load()
+	currentStatusVal := p.tracker.load()
+	lastStatusVal    := p.lastStatusVal.Load()
 
-	// TODO(jeff): fix the leaky tracker abstraction originally designed to provide transparent polymorphism
-	var currentVal uint64
-	switch t := p.tracker.(type) {
-	case *standardTracker:
-		if ptr := t.status.Load(); ptr != nil {
-			// #nosec G103 -- audited: stable heap pointer address used strictly as an identity token
-			currentVal = uint64(uintptr(unsafe.Pointer(ptr)))
-		}
-	case *uniqueTracker:
-		if val, ok := t.status.Load().(unique.Handle[string]); ok {
-			// #nosec G103 -- audited: extracting underlying internal handle pointer for stable identity comparison
-			currentVal = uint64(*(*uintptr)(unsafe.Pointer(&val)))
-		}
-	case *fractionTracker:
-		currentVal = t.status.Load()
-	case *percentTracker:
-		currentVal = 0
-	}
+	// the following conditional used to skip redundant redraws can ignore the ANSI
+	// sequences wrapping every column of the terminal; the combination of p.state
+	// (termWidth & pctSigDigits) and Report()ed status string is sufficient
 
-	if currentState == lastState &&
-	   currentVal   == lastVal { return } // status unchanged; skip redundant redraw
+	if currentState     == lastState &&
+	   currentStatusVal == lastStatusVal { return } // state & status unchanged; skip redundant redraw
 
 	p.draw(buf, currentState)
 
 	p.lastState.Store(currentState)
-	p.lastStatusVal.Store(currentVal)
+	p.lastStatusVal.Store(currentStatusVal)
 }
 
 // draw formats and renders the current progress status to the terminal,

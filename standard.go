@@ -10,14 +10,14 @@ import (
 // standard tracker for mostly unique status strings.
 type standardTracker struct {
 	lo     layout
-	status atomic.Pointer[string]
-	cache  *lru.Cache[string, *string] // fixed-size, thread-safe LRU container
+	status atomic.Value
+	cache  *lru.Cache[string, string] // fixed-size, thread-safe LRU container
 }
 
 func (s *standardTracker) init() {
 	s.lo = defaultLayout()
-	s.status.Store(new(""))
-	c, err := lru.New[string, *string](1024)
+	s.status.Store("")
+	c, err := lru.New[string, string](1024)
 	if err != nil { panic(err) }
 	s.cache = c
 }
@@ -25,27 +25,27 @@ func (s *standardTracker) init() {
 func (s *standardTracker) baseLayout() layout { return s.lo }
 
 func (s *standardTracker) load() string {
-	if strPtr := s.status.Load(); strPtr != nil { return *strPtr }
+	if val := s.status.Load(); val != nil {
+		if str, ok := val.(string); ok { return str }
+	}
 	return ""
 }
 
 func (s *standardTracker) appendStatus(buf []byte) []byte {
-	if strPtr := s.status.Load(); strPtr != nil { return append(buf, *strPtr...) }
-	return buf
+	return append(buf, s.load()...)
 }
 
 func (s *standardTracker) store(_ uint64, status string) {
-	if ptr, ok := s.cache.Get(status); ok {
-		s.status.Store(ptr)
+	if cachedVal, ok := s.cache.Get(status); ok {
+		s.status.Store(cachedVal)
 		return
 	}
-	ptr := &status
-	s.cache.Add(status, ptr)
-	s.status.Store(ptr)
+	s.cache.Add(status, status)
+	s.status.Store(status)
 }
 
 func (s *standardTracker) Equal(other *standardTracker) bool { // workaround cmp's draconian strictures
 	if s == nil || other == nil { return s == other }
-	return cmp.Equal(s.status.Load(), other.status.Load()) &&
-	       cmp.Equal(s.lo,            other.lo, cmp.AllowUnexported(layout{}))
+	return cmp.Equal(s.load(), other.load()) &&
+	       cmp.Equal(s.lo,     other.lo, cmp.AllowUnexported(layout{}))
 }
