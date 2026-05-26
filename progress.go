@@ -138,7 +138,6 @@ func (p *Progress) AddTotal(n uint64) {
 func (p *Progress) Report(weight float64, status string) {
 	p.tracker.store(uint64(weight), status)
 
-syncCurrent:
 	total := p.total.Load()
 
 	var share uint64
@@ -148,34 +147,43 @@ syncCurrent:
 		share = uint64(weight)                                     // fractional path allocation mode: add the share of the budget directly
 	}
 
-	oldCurrent := p.current.Load()
-	newCurrent := min(oldCurrent + share, scale) // cap at scale (100%)
+	for {
+		oldCurrent := p.current.Load()
+		oldState   := p.state.Load()
 
-	if !p.current.CompareAndSwap(oldCurrent, newCurrent) {
-		goto syncCurrent // handle a concurrent Report or AddTotal call
-	}
+		newCurrent := min(oldCurrent + share, scale) // cap at scale (100%)
 
-syncState: // derive the UI state from the successfully-committed p.current update above
-	// capture 5 significant digits of the newCurrent value to be stored in the bit-packed
-	// p.state field (atomic.Uint32) while avoiding new memory allocations
-	//
-	// ((newCurrent * 10000 + (scale / 2)) / scale) converts the 1e15 scale
-	// to 5 significant digits (1e4) to prevent overflow
-	//
-	// adding half of the total scale (the divisor) ensures precise
-	// rounding to avoid floor truncation during integer division
-	//
-	// with scale == 1e15 and newCurrent capped at scale, the maximum value of the
-	// numerator is ~1e19, which cleanly fits into a uint64 (math.MaxUint64 =~ 1.84e19)
+		// capture 5 significant digits of the newCurrent value to be stored in the bit-packed
+		// p.state field (atomic.Uint32) while avoiding new memory allocations
+		//
+		// ((newCurrent * 10000 + (scale / 2)) / scale) converts the 1e15 scale
+		// to 5 significant digits (1e4) to prevent overflow
+		//
+		// adding half of the total scale (the divisor) ensures precise
+		// rounding to avoid floor truncation during integer division
+		//
+		// with scale == 1e15 and newCurrent capped at scale, the maximum value of the
+		// numerator is ~1e19, which cleanly fits into a uint64 (math.MaxUint64 =~ 1.84e19)
 
-	oldState        := p.state.Load()
-	scaledSigDigits := (newCurrent * 10000 + (scale / 2)) / scale
-	oldSigDigits    := oldState & 0xFFFF
-	newSigDigits    := uint32(scaledSigDigits & 0xFFFF)
-	newState        := (oldState & 0xFFFF0000) | max(newSigDigits, oldSigDigits) // ensure motonicity and preserve terminal width
+		scaledSigDigits := (newCurrent * 10000 + (scale / 2)) / scale
+		oldSigDigits    := oldState & 0xFFFF
+		newSigDigits    := uint32(scaledSigDigits & 0xFFFF)
+		newState        := (oldState & 0xFFFF0000) | max(newSigDigits, oldSigDigits) // ensure motonicity and preserve terminal width
 
-	if !p.state.CompareAndSwap(oldState, newState) {
-		goto syncState // handle concurrent Report call or terminal resize event
+		if newCurrent == oldCurrent &&
+		   newState   == oldState { return } // nothing to do if both current progress and current state already match
+
+		if !p.current.CompareAndSwap(oldCurrent, newCurrent) {
+			continue // handle a concurrent Report or AddTotal call
+		}
+
+		for !p.state.CompareAndSwap(oldState, newState) { // handle concurrent Report call or terminal resize event
+			oldState     = p.state.Load()
+			oldSigDigits =  oldState & 0xFFFF
+			newState     = (oldState & 0XFFFF0000) | max(newSigDigits, oldSigDigits) // ensure motonicity and preserve terminal width
+		}
+
+		break
 	}
 }
 
