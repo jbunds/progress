@@ -48,7 +48,7 @@ func TestDraw(t *testing.T) {
 			p.prepareTerminal()
 
 			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
-			p.draw(&buf, tt.state)
+			p.draw(buf, tt.state)
 
 			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -108,7 +108,7 @@ func TestPercentTrackerDraw(t *testing.T) {
 			p.prepareTerminal()
 
 			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
-			p.draw(&buf, tt.state)
+			p.draw(buf, tt.state)
 
 			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -146,7 +146,7 @@ func TestUniqueTrackerDraw(t *testing.T) {
 			p.prepareTerminal()
 
 			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
-			p.draw(&buf, tt.state)
+			p.draw(buf, tt.state)
 
 			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
 				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
@@ -171,6 +171,7 @@ func TestFractionTrackerRedraw(t *testing.T) {
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
 	}
+	p.initBufPool()
 	p.prepareTerminal()
 
 	p.total.Store(73)
@@ -252,7 +253,7 @@ func TestWriteString(t *testing.T) {
 				isTerminal: true,
 				isColored:  tt.isColored,
 			}
-			ws.writeString(&buf, tt.str)
+			buf = ws.writeString(buf, tt.str)
 			if diff := cmp.Diff(tt.want, string(buf)); diff != "" {
 				t.Errorf("writeString(%q) mismatch (-want +got):\n%s", tt.str, diff)
 			}
@@ -328,7 +329,7 @@ func TestWriteStatus(t *testing.T) {
 			p.state.Store(pack(t, 80, 0))
 
 			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
-			_ = p.writeStatus(&buf, tt.pctSigDigits, tt.status, false)
+			_, _ = p.writeStatus(buf, tt.pctSigDigits, tt.status, false)
 
 			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
 				t.Errorf("writeStatus(%d, %q, %t) mismatch (-want +got):\n%s", tt.pctSigDigits, tt.status, false, diff)

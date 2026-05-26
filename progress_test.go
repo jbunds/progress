@@ -21,7 +21,7 @@ import (
 func getCmpOpts() cmp.Options {
 	return cmp.Options{
 		cmpopts.IgnoreFields(Progress{}, // non-trivial to compare or irrelevant to this set of tests
-			"output",     "theme",         "stopChan",  "doneChan", 
+			"bufPool",    "output",        "theme",     "stopChan",   "doneChan",
 			"resizeChan", "resizeHandler", "closeOnce", "drawNotify", "isTerminal"),
 		cmp.AllowUnexported(
 			Progress{},        realClock{},     layout{},
@@ -313,6 +313,8 @@ func TestRenderLoop(t *testing.T) {
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
 	}
+
+	p.initBufPool()
 
 	tickAndExpectDraw := func() {
 		tickTrigger <-time.Time{}

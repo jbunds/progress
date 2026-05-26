@@ -51,7 +51,8 @@ type Progress struct {
 	state          atomic.Uint32          // bit-packed word: upper 16 bits for terminal width; lower 16 bits for progress percentage significant digits
 	lastState      atomic.Uint32          // previous snapshot of state: used to detect terminal width or progress changes, and skip redundant redraws
 	lastStatusVal  atomic.Value           // stores the last Report()ed status (i.e., the result of the last tracker.load())
-  lastFrame      atomic.Pointer[string] // stores the last rendered frame string (test observability channel hook)
+	lastFrame      atomic.Pointer[string] // stores the last rendered frame string (test observability channel hook)
+	bufPool        *bufPool               // provisions reusable / recyclable rendering buffers from a sync.Pool-managed pool
 
 	// configuration (read-only after construction)
 	output        io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)
@@ -99,6 +100,7 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 
 	for _, opt := range opts { opt(p) } // allows callers to override defaults via exported Options
 
+	p.initBufPool()
 	p.prepareTerminal()
 
 	signal.Notify(p.resizeChan, syscall.SIGWINCH) // listen for a SIGWINCH signal to handle the terminal window being resized
@@ -118,6 +120,7 @@ func (p *Progress) InitialBudget() float64 { return float64(scale) }
 // It is concurrency-safe and ensures the total budget never exceeds scale.
 func (p *Progress) AddTotal(n uint64) {
 	for {
+		p.tracker.addTotal(n) // pure no-op call except for fractionTracker; TODO(jeff): clean this up with more a transparent polymorphic implementation
 		oldTotal := p.total.Load()
 		newTotal := min(oldTotal + n, scale) // fall back to scale if total exceeds max precision
 		if p.total.CompareAndSwap(oldTotal, newTotal) { break }
@@ -205,7 +208,12 @@ func (p *Progress) renderLoop(ctx context.Context) {
 	// - lexically-scoped;       lifetime is structurally bound to this function frame
 	// - no reference retention; downstream methods never cache or leak the slice pointer
 
-	buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+	buf := p.bufPool.get()
+
+	defer func() {
+		buf = buf[:0]
+		p.bufPool.put(buf)
+	}()
 
 	running := true
 
@@ -213,32 +221,56 @@ func (p *Progress) renderLoop(ctx context.Context) {
 
 		buf = buf[:0]
 
+		select {
+		case <-ctx.Done():
+			running = false
+		case <-p.stopChan:
+			running = false
+		default:
+		}
+
+		if !running { break }
+
 		select {                 // exit immediately if canceled or explicitly stopped per a Close() call
 		case <-ctx.Done():       // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
 			running = false
 		case <-p.stopChan:       // Close() called
 			running = false
-		default:
-			select {             // process events normally while running
-			case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
-				running = false
-			case <-p.stopChan:   // Close() called
-				running = false
-			case <-ticker.ch():  // check for a status update
-				p.sync(&buf)
-			case <-p.resizeChan: // SIGWINCH received
-				p.handleResize(&buf)
+		case <-ticker.ch():
+			buf = p.sync(buf)
+		case <-p.resizeChan:
+			buf = p.handleResize(buf)
+		}
+
+		if running {
+			select { // post-loop drain: ensure any final pending tick is flushed before deferred cleanup routines execute
+			case <-ticker.ch():
+				buf = p.sync(buf)
+			default:
 			}
 		}
 
-		select { // post-loop drain: ensure any final pending tick is flushed before deferred cleanup routines execute
-		case <-ticker.ch():
-			p.sync(&buf)
-		default:
-		}
+//		default:
+//			select {             // process events normally while running
+//			case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
+//				running = false
+//			case <-p.stopChan:   // Close() called
+//				running = false
+//			case <-ticker.ch():  // check for a status update
+//				buf = p.sync(buf)
+//			case <-p.resizeChan: // SIGWINCH received
+//				buf = p.handleResize(buf)
+//			}
+//		}
+
+//		select { // post-loop drain: ensure any final pending tick is flushed before deferred cleanup routines execute
+//		case <-ticker.ch():
+//			buf = p.sync(buf)
+//		default:
+//		}
 	}
 
-	p.finish(ctx, &buf) // render the final frame to the terminal and perform any necessary cleanup
+	p.finish(ctx, buf) // render the final frame to the terminal and perform any necessary cleanup
 }
 
 var (
@@ -247,29 +279,29 @@ var (
 )
 
 // finish renders the final progress frame to the terminal.
-func (p *Progress) finish(ctx context.Context, buf *[]byte) {
-	*buf = (*buf)[:0]
+func (p *Progress) finish(ctx context.Context, buf []byte) {
+	buf = buf[:0]
 	if err := ctx.Err(); err != nil { // context was aborted via signal, timeout, or parent cancelation
 		errStr := err.Error()
 		if cause := context.Cause(ctx); cause != nil { errStr = cause.Error() }
-		*buf = append(*buf, p.layout.clearSeq...)
-		*buf = append(*buf, stoppedPrefix...)
-		*buf = append(*buf, errStr...)
-		*buf = append(*buf, ')')
-		*buf = append(*buf, p.layout.doneSeq...)
+		buf = append(buf, p.layout.clearSeq...)
+		buf = append(buf, stoppedPrefix...)
+		buf = append(buf, errStr...)
+		buf = append(buf, ')')
+		buf = append(buf, p.layout.doneSeq...)
 	} else {                          // clean exit via p.Close() while context still active
-		*buf = append(*buf, p.layout.clearSeq...)
-		*buf = append(*buf, p.layout.prefix...)
-		*buf = append(*buf, oneHundredPct...)
-		*buf = append(*buf, p.layout.suffix...)
-		*buf = append(*buf, p.layout.finalStatus...)
-		*buf = append(*buf, p.layout.doneSeq...)
-		if (*buf)[len(*buf) - 1] != '\n' {
-			*buf = append(*buf, p.layout.lineTerminator...)
+		buf = append(buf, p.layout.clearSeq...)
+		buf = append(buf, p.layout.prefix...)
+		buf = append(buf, oneHundredPct...)
+		buf = append(buf, p.layout.suffix...)
+		buf = append(buf, p.layout.finalStatus...)
+		buf = append(buf, p.layout.doneSeq...)
+		if buf[len(buf) - 1] != '\n' {
+			buf = append(buf, p.layout.lineTerminator...)
 		}
 	}
 
-	_, _ = p.output.Write(*buf)
+	_, _ = p.output.Write(buf)
 }
 
 // helpers for synchronous, deterministic tests

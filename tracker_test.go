@@ -39,16 +39,11 @@ func TestGetTracker(t *testing.T) {
 		},
 		{
 			name:  "fraction",
-			strat: Fraction,
-			want:  &standardTracker{ lo:  defaultLayout() },
-		},
-		{
-			name:  "fraction",
 			total: 3,
 			strat: Fraction,
 			want:  &fractionTracker{
-				total: "3",
-				lo:    defaultLayout(),
+				initialTotal: 3,
+				lo:           defaultLayout(),
 			},
 		},
 	}

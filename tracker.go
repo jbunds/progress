@@ -1,7 +1,5 @@
 package progress
 
-import "strconv"
-
 type strategy int
 
 const (
@@ -20,11 +18,11 @@ const (
 
 // statusTracker tracks the current work completion progress status.
 type statusTracker interface {
-	store(uint64, string)           // stores the current status string
-	load() string                   // returns the current status string
-	appendStatus(buf []byte) []byte // zero-allocation status string builder buffer
-	init()                          // initializes tracker-specific UI layout configuration and metadata
-	baseLayout() layout             // returns the UI layout configuration and metadata for a tracker
+	init()                // initializes tracker-specific UI layout configuration and metadata
+	store(uint64, string) // stores the current status string
+	load() string         // returns the current status string
+	addTotal(uint64)      // used by fractionTracker to add to the total units (denominator) when workers call AddTotal()
+	baseLayout() layout   // returns the UI layout configuration and metadata for a tracker
 }
 
 func getTracker(strat strategy, totalUnits uint64) statusTracker {
@@ -36,7 +34,7 @@ func getTracker(strat strategy, totalUnits uint64) statusTracker {
 	case Fraction:
 		switch totalUnits {
 		case 0:  tracker = &standardTracker{} // silently fall back to a sensible progress tracking strategy
-		default: tracker = &fractionTracker{ total: strconv.FormatUint(totalUnits, 10) }
+		default: tracker = &fractionTracker{ initialTotal: totalUnits }
 		}
 	default: tracker = &standardTracker{}
 	}

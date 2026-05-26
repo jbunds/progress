@@ -26,20 +26,21 @@ func (p *Progress) prepareTerminal() {
 }
 
 // handleResize records the new terminal width to be respected by subsequent render cycles.
-func (p *Progress) handleResize(buf *[]byte) {
+func (p *Progress) handleResize(buf []byte) []byte {
 	termWidth := p.resizeHandler()
 
 	for { // atomically update termWidth while preserving concurrent percentage or status changes
 		oldState := p.state.Load()
 		newState := (oldState & 0xFFFF) | (uint32(termWidth & 0xFFFF) << 16) // pack p.termWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
 		if p.state.CompareAndSwap(oldState, newState) {
-			if increasedBufCap := p.layout.bufCap(termWidth); cap(*buf) < increasedBufCap {
-				*buf = make([]byte, 0, increasedBufCap) // grow the buffer to accommodate the increased terminal width
+			if increasedBufCap := p.layout.bufCap(termWidth); cap(buf) < increasedBufCap {
+				buf = make([]byte, 0, increasedBufCap) // grow the buffer to accommodate the increased terminal width
 			}
 			p.sync(buf)
 			break
 		}
 	}
+	return buf
 }
 
 // getResizedTermWidth returns the current terminal width, enforcing

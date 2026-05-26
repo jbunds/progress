@@ -61,7 +61,7 @@ func getTheme(name string) (*theme, bool) {
 	}
 }
 
-func (t *theme) Equal(other *theme) bool { // workaround cmp's draconian strictures
+func (t *theme) Equal(other *theme) bool { // work around cmp's draconian strictures
 	if t == nil || other == nil { return t == other }
 	return cmp.Equal(t.startBgR, other.startBgR) &&
 	       cmp.Equal(t.startBgG, other.startBgG) &&

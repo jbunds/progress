@@ -2,9 +2,34 @@ package progress
 
 import (
 	"io"
+	"runtime"
 	"testing"
 	"time"
 )
+
+// $ go test -run='^$' -memprofile=mem.pprof -benchtime=5s -bench=./...
+// goos: darwin
+// goarch: arm64
+// pkg: github.com/jbunds/progress
+// cpu: Apple M1
+// BenchmarkRenderLoop/Standard/throughput-8               12139726               467.9 ns/op             0 B/op          0 allocs/op
+// BenchmarkRenderLoop/Standard/isolated_sample-8          12924417               464.4 ns/op             0 B/op          0 allocs/op
+// --- BENCH: BenchmarkRenderLoop/Standard/isolated_sample-8
+//     progress_bench_test.go:205: total memory allocated: 320 bytes (0.31 kB)
+// BenchmarkRenderLoop/Unique/throughput-8                 12294680               484.9 ns/op             0 B/op          0 allocs/op
+// BenchmarkRenderLoop/Unique/isolated_sample-8            12254359               489.7 ns/op             0 B/op          0 allocs/op
+// --- BENCH: BenchmarkRenderLoop/Unique/isolated_sample-8
+//     progress_bench_test.go:205: total memory allocated: 192 bytes (0.19 kB)
+// BenchmarkRenderLoop/Fraction/throughput-8               13084508               461.9 ns/op             0 B/op          0 allocs/op
+// BenchmarkRenderLoop/Fraction/isolated_sample-8          13046984               463.0 ns/op             0 B/op          0 allocs/op
+// --- BENCH: BenchmarkRenderLoop/Fraction/isolated_sample-8
+//     progress_bench_test.go:205: total memory allocated: 144 bytes (0.14 kB)
+// BenchmarkRenderLoop/Percent/throughput-8                13711454               436.7 ns/op             0 B/op          0 allocs/op
+// BenchmarkRenderLoop/Percent/isolated_sample-8           13772391               435.9 ns/op             0 B/op          0 allocs/op
+// --- BENCH: BenchmarkRenderLoop/Percent/isolated_sample-8
+//     progress_bench_test.go:205: total memory allocated: 0 bytes (0.00 kB)
+// PASS
+// ok      github.com/jbunds/progress      48.230s
 
 // never pollute benchmark profile data with allocations triggered by unit tests
 // (e.g., TestReportContention's strconv.Itoa() and strconv.Atoi() calls)
@@ -18,7 +43,7 @@ import (
 //
 // execute all benchmark tests 10 times:
 //
-//   go test -run='^$' -memprofile=mem.pprof -count=10 -bench=./... 
+//   go test -run='^$' -memprofile=mem.pprof -count=10 -bench=./...
 //
 // execute 5 million renderLoop iterations (b.N == 5e6):
 //
@@ -27,9 +52,21 @@ import (
 // inspect the memory allocation results written to mem.pprof
 // for all functions or methods in the "progress" package:
 //
-//   go tool pprof -alloc_objects mem.pprof
+//   go tool pprof progress.test mem.pprof
+//   go tool pprof -alloc_objects mem.pprof  # shows every object ever created during the benchmark test run
+//   go tool pprof -inuse_objects mem.pprof  # shows real memory leaks because the GC cannot free those items
 //
 //   (pprof) list progress
+//
+//   (pprof) focus=Report  # emits null output
+//
+//   sample_index=inuse_space:   shows bytes currently allocated (best for finding large leaked objects)
+//   sample_index=inuse_objects: shows count of objects currently allocated (best for finding loops/growing slices leaking small objects)
+//   sample_index=alloc_space:   shows total bytes allocated since the program started
+//
+//   top20:                      lists the top 20 functions holding onto memory. Look for unexpected custom packages at the top
+//   top -cum:                   sorts functions by cumulative memory (the function itself plus all functions it called). Excellent for tracing the execution path
+//   list <functionName>:        shows line-by-line memory allocation for a specific function. This will tell you the exact line of code causing the leak
 //
 // because pprof indexes only those symbols which actually allocate memory onto
 // the heap during the profiling window (between b.ResetTimer() and b.StopTimer()),
@@ -41,70 +78,138 @@ import (
 //
 //   go tool pprof -http=:8080 mem.pprof
 
+// interrogate the Go compiler to reveal its escape analysis optimization decisions:
+//
+//   go test -gcflags='-l -m' ./... | fgrep progress.go
+//
+// -l: disables inlining to produce more readable output
+// -m: shows optimization decisions including escapes to the heap
+
 func BenchmarkRenderLoop(b *testing.B) {
 	// set storeLastFrameHook (indirectly used by unit tests) to a no-op function since it allocates onto the heap
-	storeLastFrameHook = func(*Progress, *[]byte) {}
+	// prevent test hook allocations on the heap
+	storeLastFrameHook = func(*Progress, []byte) {}
 
-	benchmarks        := []struct {
-		name    string
-		tracker statusTracker
+	taskCompleteMsg := "completed a task" // pre-allocated variable to eliminate interface / string literal heap escapes
+
+	benchmarks := []struct {
+		name           string
+		strategy       strategy
+		totalWorkUnits uint64
 	}{
-		{ name: "Standard", tracker: getTracker(Standard, 1e12) },
-		{ name: "Unique",   tracker: getTracker(Unique,   1e12) },
-		{ name: "Fraction", tracker: getTracker(Fraction, 1e6 ) },
-		{ name: "Percent",  tracker: getTracker(Percent,  0   ) },
+		{ "Standard", Standard, 1e8 },
+		{ "Unique",   Unique,   1e8 },
+		{ "Fraction", Fraction, 1e6 },
+		{ "Percent",  Percent,  0   },
 	}
 
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
-			b.ReportAllocs()
 
-			tickTrigger := make(chan time.Time, 1)
-			notify      := make(chan struct{},  1) // awaits the completion of a draw cycle; buffered to prevent deadlocks
+			// sub-benchmark 1: profile real-world renderLoop throughput
+			// profile targets: filter using pprof focus / hide directives as required
+			b.Run("throughput", func(subB *testing.B) {
+				tickTrigger := make(chan time.Time, 1)
+				notify      := make(chan struct{},  1) // awaits the completion of a draw cycle; buffered to prevent deadlocks
+				p           := &Progress{
+					tracker:    getTracker(bm.strategy, bm.totalWorkUnits),
+					output:     io.Discard,
+					isTerminal: func(any) bool { return true }, // force ANSI sequence encoding
+					clock:      fakeClock{ c: tickTrigger },
+					drawNotify: notify,
+					stopChan:   make(chan struct{}),
+					doneChan:   make(chan struct{}),
+				}
+				p.state.Store(uint32(256 & 0xFFFF) << 16)
+				p.prepareTerminal()
+				p.initBufPool()
 
-			p := &Progress{
-				tracker:    bm.tracker,
-				output:     io.Discard,
-				isTerminal: isTerminal,
-				clock:      fakeClock{ c: tickTrigger },
-				drawNotify: notify,
-				stopChan:   make(chan struct{}),
-				doneChan:   make(chan struct{}),
-			}
+				go p.renderLoop(subB.Context())
+				subB.Cleanup(func() { p.Close() })
 
-			go p.renderLoop(b.Context())
-			b.Cleanup(func() { p.Close() })
+				subB.ResetTimer()
+				subB.ReportAllocs()
 
-			// `for range b.N` is used instead of `for b.Loop()` because b.ResetTimer()
-			// nullifies any initialization / startup allocations that would otherwise be
-			// profiled, isolating the memory footprint of p.Report() and downstream calls
+				for subB.Loop() {
+					p.Report(10, taskCompleteMsg)
+					tickTrigger <- time.Time{}
+					<-notify // draw() cycle completed
+				}
 
-			b.ResetTimer() // ignore initialization / startup allocations
+				subB.StopTimer()
+			})
 
-			taskCompleteMsg := "completed a task" // pre-allocated variable to eliminate interface / string literal heap escapes
+			b.Run("isolated sample", func(subB *testing.B) { // isolated zero-alloc test guard
+				tickTrigger := make(chan time.Time, 1)
+				notify      := make(chan struct{},  1) // awaits the completion of a draw cycle; buffered to prevent deadlocks
+				testP       := &Progress{
+					tracker:    getTracker(bm.strategy, bm.totalWorkUnits),
+					output:     io.Discard,
+					isTerminal: func(any) bool { return true }, // force ANSI sequence encoding
+					clock:      fakeClock{ c: tickTrigger },
+					drawNotify: notify,
+					stopChan:   make(chan struct{}),
+					doneChan:   make(chan struct{}),
+				}
+				testP.state.Store(uint32(256 & 0xFFFF) << 16)
+				testP.prepareTerminal()
+				testP.initBufPool()
 
-			for range b.N {
-				p.Report(10, taskCompleteMsg)
-				tickTrigger <- time.Now()
-				<-notify // draw() cycle completed
-			}
+				go testP.renderLoop(subB.Context())
+				subB.Cleanup(func() { testP.Close() })
 
-			b.StopTimer()
+				subB.ResetTimer()
+				subB.ReportAllocs()
 
-			testP := &Progress{ // test p.Report() and downstream calls in isolation to verify 0-alloc behavior
-				tracker:    bm.tracker,
-				output:     io.Discard,
-				clock:      fakeClock{ c: tickTrigger },
-				drawNotify: notify,
-				stopChan:   make(chan struct{}),
-				doneChan:   make(chan struct{}),
-			}
+				subB.ReportMetric(0, "allocs/op") // clear default metric display
 
-			allocs := testing.AllocsPerRun(100, func() { testP.Report(10, taskCompleteMsg) }) // sample 100 runs
-			if allocs > 0 {
+				var memBefore, memAfter runtime.MemStats
+				runtime.GC() // clean up the heap before capturing baseline
+				runtime.ReadMemStats(&memBefore)
+
+				var iterations uint64
+				for subB.Loop() {
+					// change the following statement to:
+					//
+					//   testP.Report(10, "task " + strconv.Itoa(subB.N))
+					//
+					// to observe:
+					//
+					//   allocs/op == 1
+					//    bytes/op == 8
+					testP.Report(10, taskCompleteMsg)
+					tickTrigger <- time.Time{}
+					<-notify // draw() cycle completed
+					iterations++
+				}
+
+				subB.StopTimer()
+				runtime.ReadMemStats(&memAfter)
+
+				// TODO(jeff): consider something like:
+				//
+				//   func TestMemoryLeak(t *testing.T) { result := testing.Benchmark(func(b *testing.B) { ... } }
+				//
+				// to inspect the BenchmarkResult:
+				//
+				//   bytesPerOp  := result.AllocedBytesPerOp()
+				//   allocsPerOp := result.AllocsPerOp()
+				totalBytesAlloced   := memAfter.TotalAlloc - memBefore.TotalAlloc
+				totalObjectsAlloced := memAfter.Mallocs    - memBefore.Mallocs
+				bytesPerOp          := totalBytesAlloced   / iterations
+				allocsPerOp         := totalObjectsAlloced / iterations
+
 				remediationAction := "run `go test -run='^$' -memprofile=mem.pprof -bench=BenchmarkRenderLoop` to isolate the memory leak"
-				b.Errorf("%s leaked memory: expected 0 allocs per run, got %.2f\n%s", bm.name, allocs, remediationAction)
-			}
+
+				subB.Logf("total memory allocated: %d bytes (%.2f kB)", totalBytesAlloced, float64(totalBytesAlloced) / 1024)
+
+				if allocsPerOp > 0 {
+					subB.Errorf("%s expected 0 allocs/op, got %d\n%s", bm.name, allocsPerOp, remediationAction)
+				}
+				if bytesPerOp > 0 {
+					subB.Errorf("%s expected 0 bytes/op, got %d\n%s", bm.name, bytesPerOp, remediationAction)
+				}
+			})
 		})
 	}
 }

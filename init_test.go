@@ -11,8 +11,8 @@ func init() { // override the default / production no-op stubs to enable synchro
 		}
 	}
 
-	storeLastFrameHook = func(p *Progress, buf *[]byte) {
-		str := string(*buf)
+	storeLastFrameHook = func(p *Progress, buf []byte) {
+		str := string(buf)
 		p.lastFrame.Store(&str)
 	}
 
