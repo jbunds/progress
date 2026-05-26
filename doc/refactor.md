@@ -48,8 +48,11 @@ func (p *bufPool[T]) put(x T) {        p.pool.Put(x)    }
 
 ```
 // ansi escape sequences for setting background and foreground colors can be background-first, or foreground-first
+//
 // background-first combined format:
+//
 //   \033[ 48;2;R;G;B ; 38;2;R;G;B m
+//
 // combinedColor := "\033[48;2;255;255;255" + ";" + "38;2;255;255;255m"
 
 // generalized form (background-first order):
@@ -82,7 +85,7 @@ general (short) form:
 
   ```
   \033[38;2;R;G;B;48;2;R;G;Bm
-  '033[38;2; == always 24-bit RGB foreground
+  \033[38;2; == always 24-bit RGB foreground
   ```
 
 ```
