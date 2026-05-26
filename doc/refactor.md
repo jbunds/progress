@@ -46,38 +46,48 @@ func (p *bufPool[T]) get() T  { return p.pool.Get().(T) }
 func (p *bufPool[T]) put(x T) {        p.pool.Put(x)    }
 ```
 
+```
 // ansi escape sequences for setting background and foreground colors can be background-first, or foreground-first
 // background-first combined format:
 //   \033[ 48;2;R;G;B ; 38;2;R;G;B m
-combinedColor := "\033[48;2;255;255;255" + ";" + "38;2;255;255;255m"
+// combinedColor := "\033[48;2;255;255;255" + ";" + "38;2;255;255;255m"
 
 // generalized form (background-first order):
-  "\033[48;2;255;255;255" + // background color block
-  ";"                     + // ansi sequence delimiter
-  "38;2;255;255;255m"     + // foreground color block
-  "string to be rendered"
-  therefore total overhead == 32 bytes:
-  - \033[            ==  2 bytes (CSI)
-  - 48;2;255;255;255 == 14 bytes
-  - ;                ==  1 byte
-  - 38;2;255;255;255 == 14 bytes
-  - m                ==  1 byte  (SGR terminator)
+//  "\033[48;2;255;255;255" + // background color block
+//  ";"                     + // ansi sequence delimiter
+//  "38;2;255;255;255m"     + // foreground color block
+//  "string to be rendered"
+//  therefore total overhead == 32 bytes:
+//  - \033[            ==  2 bytes (CSI)
+//  - 48;2;255;255;255 == 14 bytes
+//  - ;                ==  1 byte
+//  - 38;2;255;255;255 == 14 bytes
+//  - m                ==  1 byte  (SGR terminator)
+```
 
 therefore, a pre-allocated buffer which accounts for only the ANSI 24-bit RGB color sequences and the worst-case UTF-8 text would be:
 
+  ```
   make([]byte, 0, 32 + len(4 * textStr))
+  ```
 
 and a precisely-allocated, UTF-8-aware buffer would be:
 
+  ```
   make([]byte, 0, 32 + utf8.RuneCountInString(textStr))
   make([]byte, 0, 32 + len(textBytes)) // NOT utf8.RuneCount(textBytes) !
+  ```
 
 general (short) form:
+
+  ```
   \033[38;2;R;G;B;48;2;R;G;Bm
   '033[38;2; == always 24-bit RGB foreground
+  ```
 
-\033[30;48;2;255;255;255m == longest RGB fg start block == 19 bytes
-\033[38;2;                == longest RGB fg start block ==  7 bytes
+```
+// \033[30;48;2;255;255;255m == longest RGB fg start block == 19 bytes
+// \033[38;2;                == longest RGB fg start block ==  7 bytes
 
 // Go strings are 2-word, 16-byte headers, roughly:
 //
@@ -105,15 +115,13 @@ func (p *Progress) initBufPool() {
 	capacity := p.layout.bufCap(termWidth)
 	p.bufPool = newBufPool(func() []byte { return make([]byte, 0, capacity) })
 }
+```
 
 ---
 
-a string in Go is a 2-word header: \[pointer to data (uintptr) | length (int)\]
-a []byte in Go is a 3-word header: \[pointer to data (uintptr) | length (int) | capacity (int)\]
+`atomic.Uintptr` cannot atomically swap a single pointer (1 word), a `[]byte` slice header cannot be atomically updated directly
 
-atomic.Uintptr cannot atomically swap **one single pointer (1 word)**, a []byte slice header cannot be atomically updated directly
-
-swapping just the data pointer while the length and capacity are modified non-atomically is not thread-safe. atomic.Pointer is cleaner and safer.
+swapping just the data pointer while the length and capacity are modified non-atomically is not thread-safe. `atomic.Pointer` is cleaner and safer.
 
 ```
 const maxCellBytes = 288 // 256 (cells) + 32 (ansi overhead)
@@ -179,76 +187,28 @@ func writeAnsiSeq(dst []byte, bgR, bgG, bgB, fgR, fgG, fgB uint8, text []byte) i
   return idx
 }
 
-// Fast integer to ASCII digit converter that writes directly to an existing slice
+// fast integer-to-ASCII digit converter that writes directly to an existing slice
 func appendUint8Ascii(dst []byte, idx int, val uint8) int {
   if val >= 100 {
     dst[idx] = '0' + (val / 100); idx++
     val %= 100
-    dst[idx] = '0' + (val / 10); idx++
-    dst[idx] = '0' + (val % 10); idx++
+    dst[idx] = '0' + (val /  10); idx++
+    dst[idx] = '0' + (val %  10); idx++
   } else if val >= 10 {
-    dst[idx] = '0' + (val / 10); idx++
-    dst[idx] = '0' + (val % 10); idx++
+    dst[idx] = '0' + (val /  10); idx++
+    dst[idx] = '0' + (val %  10); idx++
   } else {
-    dst[idx] = '0' + val; idx++
+    dst[idx] = '0' +  val;        idx++
   }
   return idx
 }
 ```
 
 - instead of passing strings down through the call stack, pass either:
-  - uintptr
-  - ptr
-  - *[]byte
-  - []byte
+  - `uintptr`
+  - `ptr`
+  - `*[]byte`
+  - `[]byte`
 - move all constants currently defined in render.go to layout.go (need to think about this some more...)
 - move all test helpers to init_test.go
 - check if test-only hooks get compiled into the integration test binary; i think they are, and the should be, so the integration test can use them (e.g., drawNotify)
-
-clearSeq       = "\r\033[?2026h"            // move cursor to beginning of line; activate synchronized output mode
-lineTerminator = "\033[K\033[0m\033[?2026l" // erase from cursor position to end of line; reset all attributes; deactivate synchronized output mode
-prepColorSeq   = "\033[30;48;2;"            // set foreground (text) color to black (30); set background color (48) per incoming 24-bit RGB triplet (2)
-setFgColor     = "\033[38;2;"               // set foreground (text) color (38) per incoming 24-bit RGB triplet (2)
-prepSetBgColor = ";48;2;"                   // prepare to set background color (48) per incoming 24-bit RGB triplet
-resetAttr      = "\033[0m"                  // reset all attributes to defaults
-
-prefix               = "processing (" // prepended to each progress status line rendered to the terminal
-defaultSuffix        = "%): "         // appended to each percentage status calculation rendered to the terminal
-
-minWidth             = 80 // fallback for pipes, redirects, and non-tty outputs
-pctFieldLen          =  3 // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
-colorBlockMultiplier = 23 // 23 bytes per column for 24-bit color gradient blocks
-utf8TruncMultiplier  =  4 //  4 bytes per column for worst-case UTF-8 status text truncation thresholds
-
-// layout encapsulates the terminal-specific rendering layout configuration.
-type layout struct {
-	staticWidth    int    // the static width reserved for the prefix prepended to each status message, e.g., "processing (7.4%): "
-	prefix         string // prepended to each progress status line rendered to the terminal
-	suffix         string // appended to each status percentage calculation rendered to the terminal, e.g., "%): " or "%)"
-	clearSeq       string // ANSI escape sequence used to clear the current terminal line
-	doneSeq        string // ANSI escape sequence used to restore the terminal cursor
-	lineTerminator string // output line terminator: "" when *Progress.output (nominally os.Stderr) is a terminal; "\n" otherwise
-	finalStatus    string // status message to display upon completion (e.g., "done")
-}
-
-func defaultLayout() layout {
-	layout := layout{
-		prefix:         prefix,
-		suffix:         defaultSuffix,
-		clearSeq:       "",
-		doneSeq:        "\n",
-		lineTerminator: "\n",
-		finalStatus:    "done",
-	}
-	layout.staticWidth = len(layout.prefix) + pctFieldLen + len(layout.suffix)
-	return layout
-}
-
-func (l layout) bufCap(termWidth int) int {
-	return (colorBlockMultiplier * termWidth) +
-	       (utf8TruncMultiplier  * termWidth) +
-	       len(l.prefix                     ) +
-	       len(l.suffix                     ) +
-	       len(l.clearSeq                   ) +
-	       len(l.lineTerminator             )
-}
