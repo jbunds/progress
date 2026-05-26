@@ -2,51 +2,39 @@ package progress
 
 import (
 	"sync/atomic"
-	"unsafe"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/golang-lru/v2"
 )
 
-// stringFrame encapsulates the status string data pointer and length within an allocated object that can be atomically swapped.
-type stringFrame struct {
-	strData *byte
-	length  int
-}
-
 // standard tracker for mostly unique status strings.
 type standardTracker struct {
 	lo     layout
-	status atomic.Pointer[stringFrame]
-	cache  *lru.Cache[string, *stringFrame] // fixed-size, thread-safe LRU container
+	status atomic.Pointer[string]
+	cache  *lru.Cache[string, *string] // fixed-size, thread-safe LRU container
 }
 
 func (s *standardTracker) init() {
-	s.lo      = defaultLayout()
-	strFrame := &stringFrame{}
-	s.status.Store(strFrame)
-	c, err := lru.New[string, *stringFrame](1024)
+	s.lo = defaultLayout()
+	s.status.Store(new(""))
+	c, err := lru.New[string, *string](1024)
 	if err != nil { panic(err) }
 	s.cache = c
 }
 
 func (s *standardTracker) store(_ uint64, status string) {
-	if cachedStrFrame, ok := s.cache.Get(status); ok {
-		s.status.Store(cachedStrFrame)
+	if cachedPointer, ok := s.cache.Get(status); ok {
+		s.status.Store(cachedPointer)
 		return
 	}
-	strFrame := &stringFrame{
-		strData: unsafe.StringData(status), // #nosec G103 - memory safety guarded by LRU cache retaining underlying string references
-		length:  len(status),
-	}
-	s.cache.Add(status, strFrame)
-	s.status.Store(strFrame)
+	strCopy := status // zero-alloc local copy to isolate the string header
+	s.cache.Add(status, &strCopy)
+	s.status.Store(&strCopy)
 }
 
 func (s *standardTracker) load() string {
-	strFrame := s.status.Load()
-	if strFrame == nil || strFrame.length == 0 { return "" }
-	return unsafe.String(strFrame.strData, strFrame.length) // #nosec G103 - reassembles string safely using matching length properties from the frame
+	if ptr := s.status.Load(); ptr != nil { return *ptr }
+	return ""
 }
 
 func (s *standardTracker) addTotal(_ uint64)  {             }
