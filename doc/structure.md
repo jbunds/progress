@@ -2,6 +2,7 @@
 .
 ├── doc
 │   ├── code_stats.md
+│   ├── refactor.md
 │   └── structure.md
 ├── examples
 │   ├── README.md
@@ -16,12 +17,12 @@
 ├── fraction.go
 ├── go.mod
 ├── go.sum
-├── gopls.env
 ├── init_test.go
-├── integration
-│   └── integration_test.go
+├── integration_test.go
+├── integration_test.sh
 ├── layout.go
 ├── percent.go
+├── pool.go
 ├── progress.go
 ├── progress_test.go
 ├── progress_bench_test.go
@@ -36,5 +37,5 @@
 ├── tracker_test.go
 └── unique.go
 
-6 directories, 30 files
+5 directories, 32 files
 ```
