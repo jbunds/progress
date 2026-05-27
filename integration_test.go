@@ -33,28 +33,34 @@ import (
 //
 //   $ ./integration_test.sh
 //   args: -totaltasks  100 -loopiterations 100
-//   time:    0.38s
-//   mem:     4.4078 MB
+//   time:    0.39s
+//   rss:     7.39 MB
+//   mem:     4.45 MB
 //
 //   args: -totaltasks 1000 -loopiterations 1e7
-//   time:    8.10s
-//   mem:     1519.3950 MB
+//   time:    9.53s
+//   rss:     1513.23 MB
+//   mem:     1512.82 MB
 //
 //   args: -totaltasks  1e6 -loopiterations 1e6
-//   time:    0.63s
-//   mem:     157.5956 MB
+//   time:    0.73s
+//   rss:     168.88 MB
+//   mem:     165.88 MB
 //
 //   args: -totaltasks    0 -loopiterations 100
 //   time:    0.00s
-//   mem:     4.1265 MB
+//   rss:     7.12 MB
+//   mem:     4.16 MB
 //
 //   args: -totaltasks    0 -loopiterations 1e6
-//   time:    0.63s
-//   mem:     166.6425 MB
+//   time:    0.78s
+//   rss:     160.33 MB
+//   mem:     157.39 MB
 //
 //   args: -totaltasks    0 -loopiterations 1e7
-//   time:    7.79s
-//   mem:     1449.8793 MB
+//   time:    10.08s
+//   rss:     1494.50 MB
+//   mem:     1574.96 MB
 
 // digits is used by the nextUniqueString helper function to generate status
 // strings unique to a worker goroutine to observe heap allocations by
