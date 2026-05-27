@@ -61,6 +61,8 @@ import (
 //   time:    10.08s
 //   rss:     1494.50 MB
 //   mem:     1574.96 MB
+//
+// see also `go build -gcflags=-m`
 
 // digits is used by the nextUniqueString helper function to generate status
 // strings unique to a worker goroutine to observe heap allocations by

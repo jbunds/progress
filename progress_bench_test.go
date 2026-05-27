@@ -31,6 +31,8 @@ import (
 // PASS
 // ok      github.com/jbunds/progress      48.248s
 
+// see also `go build -gcflags=-m`
+
 // never pollute benchmark profile data with allocations triggered by unit tests
 // (e.g., TestReportContention's strconv.Itoa() and strconv.Atoi() calls)
 //
