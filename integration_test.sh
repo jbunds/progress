@@ -23,5 +23,13 @@ args=(
 for a in "${args[@]}"; do
   echo "args: $a"
   { "${base_cmd[@]}" $a ; } 2>&1 | \
-    awk '/real/ { print "time:\t", $1 }; /peak memory footprint/ { printf "mem:\t %.4f MB\n\n", $1 / (1024 * 1024) }'
+    awk '/real/ {
+      print "time:\t", $1
+    };
+    /maximum resident set size/ {
+      printf "rss:\t %.2f MB\n",   $1 / (1024 * 1024)
+		};
+    /peak memory footprint/ {
+      printf "mem:\t %.2f MB\n\n", $1 / (1024 * 1024)
+    }'
 done

@@ -9,6 +9,8 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -68,7 +70,7 @@ var digits = []byte("0123456789abcdef")
 // The BenchmarkRenderLoop benchmark test defined in progress_bench_test.go
 // is designed to provide less noisy and more precise heap allocation metrics.
 func TestStreamingStress(t *testing.T) {
-	totalTasks, loopIterations := params(flag.CommandLine, filterArgs(os.Args[1:]))
+	totalTasks, loopIterations := params(flag.CommandLine, validateAndFilterArgs(os.Args[1:]))
 
 	timeChan := make(chan time.Time, 5000) // high-capacity buffer to handle concurrent worker status updates
 	
@@ -92,7 +94,7 @@ func TestStreamingStress(t *testing.T) {
 			taskID    := []byte("worker chunk 0000000000000000")    // 16 digits for uint64 space
 
 			for i := startIdx; i < endIdx; i++ {
-				taskCompleteMsg := nextUniqueString(taskID, i)        // causes heap allocs to explode in proportion to loop iterations
+				taskCompleteMsg := nextUniqueString(t, taskID, i)     // causes heap allocs to explode in proportion to loop iterations
 				if totalTasks == 0 {                                  // fractional path allocation API mode (dynamic task discovery)
 					taskSize := localRand.Uint64N(50) + 1
 					if localRand.Uint64N(20) == 0 {                     // interleave concurrent task discovery with 5% probability trigger to stress test atomic operations
@@ -126,7 +128,8 @@ func TestStreamingStress(t *testing.T) {
 
 // nextUniqueString mutates the passed byte array in-place to generate a new string
 // unique among the set of calls to Report() within its parent worker goroutine.
-func nextUniqueString(buf []byte, val int) string {
+func nextUniqueString(t *testing.T, buf []byte, val int) string {
+	t.Helper()
 	pos := len(buf) - 1 // mutate the numeric suffix of the buffer from right to left
 	for range 16 {
 		buf[pos] = digits[val & 0xF]
@@ -171,7 +174,18 @@ func (s *sciUint64) Set(value string) error {
 	return nil
 }
 
-func filterArgs(args []string) []string {
+func validateAndFilterArgs(args []string) []string {
+	progName := getProgramName()
+	if len(args) != 6 { fail(progName) }
+	expectedArgs := []string{
+		"-test.run=TestStreamingStress", "--",
+		"-totaltasks",
+		"-loopiterations",
+	}
+	argsCopy := slices.Clone(args)
+	argsCopy  = slices.Delete(argsCopy, 5, 6) // ignore the 6th element
+	argsCopy  = slices.Delete(argsCopy, 3, 4) // ignore the 4th element
+	if !slices.Equal(argsCopy, expectedArgs) { fail(progName) }
 	for i, arg := range args {
 		if arg == "--" {
 			args = args[i + 1:]
@@ -179,4 +193,19 @@ func filterArgs(args []string) []string {
 		}
 	}
 	return args
+}
+
+func getProgramName() string {
+	if _, filename, _, ok := runtime.Caller(0); ok {
+		base := filepath.Base(filename)
+		if strings.HasSuffix(base, "_test.go") {
+			return base
+		}
+	}
+	return filepath.Base(os.Args[0])
+}
+
+func fail(progName string) {
+	fmt.Fprintf(os.Stderr, "%s should be executed using the integration_test.sh wrapper\n", progName)
+	os.Exit(1)
 }
