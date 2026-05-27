@@ -22,8 +22,7 @@ func newBufPool(factory func() []byte) *bufPool {
 
 // get returns a byte slice reset to 0 length, retaining capacity.
 func (p *bufPool) get() []byte {
-	// nolint:forcetypeassert // underlying sync.Pool guarantees *buf is returned
-	bPtr := p.pool.Get().(*buf)
+	bPtr := p.pool.Get().(*buf) // nolint:forcetypeassert // underlying sync.Pool guarantees *buf is returned
 	return (*bPtr)[:0]
 }
 
@@ -33,7 +32,7 @@ func (p *bufPool) put(x []byte) {
 	p.pool.Put(&b)
 }
 
-// initBufPool initializes a pool of reusable naked buffers with adequate capacity to accommodate
+// initBufPool initializes a pool of reusable raw []byte buffers with adequate capacity to accommodate
 // rendering 256 columns of 24-bit color ANSI escape sequence-wrapped characters to the terminal.
 func (p *Progress) initBufPool() {
 	termWidth := int(p.state.Load() >> 16)

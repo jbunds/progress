@@ -209,12 +209,12 @@ func (p *Progress) renderLoop(ctx context.Context) {
 	defer close(p.doneChan)
 	defer signal.Stop(p.resizeChan)
 
-	// the naked []byte buffer is unprotected by design:
+	// the raw []byte buffer is unprotected by design:
 	//
-	// - goroutine-confined;     owned exclusively by this execution context
-	// - synchronously mutated;  loop events process sequentially
-	// - lexically-scoped;       lifetime is structurally bound to this function frame
-	// - no reference retention; downstream methods never cache or leak the slice pointer
+	// - goroutine-confined:     owned exclusively by this execution context
+	// - synchronously mutated:  loop events process sequentially
+	// - lexically-scoped:       lifetime is structurally bound to this function frame
+	// - no reference retention: downstream methods never cache or leak the slice pointer
 
 	buf := p.bufPool.get()
 
@@ -230,23 +230,23 @@ func (p *Progress) renderLoop(ctx context.Context) {
 		buf = buf[:0]
 
 		select {
-		case <-ctx.Done():
+		case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
 			running = false
-		case <-p.stopChan:
+		case <-p.stopChan:   // Close() called
 			running = false
 		default:
 		}
 
 		if !running { break }
 
-		select {                 // exit immediately if canceled or explicitly stopped per a Close() call
-		case <-ctx.Done():       // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
+		select {             // exit immediately if canceled or explicitly stopped per a Close() call
+		case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
 			running = false
-		case <-p.stopChan:       // Close() called
+		case <-p.stopChan:   // Close() called
 			running = false
-		case <-ticker.ch():
+		case <-ticker.ch():  // check for a status update
 			buf = p.sync(buf)
-		case <-p.resizeChan:
+		case <-p.resizeChan: // SIGWINCH received
 			buf = p.handleResize(buf)
 		}
 
@@ -257,25 +257,6 @@ func (p *Progress) renderLoop(ctx context.Context) {
 			default:
 			}
 		}
-
-//		default:
-//			select {             // process events normally while running
-//			case <-ctx.Done():   // parent context canceled, or SIGINIT / SIGTERM / SIGHUP received
-//				running = false
-//			case <-p.stopChan:   // Close() called
-//				running = false
-//			case <-ticker.ch():  // check for a status update
-//				buf = p.sync(buf)
-//			case <-p.resizeChan: // SIGWINCH received
-//				buf = p.handleResize(buf)
-//			}
-//		}
-
-//		select { // post-loop drain: ensure any final pending tick is flushed before deferred cleanup routines execute
-//		case <-ticker.ch():
-//			buf = p.sync(buf)
-//		default:
-//		}
 	}
 
 	p.finish(ctx, buf) // render the final frame to the terminal and perform any necessary cleanup
