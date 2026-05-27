@@ -28,7 +28,7 @@ for a in "${args[@]}"; do
     };
     /maximum resident set size/ {
       printf "rss:\t %.2f MB\n",   $1 / (1024 * 1024)
-		};
+    };
     /peak memory footprint/ {
       printf "mem:\t %.2f MB\n\n", $1 / (1024 * 1024)
     }'
