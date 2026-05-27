@@ -165,7 +165,7 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 	switch {
 	case pctSigDigits >= 9950:           // 99.5% < pctSigDigits >  100% => "100%"
 		buf = ws.writeString(buf, "100")
-	case pctSigDigits >= 995:            // 9.95% < pctSigDigits > 99.4% => " 10%" - " 99%"
+	case pctSigDigits >=  995:           // 9.95% < pctSigDigits > 99.4% => " 10%" - " 99%"
 		val := (pctSigDigits + 50) / 100 // round to the nearest 1% (995 -> 10; 9949 -> 99)
 		buf = ws.writeRune(buf, ' ')
 		buf = ws.writeRune(buf, rune('0' + (val / 10)))
