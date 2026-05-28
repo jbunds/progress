@@ -2,8 +2,6 @@ package progress
 
 import "github.com/google/go-cmp/cmp"
 
-// https://jakob-bagterp.github.io/colorist-for-python/ansi-escape-codes/rgb-colors/
-
 const (
 	startFgR, startFgG, startFgB = 255, 255, 255 // always white foreground at 0% progress
 )
@@ -21,6 +19,8 @@ func themeOrDefault(name string) *theme {
 	t, _ := getTheme("green")
 	return t
 }
+
+// https://jakob-bagterp.github.io/colorist-for-python/ansi-escape-codes/rgb-colors/
 
 func getTheme(name string) (*theme, bool) {
 	switch name {

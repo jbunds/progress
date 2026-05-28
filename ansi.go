@@ -5,6 +5,7 @@ package progress
 //   https://en.wikipedia.org/wiki/ANSI_escape_code#24-bit
 //   https://en.wikipedia.org/wiki/ANSI_escape_code#Select_Graphic_Rendition_parameters
 //   https://ecma-international.org/publications-and-standards/standards/ecma-48/
+//   https://jakob-bagterp.github.io/colorist-for-python/ansi-escape-codes/rgb-colors/
 //
 //   │ atom or sequence  │ description
 //   ├───────────────────┼───────────────────────────────────────────────────────────────
