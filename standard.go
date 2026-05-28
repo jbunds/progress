@@ -3,7 +3,6 @@ package progress
 import (
 	"sync/atomic"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/golang-lru/v2"
 )
 
@@ -42,6 +41,13 @@ func (s *standardTracker) baseLayout() layout { return s.lo }
 
 func (s *standardTracker) Equal(other *standardTracker) bool { // work around cmp's draconian strictures
 	if s == nil || other == nil { return s == other }
-	return cmp.Equal(s.load(), other.load()) &&
-	       cmp.Equal(s.lo,     other.lo, cmp.AllowUnexported(layout{}))
+	return s.load()              == other.load()              &&
+	       s.lo.staticWidth      == other.lo.staticWidth      &&
+	       s.lo.colorBlockFactor == other.lo.colorBlockFactor &&
+	       s.lo.prefix           == other.lo.prefix           &&
+	       s.lo.suffix           == other.lo.suffix           &&
+	       s.lo.clearSeq         == other.lo.clearSeq         &&
+	       s.lo.doneSeq          == other.lo.doneSeq          &&
+	       s.lo.lineTerminator   == other.lo.lineTerminator   &&
+	       s.lo.finalStatus      == other.lo.finalStatus
 }

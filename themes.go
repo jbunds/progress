@@ -1,7 +1,5 @@
 package progress
 
-import "github.com/google/go-cmp/cmp"
-
 const (
 	startFgR, startFgG, startFgB = 255, 255, 255 // always white foreground at 0% progress
 )
@@ -63,16 +61,16 @@ func getTheme(name string) (*theme, bool) {
 
 func (t *theme) Equal(other *theme) bool { // work around cmp's draconian strictures
 	if t == nil || other == nil { return t == other }
-	return cmp.Equal(t.startBgR, other.startBgR) &&
-	       cmp.Equal(t.startBgG, other.startBgG) &&
-	       cmp.Equal(t.startBgB, other.startBgB) &&
-	       cmp.Equal(t.endBgR,   other.endBgR  ) &&
-	       cmp.Equal(t.endBgG,   other.endBgG  ) &&
-	       cmp.Equal(t.endBgB,   other.endBgB  ) &&
-	       cmp.Equal(t.deltaBgR, other.deltaBgR) &&
-	       cmp.Equal(t.deltaBgG, other.deltaBgG) &&
-	       cmp.Equal(t.deltaBgB, other.deltaBgB) &&
-	       cmp.Equal(t.deltaFgR, other.deltaFgR) &&
-	       cmp.Equal(t.deltaFgG, other.deltaFgG) &&
-	       cmp.Equal(t.deltaFgB, other.deltaFgB)
+	return t.startBgR == other.startBgR &&
+	       t.startBgG == other.startBgG &&
+	       t.startBgB == other.startBgB &&
+	       t.endBgR   == other.endBgR   &&
+	       t.endBgG   == other.endBgG   &&
+	       t.endBgB   == other.endBgB   &&
+	       t.deltaBgR == other.deltaBgR &&
+	       t.deltaBgG == other.deltaBgG &&
+	       t.deltaBgB == other.deltaBgB &&
+	       t.deltaFgR == other.deltaFgR &&
+	       t.deltaFgG == other.deltaFgG &&
+	       t.deltaFgB == other.deltaFgB
 }

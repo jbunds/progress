@@ -3,10 +3,11 @@ package progress
 import (
 	"io"
 	"os"
-	"testing"
 
 	"golang.org/x/term"
 )
+
+var isTestEnvironment = false
 
 // WithIsTerminalFunc allows callers to override internal terminal detection, e.g.:
 //
@@ -69,7 +70,7 @@ func getTermWidth(w io.Writer) int {
 
 // isTerminal determines if the specified writer is connected to a terminal.
 func isTerminal(v any) bool {
-	if testing.Testing()                     ||
+	if isTestEnvironment                     ||
 	   os.Getenv("GITHUB_ACTIONS") == "true" || // https://docs.github.com/actions/reference/workflows-and-actions/variables
 	   os.Getenv("CI"            ) == "true" { return false }
 	fd := getFD(v)

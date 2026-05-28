@@ -3,6 +3,8 @@
 version: "2"
 run:
   timeout: 1m
+  build-tags:
+    - examples
 
 linters:
   default: standard # https://github.com/golangci/golangci-lint/blob/60180aacaa642385a3f683875507013b43214edf/.golangci.reference.yml#L14
@@ -35,8 +37,30 @@ linters:
   settings:
     depguard:
       rules:
-        strict_whitelist:
+        production_whitelist:
           list-mode: strict
+          files:
+            - "$all"
+            - "!$test"                   # exclude *_test.go files
+            - "!**/examples/**/main.go"  # exclude ./examples/**/main.go
+          allow:
+            - context
+            - io
+            - os
+            - os/signal
+            - strconv
+            - sync
+            - sync/atomic
+            - syscall
+            - time
+            - unique
+            - unsafe
+            - github.com/hashicorp/golang-lru/v2
+            - golang.org/x/term
+        test_whitelist:
+          list-mode: strict
+          files:
+            - "$test"   # include *_test.go files
           allow:
             - bytes
             - context
@@ -45,7 +69,6 @@ linters:
             - io
             - math
             - os
-            - os/signal
             - reflect
             - runtime
             - strconv
@@ -56,10 +79,18 @@ linters:
             - testing
             - time
             - unicode/utf8
-            - unique
-            - unsafe
             - github.com/google/go-cmp/cmp
             - github.com/google/go-cmp/cmp/cmpopts
-            - github.com/hashicorp/golang-lru/v2
+        examples_whitelist:
+          list-mode: strict
+          files:
+            - "**/examples/**/main.go"
+          allow:
+            - context
+            - fmt
+            - math/rand/v2
+            - os
+            - os/signal
+            - syscall
+            - time
             - github.com/jbunds/progress
-            - golang.org/x/term

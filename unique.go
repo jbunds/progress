@@ -3,9 +3,6 @@ package progress
 import (
 	"sync/atomic"
 	"unique"
-
-	"github.com/google/go-cmp/cmp"
-//	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 // unique tracker for repetitive status strings.
@@ -31,6 +28,13 @@ func (u *uniqueTracker) baseLayout() layout { return u.lo }
 
 func (u *uniqueTracker) Equal(other *uniqueTracker) bool { // work around cmp's draconian strictures
 	if u == nil || other == nil { return u == other }
-	return cmp.Equal(u.load(), other.load()) &&
-	       cmp.Equal(u.lo,     other.lo,     cmp.AllowUnexported(layout{}))
+	return u.load()              == other.load()              &&
+	       u.lo.staticWidth      == other.lo.staticWidth      &&
+	       u.lo.colorBlockFactor == other.lo.colorBlockFactor &&
+	       u.lo.prefix           == other.lo.prefix           &&
+	       u.lo.suffix           == other.lo.suffix           &&
+	       u.lo.clearSeq         == other.lo.clearSeq         &&
+	       u.lo.doneSeq          == other.lo.doneSeq          &&
+	       u.lo.lineTerminator   == other.lo.lineTerminator   &&
+	       u.lo.finalStatus      == other.lo.finalStatus
 }
