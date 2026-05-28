@@ -16,13 +16,14 @@ func WithIsTerminalFunc(f func(any) bool) Option { return func(p *Progress) { p.
 // prepareTerminal sets the line terminator character and ANSI escape sequences to
 // be used when p.output (nominally os.Stderr) has not been piped or redirected.
 func (p *Progress) prepareTerminal() {
-	baseLayout := p.tracker.baseLayout()
+	layout := p.tracker.baseLayout()
 	if p.isTerminal(p.output) {
-		baseLayout.clearSeq       = ansiClearSeq       // move cursor to beginning of line; freeze screen rendering for this atomic update block
-		baseLayout.doneSeq        = ansiDoneSeq        // restore all attributes to defaults; restore cursor
-		baseLayout.lineTerminator = ansiLineTerminator // erase line; restore all attributes to defaults; flush atomic update block
+		layout.colorBlockFactor = colorBlockFactor   // provision adequate capacity for rendering a 24-bit color block for every terminal column
+		layout.clearSeq         = ansiClearSeq       // move cursor to beginning of line; freeze screen rendering for this atomic update block
+		layout.doneSeq          = ansiDoneSeq        // restore all attributes to defaults; restore cursor
+		layout.lineTerminator   = ansiLineTerminator // erase line; restore all attributes to defaults; flush atomic update block
 	}
-	p.layout = baseLayout
+	p.layout = layout
 }
 
 // handleResize records the new terminal width to be respected by subsequent render cycles.
