@@ -96,21 +96,22 @@ func TestStreamingStress(t *testing.T) {
 		go func(workerID int) {
 			defer wg.Done()
 
+			// #nosec G404 G115 - allow math/rand/v2 for non-crypto use
 			localRand := rand.New(rand.NewPCG(rand.Uint64(), uint64(workerID))) // fast local, non-crypto math/rand source to bypass the global CSPRNG lock
-			startIdx  := workerID * int(iterationsPerWorker)
-			endIdx    := startIdx + int(iterationsPerWorker)
-			taskID    := []byte("worker chunk 0000000000000000")    // 16 digits for uint64 space
+			startIdx  := workerID * int(iterationsPerWorker)            // #nosec G115 - workerID is 0-2, loopIterations is <= 1e7, so guaranteed to never overflow uint64
+			endIdx    := startIdx + int(iterationsPerWorker)            // #nosec G115 - workerIS is 0-2, loopIterations is <= 1e7, so guaranteed to never overflow uint64
+			taskID    := []byte("worker chunk 0000000000000000")        // 16 digits for uint64 space
 
 			for i := startIdx; i < endIdx; i++ {
-				taskCompleteMsg := nextUniqueString(t, taskID, i)     // causes heap allocs to explode in proportion to loop iterations
-				if totalTasks == 0 {                                  // fractional path allocation API mode (dynamic task discovery)
+				taskCompleteMsg := nextUniqueString(t, taskID, i)       // causes heap allocs to explode in proportion to loop iterations
+				if totalTasks == 0 {                                    // fractional path allocation API mode (dynamic task discovery)
 					taskSize := localRand.Uint64N(50) + 1
 					if localRand.Uint64N(20) == 0 {                     // interleave concurrent task discovery with 5% probability trigger to stress test atomic operations
-						taskSize = localRand.Uint64N(100) + 1             // simulate variable weight tasks
-						prog.AddTotal(taskSize)                           // simulate variable task size ranging from 1 to 100 units
+						taskSize = localRand.Uint64N(100) + 1           // simulate variable weight tasks
+						prog.AddTotal(taskSize)                         // simulate variable task size ranging from 1 to 100 units
 					}
 					prog.Report(float64(taskSize), taskCompleteMsg)
-				} else {                                              // weight-based accumulation API mode (fixed number of tasks)
+				} else {                                                // weight-based accumulation API mode (fixed number of tasks)
 					currentWeight := float64(localRand.Uint64N(50) + 1) // simulate variable weight tasks
 					prog.Report(currentWeight, taskCompleteMsg)
 				}
@@ -144,26 +145,26 @@ func nextUniqueString(t *testing.T, buf []byte, val int) string {
 		val >>= 4
 		pos--
 	}
-	return unsafe.String(&buf[0], len(buf)) // zero-alloc conversion
+	return unsafe.String(&buf[0], len(buf)) // #nosec G103 - safe zero-alloc conversion of locally-owned scratch buffer to string
 }
 
 // params parses the -totaltasks and -loopiterations command line flag parameters used to define the runtime bounds of the test.
 // flag values must be positive integers, optionally expressed in scientific notation.
 func params(fs *flag.FlagSet, args []string) (totalTasks, loopIterations uint64) {
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "%s usage:\n\n", filepath.Base(fs.Name()))
+		_, _ = fmt.Fprintf(fs.Output(), "%s usage:\n\n", filepath.Base(fs.Name()))
 		fs.PrintDefaults()
-		fmt.Fprintln(fs.Output())
+		_, _ = fmt.Fprintln(fs.Output())
 	}
 	totalTasksVal     := sciUint64(  0)
 	loopIterationsVal := sciUint64(100)
 	fs.Var(&totalTasksVal,     "totaltasks",     "total tasks (0 triggers fractional mode)")
 	fs.Var(&loopIterationsVal, "loopiterations", "total loop iterations to simulate work processing")
 	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(os.Stderr, "%v: falling back to defaults\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v: falling back to defaults\n", err)
 	}
 	if len(fs.Args()) > 0 {
-		fmt.Fprintf(fs.Output(), "ignored arguments: %s\n", strings.Join(fs.Args(), ", "))
+		_, _ = fmt.Fprintf(fs.Output(), "ignored arguments: %s\n", strings.Join(fs.Args(), ", "))
 	}
 	return uint64(totalTasksVal), uint64(loopIterationsVal)
 }

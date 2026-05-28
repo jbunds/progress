@@ -5,6 +5,7 @@ run:
   timeout: 1m
   build-tags:
     - examples
+    - integration
 
 linters:
   default: standard # https://github.com/golangci/golangci-lint/blob/60180aacaa642385a3f683875507013b43214edf/.golangci.reference.yml#L14
@@ -54,13 +55,14 @@ linters:
             - syscall
             - time
             - unique
-            - unsafe
+            - unsafe  # used in fraction.go
             - github.com/hashicorp/golang-lru/v2
             - golang.org/x/term
         test_whitelist:
           list-mode: strict
           files:
             - "$test"   # include *_test.go files
+            - "!**/integration_test.go"
           allow:
             - bytes
             - context
@@ -81,6 +83,25 @@ linters:
             - unicode/utf8
             - github.com/google/go-cmp/cmp
             - github.com/google/go-cmp/cmp/cmpopts
+        integration_test_whitelist:
+          list-mode: strict
+          files:
+            - "**/integration_test.go"
+          allow:
+            - flag
+            - fmt
+            - io
+            - math/rand/v2
+            - os
+            - path/filepath
+            - runtime
+            - slices
+            - strconv
+            - strings
+            - sync
+            - testing
+            - time
+            - unsafe
         examples_whitelist:
           list-mode: strict
           files:
