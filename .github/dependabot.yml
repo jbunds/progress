@@ -1,0 +1,12 @@
+# https://docs.github.com/code-security/reference/supply-chain-security/dependabot-options-reference
+
+version: 2
+updates:
+  - package-ecosystem: "gomod" # https://docs.github.com/code-security/reference/supply-chain-security/dependabot-options-reference#package-ecosystem-
+    directory: "/"             # location of the go.mod file
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "github-actions" # https://docs.github.com/code-security/how-tos/secure-your-supply-chain/secure-your-dependencies/keeping-your-actions-up-to-date-with-dependabot
+    directory: "/"                      # https://docs.github.com/code-security/reference/supply-chain-security/dependabot-options-reference#directories-or-directory--
+    schedule:
+      interval: "weekly"
