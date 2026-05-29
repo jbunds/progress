@@ -22,6 +22,14 @@ func themeOrDefault(name string) *theme {
 
 func getTheme(name string) (*theme, bool) {
 	switch name {
+	case "blue":
+		return &theme{
+			startBgR:  10,            startBgG:  20,            startBgB:  50,
+			  endBgR:  30,              endBgG: 125,              endBgB: 255,
+			  endFgR: 225,              endFgG: 240,              endFgB: 255,
+			deltaBgR:  30 -       10, deltaBgG: 125 -       20, deltaBgB: 255 -       50,
+			deltaFgR: 225 - startFgR, deltaFgG: 240 - startFgG, deltaFgB: 255 - startFgB,
+		}, true
 	case "green":
 		return &theme{
 			startBgR: 10,            startBgG:  25,            startBgB: 12,

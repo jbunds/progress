@@ -28,8 +28,12 @@ type Option func(*Progress) // exported to allow callers to create []*progress.O
 // WithTracker allows callers to override the default progress.Standard status tracker, e.g.:
 //
 //   progress.New(ctx, 100, os.Stderr, progress.WithTracker(progress.Fraction))
-func WithTracker(s strategy) Option {
-	return func(p *Progress) { p.tracker = getTracker(s, p.total.Load()) }
+func WithTracker(s any) Option {
+	return func(p *Progress) {
+		if strategy, ok := s.(strategy); ok {
+			p.tracker = getTracker(strategy, p.total.Load())
+		}
+	}
 }
 
 // WithTheme allows callers to override the default color (green) of the progress bar, e.g.:

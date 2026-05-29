@@ -43,6 +43,7 @@ linters:
           files:
             - "$all"
             - "!$test"                   # exclude *_test.go files
+            - "!**/examples/flags.go"    # exclude ./examples/flags.go
             - "!**/examples/**/main.go"  # exclude ./examples/**/main.go
           allow:
             - context
@@ -105,13 +106,17 @@ linters:
         examples_whitelist:
           list-mode: strict
           files:
+            - "**/examples/flags.go"
             - "**/examples/**/main.go"
           allow:
             - context
+            - flag
             - fmt
             - math/rand/v2
             - os
             - os/signal
+            - path/filepath
+            - strings
             - syscall
             - time
             - github.com/jbunds/progress
