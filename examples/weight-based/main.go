@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jbunds/progress"
+	"github.com/jbunds/progress/examples"
 )
 
 type task struct {
@@ -27,7 +29,7 @@ func main() {
 		syscall.SIGHUP)  // terminal closed signal
 	defer stop()
 
-	prog := progress.New(ctx, 0, os.Stderr)
+	prog := progress.New(ctx, 100, os.Stderr, examples.Flags(flag.CommandLine, os.Args[1:])...)
 	defer prog.Close()
 
 	workload := randomWork(100)        // 100 random tasks of varying weight

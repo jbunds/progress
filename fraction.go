@@ -16,7 +16,7 @@ type fractionTracker struct {
 }
 
 func (f *fractionTracker) init() {
-	f.lo  = defaultLayout()
+	f.lo  = defaultLayout() // TODO(jeff); override default f.lo.finalStatus with fmt.Sprintf("%d/%d", f.total, f.total)
 	f.total.Store(f.initialTotal)
 	f.buf = make([]byte, 0, f.lo.bufCap(minWidth))
 }

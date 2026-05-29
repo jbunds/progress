@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jbunds/progress"
+	"github.com/jbunds/progress/examples"
 )
 
 func main() {
@@ -22,7 +24,7 @@ func main() {
 		syscall.SIGHUP)  // terminal closed signal
 	defer stop()
 
-	prog := progress.New(ctx, 0, os.Stderr)
+	prog := progress.New(ctx, 0, os.Stderr, examples.Flags(flag.CommandLine, os.Args[1:])...)
 	defer prog.Close()
 
 	simulateDiscovery(ctx, prog, "root", prog.InitialBudget(), 0)
