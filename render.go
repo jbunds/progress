@@ -130,7 +130,7 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 	if truncated { buf = ws.writeRune(buf, '…') }
 	buf = ws.writeString(buf, status)
 
-	for p.isTerminal(p.output) && ws.visCols < ws.cols { // fill remaining bar space with clean gradient padding
+	for ws.isTerminal && ws.visCols < ws.cols { // fill remaining bar space with clean gradient padding
 		var factor int
 		if ws.denom > 0 { factor = (ws.visCols * 1000) / ws.denom }
 
@@ -149,7 +149,7 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 		ws.isColored = true
 	}
 
-	if p.isTerminal(p.output) && ws.isColored { buf = append(buf, ansiResetAttr...) } // reset all attributes to defaults
+	if ws.isTerminal && ws.isColored { buf = append(buf, ansiResetAttr...) } // reset all attributes to defaults
 
 	buf = append(buf, p.layout.lineTerminator...)
 
