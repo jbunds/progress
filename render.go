@@ -78,14 +78,11 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 	//
 	// global gradient: maps the color spectrum across the full terminal width.
 	//                  the color of any character depends strictly on its absolute screen column.
-	var denom int
-	if termWidth > 1 { denom = termWidth - 1 }
-
 	ws := writeState{
 		theme:      p.theme,
 		cols:       (termWidth * int(pctSigDigits)) / 10000,
 		visCols:    0,
-		denom:      denom,
+		denom:      termWidth - 1,
 		termWidth:  termWidth,
 		isTerminal: p.isTerminal(p.output),
 		isColored:  false,
@@ -96,14 +93,12 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 //	// dynamic bar gradient: stretches the full color spectrum to fit the active bar width.
 //	//                       the color gradient transitions completely from 0% to 100% inside the filled bar.
 //	barCols := (termWidth * int(pctSigDigits)) / 10000
-//	var denom int
-//	if barCols > 1 { denom = barCols - 1 }
 //
 //	ws := writeState{
 //		theme:      p.theme,
 //		cols:       barCols,
 //		visCols:    0,
-//		denom:      denom,
+//		denom:      barCols - 1,
 //		termWidth:  termWidth,
 //		isTerminal: p.isTerminal(p.output),
 //		isColored:  false,
@@ -131,8 +126,7 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 	buf = ws.writeString(buf, status)
 
 	for ws.isTerminal && ws.visCols < ws.cols { // fill remaining bar space with clean gradient padding
-		var factor int
-		if ws.denom > 0 { factor = (ws.visCols * 1000) / ws.denom }
+		factor := (ws.visCols * 1000) / ws.denom
 
 		bgR := p.theme.startBgR + (p.theme.deltaBgR * factor) / 1000
 		bgG := p.theme.startBgG + (p.theme.deltaBgG * factor) / 1000
@@ -165,16 +159,15 @@ func (ws *writeState) writeRune(buf []byte, r rune) []byte {
 	if r > 0x1100 && isWideRune(r) { rWidth = 2 }
 
 	if ws.isTerminal && ws.termWidth > 0 && ws.visCols < ws.cols {
-		var factor int
-		if ws.denom > 0 { factor = (ws.visCols * 1000) / ws.denom }
+		factor := (ws.visCols * 1000) / ws.denom
 
-		bgR  := ws.theme.startBgR + (ws.theme.deltaBgR * factor) / 1000
-		bgG  := ws.theme.startBgG + (ws.theme.deltaBgG * factor) / 1000
-		bgB  := ws.theme.startBgB + (ws.theme.deltaBgB * factor) / 1000
+		bgR := ws.theme.startBgR + (ws.theme.deltaBgR * factor) / 1000
+		bgG := ws.theme.startBgG + (ws.theme.deltaBgG * factor) / 1000
+		bgB := ws.theme.startBgB + (ws.theme.deltaBgB * factor) / 1000
 
-		fgR  :=          startFgR + (ws.theme.deltaFgR * factor) / 1000
-		fgG  :=          startFgG + (ws.theme.deltaFgG * factor) / 1000
-		fgB  :=          startFgB + (ws.theme.deltaFgB * factor) / 1000
+		fgR :=          startFgR + (ws.theme.deltaFgR * factor) / 1000
+		fgG :=          startFgG + (ws.theme.deltaFgG * factor) / 1000
+		fgB :=          startFgB + (ws.theme.deltaFgB * factor) / 1000
 
 		buf = append(buf, ansiSetFgColor...)
 		buf = appendIntIdxInline(buf, fgR)
