@@ -7,7 +7,7 @@ const (
 	minWidth         = 80             // fallback for pipes, redirects, and non-tty outputs
 	pctFieldLen      =  3             // the fixed length of the percentage displayed (e.g., "0.0", " 37", "100")
 	colorBlockFactor = 23             // 23 bytes per column for 24-bit color gradient blocks
-	utf8TruncFactor  =  4             //  4 bytes per column for worst-case UTF-8 status text truncation thresholds
+	maxBytesPerCol   =  4             //  4 bytes per column for worst-case UTF-8 status text truncation thresholds
 )
 
 // layout encapsulates the terminal-specific rendering layout configuration.
@@ -37,7 +37,7 @@ func defaultLayout() layout {
 }
 
 func (l layout) bufCap(termWidth int) int {
-	return (utf8TruncFactor    * termWidth) +
+	return (maxBytesPerCol     * termWidth) +
 	       (l.colorBlockFactor * termWidth) +
 	       len(l.prefix                   ) +
 	       len(l.suffix                   ) +

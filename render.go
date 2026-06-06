@@ -13,9 +13,8 @@ var (
 // across sequential draws in a stack-allocated block to prevent heap escaping.
 type writeState struct {
 	theme      *theme
-	cols       int
-	visCols    int
-	denom      int
+	curBarEnd  int // column index indicating the end of current progress bar
+	curColPos  int // tracks current column position during string serialization; used to compute gradient color fractions
 	termWidth  int
 	isTerminal bool
 	isColored  bool
@@ -80,9 +79,8 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 	//                  the color of any character depends strictly on its absolute screen column.
 	ws := writeState{
 		theme:      p.theme,
-		cols:       (termWidth * int(pctSigDigits)) / 10000,
-		visCols:    0,
-		denom:      termWidth - 1,
+		curBarEnd:  (termWidth * int(pctSigDigits)) / 10000,
+		curColPos:  0,
 		termWidth:  termWidth,
 		isTerminal: p.isTerminal(p.output),
 		isColored:  false,
@@ -96,9 +94,8 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 //
 //	ws := writeState{
 //		theme:      p.theme,
-//		cols:       barCols,
-//		visCols:    0,
-//		denom:      barCols - 1,
+//		curBarEnd:  barCols,
+//		curColPos:  0,
 //		termWidth:  termWidth,
 //		isTerminal: p.isTerminal(p.output),
 //		isColored:  false,
@@ -125,22 +122,22 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 	if truncated { buf = ws.writeRune(buf, '…') }
 	buf = ws.writeString(buf, status)
 
-	for ws.isTerminal && ws.visCols < ws.cols { // fill remaining bar space with clean gradient padding
-		color := ws.theme.bgColor(float64(ws.visCols) / float64(ws.denom))
+	for ws.isTerminal && ws.curColPos < ws.curBarEnd { // fill remaining bar space with clean gradient padding
+		color := ws.theme.bgColor(float64(ws.curColPos) / float64(ws.termWidth - 1))
 
-		buf = append(buf, ansiPrepColorSeq...)
+		buf = append(buf, ansiStartBgRGB...)
 		buf = appendIntIdxInline(buf, color.r)
 		buf = append(buf, ';')
 		buf = appendIntIdxInline(buf, color.g)
 		buf = append(buf, ';')
 		buf = appendIntIdxInline(buf, color.b)
 		buf = append(buf, 'm', ' ')
-		ws.visCols++
+		ws.curColPos++
 		ws.isColored = true
 	}
 
 	if ws.isTerminal && ws.isColored {
-		buf = append(buf, ansiResetAttr...) // reset all attributes to defaults
+		buf = append(buf, ansiResetAttrs...) // reset all attributes to defaults
 		ws.isColored = false
 	}
 
@@ -155,19 +152,19 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 
 func (ws *writeState) writeRune(buf []byte, r rune) []byte {
 	rWidth := 1
-	if r > 0x1100 && isWideRune(r) { rWidth = 2 }
+	if r >= 0x1100 && isWideRune(r) { rWidth = 2 }
 
-	if ws.isTerminal && ws.termWidth > 0 && ws.visCols < ws.cols {
-		bg := ws.theme.bgColor(float64(ws.visCols) / float64(ws.denom))
+	if ws.isTerminal && ws.termWidth > 0 && ws.curColPos < ws.curBarEnd {
+		bg := ws.theme.bgColor(float64(ws.curColPos) / float64(ws.termWidth - 1))
 		fg := bg.fgColor()
 
-		buf = append(buf, ansiSetFgColor...)
+		buf = append(buf, ansiStartFgRGB...) // write foreground color sequence (\033[38;2;R;G;Bm)
 		buf = appendIntIdxInline(buf, fg.r)
 		buf = append(buf, ';')
 		buf = appendIntIdxInline(buf, fg.g)
 		buf = append(buf, ';')
 		buf = appendIntIdxInline(buf, fg.b)
-		buf = append(buf, ansiPrepSetBgColor...)
+		buf = append(buf, ansiChainBgRGB...) // write background color sequence (48;2;R;G;Bm)
 		buf = appendIntIdxInline(buf, bg.r)
 		buf = append(buf, ';')
 		buf = appendIntIdxInline(buf, bg.g)
@@ -176,8 +173,8 @@ func (ws *writeState) writeRune(buf []byte, r rune) []byte {
 		buf = append(buf, 'm')
 
 		ws.isColored = true
-	} else if ws.visCols >= ws.cols && ws.isColored {
-		buf = append(buf, ansiResetAttr...)
+	} else if ws.curColPos >= ws.curBarEnd && ws.isColored {
+		buf = append(buf, ansiResetAttrs...)
 		ws.isColored = false
 	}
 
@@ -187,7 +184,7 @@ func (ws *writeState) writeRune(buf []byte, r rune) []byte {
 		buf = appendRune(buf, r)
 	}
 
-	ws.visCols += rWidth
+	ws.curColPos += rWidth
 
 	return buf
 }

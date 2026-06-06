@@ -23,9 +23,9 @@ func TestPrepareTerminal(t *testing.T) {
 		{
 			name:               "is a terminal",
 			isTerminal:         true,
-			wantClearSeq:       "\r\033[?2026h",
-			wantDoneSeq:        "\033[0m\r\033[?25h",
-			wantLineTerminator: "\033[K\033[0m\033[?2026l",
+			wantClearSeq:       "\r\033[K\033[?2026h\033[?7l",
+			wantDoneSeq:        "\033[0m\r\033[?25h\033[?7h",
+			wantLineTerminator: "\033[0m\033[?2026l",
 		},
 		{
 			name:               "is not a terminal",

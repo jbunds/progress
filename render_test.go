@@ -27,13 +27,13 @@ func TestDraw(t *testing.T) {
 			name:       "status message truncated from the left and prepended with an ellipsis",
 			state:      pack(t, 40, 0.71), // 40 - len("processing (100%): ") == 21
 			statusText: "this is a very long status message that must be truncated",
-			want:       "processing ( 71%): …at must be truncated\n",
+			want:       "processing ( 71%): …hat must be truncated\n",
 		},
 		{
 			name:       "status message truncated from the left with no ellipsis prepended (terminal too narrow)",
 			state:      pack(t, 22, 0.93), // 22 - len("processing (100%): ") == 3
 			statusText: "short message",
-			want:       "processing ( 93%): …ge\n",
+			want:       "processing ( 93%): …age\n",
 		},
 	}
 	for _, tt := range tests {
@@ -213,9 +213,8 @@ func TestWriteString(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name          string
-		cols          int
-		denom         int
-		visCols       int
+		curBarEnd     int
+		curColPos     int
 		isColored     bool
 		str           string
 		want          string
@@ -223,18 +222,16 @@ func TestWriteString(t *testing.T) {
 	}{
 		{
 			name:          "wide load",
-			cols:          30,
-			denom:         30 - 1,
-			visCols:       20,
+			curBarEnd:     30,
+			curColPos:     20,
 			str:           "🙃",
 			want:          "\033[38;2;1;1;1;48;2;255;94;47m🙃",
 			wantIsColored: true,
 		},
 		{
 			name:      "reset",
-			cols:      30,
-			denom:     30 - 1,
-			visCols:   30,
+			curBarEnd: 30,
+			curColPos: 30,
 			isColored: true,
 			str:       "foo",
 			want:      "\033[0mfoo",
@@ -246,10 +243,9 @@ func TestWriteString(t *testing.T) {
 			buf := make([]byte, 0)
 			ws  := &writeState{
 				theme:      newThemeRegistry().get("sunset"),
-				cols:       tt.cols,
-				visCols:    tt.visCols,
-				denom:      tt.denom,
-				termWidth:  tt.cols,
+				curBarEnd:  tt.curBarEnd,
+				curColPos:  tt.curColPos,
+				termWidth:  tt.curBarEnd,
 				isTerminal: true,
 				isColored:  tt.isColored,
 			}
@@ -302,17 +298,17 @@ func TestWriteStatus(t *testing.T) {
 			              "\033[38;2;255;255;255;48;2;186;2;57mn"  + "\033[38;2;255;255;255;48;2;191;1;57mg"  +
 			              "\033[38;2;255;255;255;48;2;197;0;57m."  + "\033[38;2;255;255;255;48;2;200;2;57m."  +
 			              "\033[38;2;255;255;255;48;2;203;6;57m."  +
-			              "\033[30;48;2;205;9;56m "   + "\033[30;48;2;207;12;56m "  + "\033[30;48;2;209;15;56m "  +
-			              "\033[30;48;2;211;19;56m "  + "\033[30;48;2;213;22;55m "  + "\033[30;48;2;215;25;55m "  +
-			              "\033[30;48;2;217;29;55m "  + "\033[30;48;2;220;32;55m "  + "\033[30;48;2;222;35;55m "  +
-			              "\033[30;48;2;224;39;54m "  + "\033[30;48;2;226;42;54m "  + "\033[30;48;2;228;45;54m "  +
-			              "\033[30;48;2;230;48;54m "  + "\033[30;48;2;232;52;53m "  + "\033[30;48;2;234;55;53m "  +
-			              "\033[30;48;2;237;58;53m "  + "\033[30;48;2;239;62;53m "  + "\033[30;48;2;241;65;53m "  +
-			              "\033[30;48;2;243;68;52m "  + "\033[30;48;2;245;72;52m "  + "\033[30;48;2;247;75;52m "  +
-			              "\033[30;48;2;249;78;52m "  + "\033[30;48;2;251;81;51m "  + "\033[30;48;2;254;85;51m "  +
-			              "\033[30;48;2;255;88;50m "  + "\033[30;48;2;255;92;48m "  + "\033[30;48;2;255;97;46m "  +
-			              "\033[30;48;2;255;101;45m " + "\033[30;48;2;255;105;43m " + "\033[30;48;2;255;109;41m " +
-			              "\033[30;48;2;255;113;39m " + "\033[30;48;2;255;117;37m " + ansiResetAttr +
+			              "\033[48;2;205;9;56m "   + "\033[48;2;207;12;56m "  + "\033[48;2;209;15;56m "  +
+			              "\033[48;2;211;19;56m "  + "\033[48;2;213;22;55m "  + "\033[48;2;215;25;55m "  +
+			              "\033[48;2;217;29;55m "  + "\033[48;2;220;32;55m "  + "\033[48;2;222;35;55m "  +
+			              "\033[48;2;224;39;54m "  + "\033[48;2;226;42;54m "  + "\033[48;2;228;45;54m "  +
+			              "\033[48;2;230;48;54m "  + "\033[48;2;232;52;53m "  + "\033[48;2;234;55;53m "  +
+			              "\033[48;2;237;58;53m "  + "\033[48;2;239;62;53m "  + "\033[48;2;241;65;53m "  +
+			              "\033[48;2;243;68;52m "  + "\033[48;2;245;72;52m "  + "\033[48;2;247;75;52m "  +
+			              "\033[48;2;249;78;52m "  + "\033[48;2;251;81;51m "  + "\033[48;2;254;85;51m "  +
+			              "\033[48;2;255;88;50m "  + "\033[48;2;255;92;48m "  + "\033[48;2;255;97;46m "  +
+			              "\033[48;2;255;101;45m " + "\033[48;2;255;105;43m " + "\033[48;2;255;109;41m " +
+			              "\033[48;2;255;113;39m " + "\033[48;2;255;117;37m " + ansiResetAttrs +
 			              ansiLineTerminator,
 		},
 	}

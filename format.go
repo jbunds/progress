@@ -1,5 +1,11 @@
 package progress
 
+import (
+	"unicode/utf8"
+
+	"github.com/mattn/go-runewidth"
+)
+
 // appendIntIdxInline writes a stringified integer directly into a byte slice without heap allocation.
 // optimized for RGB channel and terminal column ranges (0-255, 0-999).
 func appendIntIdxInline(b []byte, v int) []byte {
@@ -49,6 +55,9 @@ func appendUintIdxFallback(b []byte, v uint32) []byte {
 // appendRune is a fast, zero-allocation inline implementation of utf8.EncodeRune.
 func appendRune(p []byte, r rune) []byte {
 	u := uint32(r & 0x7FFFFFFF)
+	// guard against invalid unicode surrogates and out-of-bounds code points (max U+10FFFF)
+	// by mapping to the standard surrogate replacement character
+	if (u >= 0xD800 && u <= 0xDFFF) || u > 0x10FFFF { return append(p, 0xEF, 0xBF, 0xBD) }
 	switch {          // https://en.wikipedia.org/wiki/UTF-8#Description
 	case u <=   0x7F: // 1-byte ASCII                 (U+0000 - U+007F)
 		return append(p, byte(u & 0x7F))
@@ -70,55 +79,51 @@ func appendRune(p []byte, r rune) []byte {
 	}
 }
 
-// isWideRune provides a fast O(1) fallback check for east asian wide characters and emojis.
-// Optimized to reduce branch depth for common western / emoji character streams.
+// isWideRune returns true if the rune consumes precisely two columns.
 func isWideRune(r rune) bool {
-	u := uint32(r & 0x7FFFFFFF)
-	// https://en.wikipedia.org/wiki/Plane_(Unicode)#Basic_Multilingual_Plane
-	if u <  0x1100 { return false }               // exit early for common Western, Cyrillic, and Arabic blocks
-	if u <= 0xFFFF {                              // BMP
-		switch {                                  // binary partition: separate BMP from supplementary planes
-		case u <= 0x115F: return true             // Hangul Jamo (U+1100 - U+115F)
-		case u <  0x2E80: return false            // skip non-wide symbols like phonetic extensions
-		case u <= 0xA4CF: return u != 0x303F      // CJK radicals, symbols, extensions, ideographs (exclude half fill space)
-		case u <  0xAC00: return false            // skip modified tone marks and other small blocks
-		case u <= 0xD7A3: return true             // Hangul syllables (U+AC00 - U+D7A3)
-		case u >= 0xF900:
-			// group late BMP blocks: CJK compatibility, vertical forms, and full-width variants
-			return u <= 0xFAFF                 || // CJK compatibility ideographs
-			      (u >= 0xFE10 && u <= 0xFE19) || // vertical forms
-			      (u >= 0xFE30 && u <= 0xFE6F) || // CJK compatibility forms
-			      (u <= 0xFF60)                   // full-width variants
-		default: return false
+	if r < 0x1100 { return false } // Hangul boundary
+	return runewidth.RuneWidth(r) == 2
+}
+
+// widthInColumns calculates the visual column width of a string.
+// correctly tracks 0-wide control codes, 1-wide western text, and 2-wide characters.
+func widthInColumns(s string) int {
+	width := 0
+	for _, r := range s {
+		if isWideRune(r) {
+			width += 2
+		} else {
+			width += runewidth.RuneWidth(r) // safely resolve 0-wide control codes
 		}
 	}
-
-	return u >= 0x1F300 && u <= 0x1FAFF // SMPs (modern emojis, pictographs, and transport symbols up to U+1FAFF)
+	return width
 }
 
 // truncateFromLeft constrains the length of progress status messages
 // rendered to the terminal, properly handling utf-8 strings.
-func truncateFromLeft(s string, maxLen int) (string, bool) {
-	if maxLen <= 0      { return "", s != "" }
-	if len(s) <= maxLen { return  s, false   } // byte length within rune bounds
+func truncateFromLeft(s string, maxCols int) (string, bool) {
+	if maxCols           <=       0 { return "", s != "" }
+	if widthInColumns(s) <= maxCols { return s, false }
 
-	targetLen := maxLen // number of runes to retain
-	if maxLen > 1 { targetLen = maxLen - 1 }
+	width         := 0
+	cutoffByteIdx := 0
 
-	idxBuf := make([]int, 0, targetLen + 1) // stack-allocated window tracks retained runes plus one preceding boundary index
+	i := len(s)
+	for i > 0 {
+		_, size        := utf8.DecodeLastRuneInString(s[:i])
+		currentByteIdx := i - size
+		r              := []rune(s[currentByteIdx:])[0] // safely decode the single rune at this byte position
+		
+		rWidth := runewidth.RuneWidth(r) // handle 0-wide control codes
+		if isWideRune(r) { rWidth = 2 }
 
-	runeCount := 0
-	for idx := range s {
-		idxBuf = append(idxBuf, idx)
-		if len(idxBuf) > targetLen + 1 {
-			idxBuf = idxBuf[1:] // pop oldest item out of slice window frame
+		if width + rWidth > maxCols { // if adding this character exceeds maxCols, stop here
+			cutoffByteIdx = i         // retain everything from index i onward
+			break
 		}
-		runeCount++
+		width += rWidth
+		i     -= size
 	}
 
-	if runeCount <= maxLen { return s, false }
-
-	cutoffIdx := idxBuf[1] // second item in buffer demarcates retention boundary
-
-	return s[cutoffIdx:], maxLen > 1
+	return s[cutoffByteIdx:], true
 }

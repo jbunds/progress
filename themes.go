@@ -41,49 +41,10 @@ func newThemeRegistry() *themeRegistry {
 		},
 	}
 
-	rainbow := theme{
-		name:        "rainbow",
+	fire := theme{
+		name:        "fire",
 		transitions: []endpoints{
-			{initial: rgb{r:   0, g:   0, b: 255}, final: rgb{r:   0, g: 255, b: 0}}, // blue   -> green
-			{initial: rgb{r:   0, g: 255, b:   0}, final: rgb{r: 255, g: 255, b: 0}}, // green  -> yellow
-			{initial: rgb{r: 255, g: 255, b:   0}, final: rgb{r: 255, g: 127, b: 0}}, // yellow -> orange
-			{initial: rgb{r: 255, g: 127, b:   0}, final: rgb{r: 255, g:   0, b: 0}}, // orange -> red
-		},
-	}
-
-	rainbow2 := theme{
-		name:        "rainbow2",
-		transitions: []endpoints{
-			{initial: rgb{r:   0, g:   0, b: 255}, final: rgb{r:   0, g: 255, b: 0}}, // blue   -> green
-			{initial: rgb{r:   0, g: 255, b:   0}, final: rgb{r: 255, g: 255, b: 0}}, // green  -> yellow
-			{initial: rgb{r: 255, g: 255, b:   0}, final: rgb{r: 255, g:   0, b: 0}}, // yellow -> red
-		},
-	}
-
-	synthwave := theme{
-		name:        "synthwave",
-		transitions: []endpoints{
-			{initial: rgb{r:  55, g: 0, b: 255}, final: rgb{r: 255, g:   0, b: 128}}, // indigo  -> magenta
-			{initial: rgb{r: 255, g: 0, b: 128}, final: rgb{r: 255, g:   0, b: 255}}, // magenta -> pink
-			{initial: rgb{r: 255, g: 0, b: 255}, final: rgb{r:   0, g: 255, b: 255}}, // pink    -> cyan
-		},
-	}
-
-	ocean := theme{
-		name:        "ocean",
-		transitions: []endpoints{
-			{initial: rgb{r:   0, g:  10, b:  45}, final: rgb{r:   0, g: 128, b: 128}}, // navy blue -> teal
-			{initial: rgb{r:   0, g: 128, b: 128}, final: rgb{r:   0, g: 200, b: 150}}, // teal      -> turquoise
-			{initial: rgb{r:   0, g: 200, b: 150}, final: rgb{r: 100, g: 255, b: 150}}, // turquoise -> seafoam green
-		},
-	}
-
-	toxic := theme{
-		name:        "toxic",
-		transitions: []endpoints{
-			{initial: rgb{r:  75, g:   0, b: 130}, final: rgb{r: 148, g:   0, b: 211}}, // violet     -> purple
-			{initial: rgb{r: 148, g:   0, b: 211}, final: rgb{r:  50, g: 205, b:  50}}, // purple     -> lime green
-			{initial: rgb{r:  50, g: 205, b:  50}, final: rgb{r: 173, g: 255, b:  47}}, // lime green -> green-yellow
+			{initial: rgb{r: 255, g: 0, b: 0}, final: rgb{r: 255, g: 255, b: 0}}, // red -> orange -> yellow
 		},
 	}
 
@@ -106,10 +67,49 @@ func newThemeRegistry() *themeRegistry {
 		},
 	}
 
-	fire := theme{
-		name:        "fire",
+	ocean := theme{
+		name:        "ocean",
 		transitions: []endpoints{
-			{initial: rgb{r: 255, g: 0, b: 0}, final: rgb{r: 255, g: 255, b: 0}}, // red -> orange -> yellow
+			{initial: rgb{r:   0, g:  10, b:  45}, final: rgb{r:   0, g: 128, b: 128}}, // navy blue -> teal
+			{initial: rgb{r:   0, g: 128, b: 128}, final: rgb{r:   0, g: 200, b: 150}}, // teal      -> turquoise
+			{initial: rgb{r:   0, g: 200, b: 150}, final: rgb{r: 100, g: 255, b: 150}}, // turquoise -> seafoam green
+		},
+	}
+
+	rainbow := theme{
+		name:        "rainbow",
+		transitions: []endpoints{
+			{initial: rgb{r:   0, g:   0, b: 255}, final: rgb{r:   0, g: 255, b: 0}}, // blue   -> green
+			{initial: rgb{r:   0, g: 255, b:   0}, final: rgb{r: 255, g: 255, b: 0}}, // green  -> yellow
+			{initial: rgb{r: 255, g: 255, b:   0}, final: rgb{r: 255, g: 127, b: 0}}, // yellow -> orange
+			{initial: rgb{r: 255, g: 127, b:   0}, final: rgb{r: 255, g:   0, b: 0}}, // orange -> red
+		},
+	}
+
+	rainbow2 := theme{ // this variant renders a higher proportion of green gradients in the middle of its span
+		name:        "rainbow2",
+		transitions: []endpoints{
+			{initial: rgb{r:   0, g:   0, b: 255}, final: rgb{r:   0, g: 255, b: 0}}, // blue   -> green
+			{initial: rgb{r:   0, g: 255, b:   0}, final: rgb{r: 255, g: 255, b: 0}}, // green  -> yellow
+			{initial: rgb{r: 255, g: 255, b:   0}, final: rgb{r: 255, g:   0, b: 0}}, // yellow -> red
+		},
+	}
+
+	retro := theme{
+		name:        "retro",
+		transitions: []endpoints{
+			{initial: rgb{r:  55, g: 0, b: 255}, final: rgb{r: 255, g:   0, b: 128}}, // indigo  -> magenta
+			{initial: rgb{r: 255, g: 0, b: 128}, final: rgb{r: 255, g:   0, b: 255}}, // magenta -> pink
+			{initial: rgb{r: 255, g: 0, b: 255}, final: rgb{r:   0, g: 255, b: 255}}, // pink    -> cyan
+		},
+	}
+
+	toxic := theme{
+		name:        "toxic",
+		transitions: []endpoints{
+			{initial: rgb{r:  75, g:   0, b: 130}, final: rgb{r: 148, g:   0, b: 211}}, // violet     -> purple
+			{initial: rgb{r: 148, g:   0, b: 211}, final: rgb{r:  50, g: 205, b:  50}}, // purple     -> lime green
+			{initial: rgb{r:  50, g: 205, b:  50}, final: rgb{r: 173, g: 255, b:  47}}, // lime green -> green-yellow
 		},
 	}
 
@@ -156,18 +156,18 @@ func newThemeRegistry() *themeRegistry {
 		"blueToGreen":   &blueToGreen,
 		"greenToBlue":   &greenToBlue,
 		"greenToYellow": &greenToYellow,
+		"fire":          &fire,
+		"thermal":       &thermal,
+		"sunset":        &sunset,
+		"ocean":         &ocean,
 		"rainbow":       &rainbow,
 		"rainbow2":      &rainbow2,
-		"fire":          &fire,
-		"sunset":        &sunset,
-		"thermal":       &thermal,
+		"retro":         &retro,
 		"toxic":         &toxic,
 		"trans":         &trans,
 		"pride":         &pride,
 		"bi":            &bi,
 		"pan":           &pan,
-		"ocean":         &ocean,
-		"synthwave":     &synthwave,
 	}
 
 	return &themeRegistry{

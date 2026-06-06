@@ -57,9 +57,11 @@ linters:
             - sync/atomic
             - syscall
             - time
+            - unicode/utf8
             - unique
             - unsafe  # used in fraction.go
             - github.com/hashicorp/golang-lru/v2
+            - github.com/mattn/go-runewidth
             - golang.org/x/term
         test_whitelist:
           list-mode: strict

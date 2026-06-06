@@ -116,8 +116,9 @@ func TestTruncateFromLeft(t *testing.T) {
 		wantStr   string
 		wantTrunc bool
 	}{
-		{ "maxLen == 0", "foo",    0, "",       true  },
-		{ "wide runes",  "😐😕🙁", 3, "😐😕🙁", false },
+		{ "maxLen == 0",          "foo",    0, "",       true  },
+		{ "wide runes truncated", "😐😕🙁", 3, "🙁",     true  },
+		{ "wide runes retained",  "😐😕🙁", 6, "😐😕🙁", false },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
