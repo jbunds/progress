@@ -1,84 +1,179 @@
 package progress
 
-const (
-	startFgR, startFgG, startFgB = 255, 255, 255 // always white foreground at 0% progress
-)
+// themeRegistry holds the isolated configuration lookup engine.
+type themeRegistry struct { get func(name string) *theme }
 
-type theme struct {
-	startBgR, startBgG, startBgB int
-	  endBgR,   endBgG,   endBgB int
-	  endFgR,   endFgG,   endFgB int
-	deltaBgR, deltaBgG, deltaBgB int
-	deltaFgR, deltaFgG, deltaFgB int
-}
+// newThemeRegistry initializes the read-only templates within a single execution block and returns an isolated closure function.
+func newThemeRegistry() *themeRegistry {
 
-func themeOrDefault(name string) *theme {
-	if t, ok := getTheme(name); ok { return t }
-	t, _ := getTheme("green")
-	return t
-}
-
-// https://jakob-bagterp.github.io/colorist-for-python/ansi-escape-codes/rgb-colors/
-
-func getTheme(name string) (*theme, bool) {
-	switch name {
-	case "blue":
-		return &theme{
-			startBgR:  10,            startBgG:  20,            startBgB:  50,
-			  endBgR:  30,              endBgG: 125,              endBgB: 255,
-			  endFgR: 225,              endFgG: 240,              endFgB: 255,
-			deltaBgR:  30 -       10, deltaBgG: 125 -       20, deltaBgB: 255 -       50,
-			deltaFgR: 225 - startFgR, deltaFgG: 240 - startFgG, deltaFgB: 255 - startFgB,
-		}, true
-	case "green":
-		return &theme{
-			startBgR: 10,            startBgG:  25,            startBgB: 12,
-			  endBgR: 40,              endBgG: 210,              endBgB: 85,
-			  endFgR: 20,              endFgG:  30,              endFgB: 20,
-			deltaBgR: 40 -       10, deltaBgG: 210 -       25, deltaBgB: 85 -       12,
-			deltaFgR: 20 - startFgR, deltaFgG:  30 - startFgG, deltaFgB: 20 - startFgB,
-		}, true
-	case "red":
-		return &theme{
-			startBgR:  30,            startBgG:   5,            startBgB:   5,
-			  endBgR: 210,              endBgG:  15,              endBgB:  25,
-			  endFgR: 255,              endFgG: 220,              endFgB: 220,
-			deltaBgR: 210 -       30, deltaBgG:  15 -        5, deltaBgB:  25 -        5,
-			deltaFgR: 255 - startFgR, deltaFgG: 220 - startFgG, deltaFgB: 220 - startFgB,
-		}, true
-	case "orange":
-		return &theme{
-			startBgR:  26,            startBgG:  12,            startBgB: 12,
-			  endBgR: 255,              endBgG: 150,              endBgB: 50,
-			  endFgR:  42,              endFgG:  12,              endFgB: 12,
-			deltaBgR: 255 -       26, deltaBgG: 150 -       12, deltaBgB: 50 -       12,
-			deltaFgR:  42 - startFgR, deltaFgG:  12 - startFgG, deltaFgB: 12 - startFgB,
-		}, true
-	case "yellow":
-		return &theme{
-			startBgR:  55,            startBgG:  24,            startBgB:   2,
-			endBgR:   255,              endBgG: 215,              endBgB:  10,
-			endFgR:    35,              endFgG:  25,              endFgB:   5,
-			deltaBgR: 255 -       55, deltaBgG: 215 -       24, deltaBgB:  10 -        2,
-			deltaFgR:  35 - startFgR, deltaFgG:  25 - startFgG, deltaFgB:   5 - startFgB,
-		}, true
-	default:
-		return &theme{}, false
+	blackToWhite := theme{
+		name:        "blackToWhite",
+		transitions: []endpoints{
+			{initial: rgb{r: 0, g: 0, b: 0}, final: rgb{r: 255, g: 255, b: 255}}, // black -> white
+		},
 	}
-}
 
-func (t *theme) Equal(other *theme) bool { // work around cmp's draconian strictures
-	if t == nil || other == nil { return t == other }
-	return t.startBgR == other.startBgR &&
-	       t.startBgG == other.startBgG &&
-	       t.startBgB == other.startBgB &&
-	       t.endBgR   == other.endBgR   &&
-	       t.endBgG   == other.endBgG   &&
-	       t.endBgB   == other.endBgB   &&
-	       t.deltaBgR == other.deltaBgR &&
-	       t.deltaBgG == other.deltaBgG &&
-	       t.deltaBgB == other.deltaBgB &&
-	       t.deltaFgR == other.deltaFgR &&
-	       t.deltaFgG == other.deltaFgG &&
-	       t.deltaFgB == other.deltaFgB
+	blueToRed := theme{
+		name:        "blueToRed",
+		transitions: []endpoints{
+			{initial: rgb{r: 0, g: 0, b: 255}, final: rgb{r: 255, g: 0, b: 0}}, // blue -> purple -> red
+		},
+	}
+
+	blueToGreen := theme{
+		name:        "blueToGreen",
+		transitions: []endpoints{
+			{initial: rgb{r: 0, g: 0, b: 255}, final: rgb{r: 0, g: 255, b: 0}}, // blue -> green
+		},
+	}
+
+	greenToBlue := theme{
+		name:        "greenToBlue",
+		transitions: []endpoints{
+			{initial: rgb{r: 0, g: 255, b: 0}, final: rgb{r: 0, g: 0, b: 255}}, // green -> blue
+		},
+	}
+
+	greenToYellow := theme{
+		name:        "greenToYellow",
+		transitions: []endpoints{
+			{initial: rgb{r: 0, g: 255, b: 0}, final: rgb{r: 255, g: 255, b: 0}}, // green -> yellow
+		},
+	}
+
+	rainbow := theme{
+		name:        "rainbow",
+		transitions: []endpoints{
+			{initial: rgb{r:   0, g:   0, b: 255}, final: rgb{r:   0, g: 255, b: 0}}, // blue   -> green
+			{initial: rgb{r:   0, g: 255, b:   0}, final: rgb{r: 255, g: 255, b: 0}}, // green  -> yellow
+			{initial: rgb{r: 255, g: 255, b:   0}, final: rgb{r: 255, g: 127, b: 0}}, // yellow -> orange
+			{initial: rgb{r: 255, g: 127, b:   0}, final: rgb{r: 255, g:   0, b: 0}}, // orange -> red
+		},
+	}
+
+	rainbow2 := theme{
+		name:        "rainbow2",
+		transitions: []endpoints{
+			{initial: rgb{r:   0, g:   0, b: 255}, final: rgb{r:   0, g: 255, b: 0}}, // blue   -> green
+			{initial: rgb{r:   0, g: 255, b:   0}, final: rgb{r: 255, g: 255, b: 0}}, // green  -> yellow
+			{initial: rgb{r: 255, g: 255, b:   0}, final: rgb{r: 255, g:   0, b: 0}}, // yellow -> red
+		},
+	}
+
+	synthwave := theme{
+		name:        "synthwave",
+		transitions: []endpoints{
+			{initial: rgb{r:  55, g: 0, b: 255}, final: rgb{r: 255, g:   0, b: 128}}, // indigo  -> magenta
+			{initial: rgb{r: 255, g: 0, b: 128}, final: rgb{r: 255, g:   0, b: 255}}, // magenta -> pink
+			{initial: rgb{r: 255, g: 0, b: 255}, final: rgb{r:   0, g: 255, b: 255}}, // pink    -> cyan
+		},
+	}
+
+	ocean := theme{
+		name:        "ocean",
+		transitions: []endpoints{
+			{initial: rgb{r:   0, g:  10, b:  45}, final: rgb{r:   0, g: 128, b: 128}}, // navy blue -> teal
+			{initial: rgb{r:   0, g: 128, b: 128}, final: rgb{r:   0, g: 200, b: 150}}, // teal      -> turquoise
+			{initial: rgb{r:   0, g: 200, b: 150}, final: rgb{r: 100, g: 255, b: 150}}, // turquoise -> seafoam green
+		},
+	}
+
+	toxic := theme{
+		name:        "toxic",
+		transitions: []endpoints{
+			{initial: rgb{r:  75, g:   0, b: 130}, final: rgb{r: 148, g:   0, b: 211}}, // violet     -> purple
+			{initial: rgb{r: 148, g:   0, b: 211}, final: rgb{r:  50, g: 205, b:  50}}, // purple     -> lime green
+			{initial: rgb{r:  50, g: 205, b:  50}, final: rgb{r: 173, g: 255, b:  47}}, // lime green -> green-yellow
+		},
+	}
+
+	thermal := theme{
+		name:        "thermal",
+		transitions: []endpoints{
+			{initial: rgb{r:   0, g:   0, b:  50}, final: rgb{r: 150, g:   0, b: 150}}, // dark blue   -> purple
+			{initial: rgb{r: 150, g:   0, b: 150}, final: rgb{r: 255, g:  70, b:   0}}, // purple      -> orange
+			{initial: rgb{r: 255, g:  70, b:   0}, final: rgb{r: 255, g: 220, b:   0}}, // orange      -> pale yellow
+			{initial: rgb{r: 255, g: 220, b:   0}, final: rgb{r: 255, g: 255, b: 255}}, // pale yellow -> white
+		},
+	}
+
+	sunset := theme{
+		name:        "sunset",
+		transitions: []endpoints{
+			{initial: rgb{r:  48, g:  25, b:  52}, final: rgb{r: 199, g:   0, b:  57}}, // dark plum  -> crimson
+			{initial: rgb{r: 199, g:   0, b:  57}, final: rgb{r: 255, g:  87, b:  51}}, // crimson    -> dark coral
+			{initial: rgb{r: 255, g:  87, b:  51}, final: rgb{r: 255, g: 195, b:   0}}, // dark coral -> peach gold
+		},
+	}
+
+	fire := theme{
+		name:        "fire",
+		transitions: []endpoints{
+			{initial: rgb{r: 255, g: 0, b: 0}, final: rgb{r: 255, g: 255, b: 0}}, // red -> orange -> yellow
+		},
+	}
+
+	trans := theme{
+		name:        "trans",
+		transitions: []endpoints{
+			{initial: rgb{r:  91, g: 206, b: 250}, final: rgb{r: 245, g: 169, b: 184}}, // light blue -> pink
+			{initial: rgb{r: 245, g: 169, b: 184}, final: rgb{r: 255, g: 255, b: 255}}, // pink       -> white
+			{initial: rgb{r: 255, g: 255, b: 255}, final: rgb{r: 245, g: 169, b: 184}}, // white      -> pink
+			{initial: rgb{r: 245, g: 169, b: 184}, final: rgb{r:  91, g: 206, b: 250}}, // pink       -> light blue
+		},
+	}
+
+	pride := theme{
+		name:        "pride",
+		transitions: []endpoints{
+			{initial: rgb{r: 228, g:   3, b:   3}, final: rgb{r: 255, g: 140, b:   0}}, // red    -> orange
+			{initial: rgb{r: 255, g: 140, b:   0}, final: rgb{r: 255, g: 237, b:   0}}, // orange -> yellow
+			{initial: rgb{r: 255, g: 237, b:   0}, final: rgb{r:   0, g: 128, b:  38}}, // yellow -> green
+			{initial: rgb{r:   0, g: 128, b:  38}, final: rgb{r:   0, g:  76, b: 255}}, // green  -> blue
+			{initial: rgb{r:   0, g:  76, b: 255}, final: rgb{r: 117, g:   7, b: 135}}, // blue   -> violet
+		},
+	}
+
+	bi := theme{
+		name:        "bi",
+		transitions: []endpoints{
+			{initial: rgb{r: 214, g:   2, b: 112}, final: rgb{r: 155, g:  79, b: 150}}, // magenta -> purple
+			{initial: rgb{r: 155, g:  79, b: 150}, final: rgb{r:   0, g:  56, b: 168}}, // purple  -> royal blue
+		},
+	}
+
+	pan := theme{
+		name:        "pan",
+		transitions: []endpoints{
+			{initial: rgb{r: 255, g:  27, b: 141}, final: rgb{r: 255, g: 216, b:   0}}, // hot pink -> canary yellow
+			{initial: rgb{r: 255, g: 216, b:   0}, final: rgb{r:   1, g: 179, b: 247}}, // yellow   -> sky cyan
+		},
+	}
+
+	registryMap := map[string]*theme{
+		"blackToWhite":  &blackToWhite,
+		"blueToRed":     &blueToRed,
+		"blueToGreen":   &blueToGreen,
+		"greenToBlue":   &greenToBlue,
+		"greenToYellow": &greenToYellow,
+		"rainbow":       &rainbow,
+		"rainbow2":      &rainbow2,
+		"fire":          &fire,
+		"sunset":        &sunset,
+		"thermal":       &thermal,
+		"toxic":         &toxic,
+		"trans":         &trans,
+		"pride":         &pride,
+		"bi":            &bi,
+		"pan":           &pan,
+		"ocean":         &ocean,
+		"synthwave":     &synthwave,
+	}
+
+	return &themeRegistry{
+		get: func(name string) *theme {
+			if theme, exists := registryMap[name]; exists { return theme }
+			return &sunset
+		},
+	}
 }

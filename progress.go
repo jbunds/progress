@@ -36,13 +36,13 @@ func WithTracker(s any) Option {
 	}
 }
 
-// WithTheme allows callers to override the default color (green) of the progress bar, e.g.:
+// WithTheme allows callers to override the default color (sunset) of the progress bar, e.g.:
 //
-//   progress.New(ctx, 100, os.Stderr, progress.WithTheme("yellow"))
+//   progress.New(ctx, 100, os.Stderr, progress.WithTheme("ocean"))
 //
-// Silently falls back to the default ("green") if an invalid theme name is specified.
+// Silently falls back to the default ("sunset") if an invalid theme name is specified.
 func WithTheme(c string) Option {
-	return func(p *Progress) { p.theme = themeOrDefault(c) }
+	return func(p *Progress) { p.theme = newThemeRegistry().get(c) }
 }
 
 // Progress implements a throttled, concurrency-safe,
@@ -87,7 +87,7 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		doneChan:       make(chan struct{}),
 		resizeChan:     make(chan os.Signal, 1),
 		clock:          &realClock{dur: 16 * time.Millisecond},
-		theme:          themeOrDefault("green"),
+		theme:          newThemeRegistry().get("sunset"),
 	}
 
 	p.isTerminal = func(v any) bool {

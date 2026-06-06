@@ -126,24 +126,23 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 	buf = ws.writeString(buf, status)
 
 	for ws.isTerminal && ws.visCols < ws.cols { // fill remaining bar space with clean gradient padding
-		factor := (ws.visCols * 1000) / ws.denom
-
-		bgR := p.theme.startBgR + (p.theme.deltaBgR * factor) / 1000
-		bgG := p.theme.startBgG + (p.theme.deltaBgG * factor) / 1000
-		bgB := p.theme.startBgB + (p.theme.deltaBgB * factor) / 1000
+		color := ws.theme.bgColor(float64(ws.visCols) / float64(ws.denom))
 
 		buf = append(buf, ansiPrepColorSeq...)
-		buf = appendIntIdxInline(buf, bgR)
+		buf = appendIntIdxInline(buf, color.r)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, bgG)
+		buf = appendIntIdxInline(buf, color.g)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, bgB)
+		buf = appendIntIdxInline(buf, color.b)
 		buf = append(buf, 'm', ' ')
 		ws.visCols++
 		ws.isColored = true
 	}
 
-	if ws.isTerminal && ws.isColored { buf = append(buf, ansiResetAttr...) } // reset all attributes to defaults
+	if ws.isTerminal && ws.isColored {
+		buf = append(buf, ansiResetAttr...) // reset all attributes to defaults
+		ws.isColored = false
+	}
 
 	buf = append(buf, p.layout.lineTerminator...)
 
@@ -159,28 +158,21 @@ func (ws *writeState) writeRune(buf []byte, r rune) []byte {
 	if r > 0x1100 && isWideRune(r) { rWidth = 2 }
 
 	if ws.isTerminal && ws.termWidth > 0 && ws.visCols < ws.cols {
-		factor := (ws.visCols * 1000) / ws.denom
-
-		bgR := ws.theme.startBgR + (ws.theme.deltaBgR * factor) / 1000
-		bgG := ws.theme.startBgG + (ws.theme.deltaBgG * factor) / 1000
-		bgB := ws.theme.startBgB + (ws.theme.deltaBgB * factor) / 1000
-
-		fgR :=          startFgR + (ws.theme.deltaFgR * factor) / 1000
-		fgG :=          startFgG + (ws.theme.deltaFgG * factor) / 1000
-		fgB :=          startFgB + (ws.theme.deltaFgB * factor) / 1000
+		bg := ws.theme.bgColor(float64(ws.visCols) / float64(ws.denom))
+		fg := bg.fgColor()
 
 		buf = append(buf, ansiSetFgColor...)
-		buf = appendIntIdxInline(buf, fgR)
+		buf = appendIntIdxInline(buf, fg.r)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, fgG)
+		buf = appendIntIdxInline(buf, fg.g)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, fgB)
+		buf = appendIntIdxInline(buf, fg.b)
 		buf = append(buf, ansiPrepSetBgColor...)
-		buf = appendIntIdxInline(buf, bgR)
+		buf = appendIntIdxInline(buf, bg.r)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, bgG)
+		buf = appendIntIdxInline(buf, bg.g)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, bgB)
+		buf = appendIntIdxInline(buf, bg.b)
 		buf = append(buf, 'm')
 
 		ws.isColored = true

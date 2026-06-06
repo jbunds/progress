@@ -4,7 +4,20 @@ package progress
 //
 //   https://en.wikipedia.org/wiki/ANSI_escape_code#24-bit
 //   https://en.wikipedia.org/wiki/ANSI_escape_code#Select_Graphic_Rendition_parameters
+//
 //   https://ecma-international.org/publications-and-standards/standards/ecma-48/
+//   https://ecma-international.org/wp-content/uploads/ECMA-48_5th_edition_june_1991.pdf
+//   https://www.iso.org/standard/22943.html
+//
+//   https://pkg.go.dev/github.com/charmbracelet/x/ansi
+//   https://pkg.go.dev/github.com/charmbracelet/x/ansi#TextCursorEnableMode (DECTCEM)
+//   https://pkg.go.dev/github.com/charmbracelet/x/ansi#ModeTextCursorEnable (DECTCEM)
+//   https://pkg.go.dev/github.com/charmbracelet/x/ansi#ModeSynchronizedOutput
+//   https://pkg.go.dev/github.com/charmbracelet/x/ansi#EraseLineRight (EraseLineRight)
+//
+//   https://vt100.net/docs/vt510-rm/DECRSTS.html
+//   https://vt100.net/docs/vt510-rm/DECAWM.html
+//
 //   https://jakob-bagterp.github.io/colorist-for-python/ansi-escape-codes/rgb-colors/
 //
 //   │ atom or sequence  │ description

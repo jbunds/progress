@@ -48,8 +48,10 @@ linters:
           allow:
             - context
             - io
+            - math
             - os
             - os/signal
+            - slices
             - strconv
             - sync
             - sync/atomic
