@@ -29,7 +29,7 @@ type theme struct {
 
 // fgColor calculates the perceptual luminance of the given background color and returns a high-contrast, grey-scale foreground color.
 func (c rgb) fgColor() rgb {
-	// W3C formula using fast integer-friendly scaling to avoid float bottlenecks:
+	// W3C formula (https://www.w3.org/TR/WCAG20-TECHS/G17.html#G17-tests) using fast, integer-based scaling to avoid float bottlenecks:
 	//   0.2126 * 10000 ~= 2126
 	//   0.7152 * 10000 ~= 7152
 	//   0.0722 * 10000 ~=  722
