@@ -1,12 +1,18 @@
 ```
 .
+├── all_themes.sh
+├── ansi.go
+├── color.go
 ├── doc
 │   ├── code_stats.md
 │   ├── refactor.md
 │   └── structure.md
 ├── examples
 │   ├── README.md
+│   ├── flags.go
 │   ├── fractional
+│   │   └── main.go
+│   ├── smoke
 │   │   └── main.go
 │   └── weight-based
 │       └── main.go
@@ -37,5 +43,5 @@
 ├── tracker_test.go
 └── unique.go
 
-5 directories, 32 files
+6 directories, 37 files
 ```
