@@ -36,8 +36,8 @@ Features include:
     - minimize memory allocation and impose minimal GC overhead
     - enable fast and efficient UI synchronization via comparisons of:
       - precise internal progress values via `atomic.Uint32` and `atomic.Uint64` types
-      - progress status strings (`atomic.Value` per the `progress.Standard` tracker), or
-      - canonicalized (interned) progress status string handles (`unique.Handle[string]` guarded by `atomic.Value` per the `progress.Unique` tracker)
+      - progress status strings (`atomic.Pointer[string]` in the `progress.Standard` tracker; `atomic.Uint64` in the `progress.Fraction` tracker), or
+      - canonicalized (interned) progress status string handles (`unique.Handle[string]` guarded by `atomic.Value` in the `progress.Unique` tracker)
 - context-aware:
   - correctly handles cancellation of the parent context, ensuring a clean exit under reasonable circumstances
 - very efficient with minimal memory footprint:
