@@ -2,8 +2,13 @@
 
 // smoke test program to validate the following functionality:
 //
-//   1. status strings longer than the width of the terminal are correctly truncated
-//   2. the progress bar extends to the full width of the terminal at 100% progress by configuring a 1:1 column-to-task ratio
+//   - status strings longer than the width of the terminal are correctly truncated
+//
+//   - the progress bar extends to the full width of the terminal at 100% progress
+//     by configuring a 1:1 column-to-task ratio
+//
+//   - the dynamically-computed foreground color applied to the status text rendered
+//     in the progress bar contrasts well against the background color
 package main
 
 import (
