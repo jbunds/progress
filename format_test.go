@@ -7,31 +7,28 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-func TestAppendIntIdxInline(t *testing.T) {
+func TestAppendRGBInline(t *testing.T) {
 	tests := []struct {
-		name     string
-		rgbInt   int
-		allocCap int
-		want     string
+		name string
+		rgb  uint8
+		want string
 	}{
-		{ "single digit",             5,  3,    "5" },
-		{ "double digit",            42,  3,   "42" },
-		{ "triple digit boundary",  999,  3,  "999" },
-		{ "negative boundary",       -3, 10,    "0" },
-		{ "fallback path",         1030, 10, "1030" },
+		{ "single digit",   3,   "3" },
+		{ "double digit",  42,  "42" },
+		{ "upper bound",  255, "255" },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			allocs := testing.AllocsPerRun(10, func() {
-				appendIntIdxInline(make([]byte, 0, tt.allocCap), tt.rgbInt)
+				appendRGBInline(make([]byte, 0, 3), tt.rgb)
 			})
 			if allocs > 0 {
 				t.Errorf("expected 0 allocations; got %v", allocs)
 			}
 
-			got := appendIntIdxInline(make([]byte, 0, tt.allocCap), tt.rgbInt)
+			got := appendRGBInline(make([]byte, 0, 3), tt.rgb)
 			if diff := cmp.Diff(tt.want, string(got)); diff != "" {
-				t.Errorf("appendIntIdxInline(%v) mismatch (-want +got):\n%s", tt.rgbInt, diff)
+				t.Errorf("appendRGBInline(%v) mismatch (-want +got):\n%s", tt.rgb, diff)
 			}
 		})
 	}

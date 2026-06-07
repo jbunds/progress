@@ -6,50 +6,23 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-// appendIntIdxInline writes a stringified integer directly into a byte slice without heap allocation.
+// appendRGBInline writes a stringified integer directly into a byte slice without heap allocation.
 // optimized for RGB channel and terminal column ranges (0-255, 0-999).
-func appendIntIdxInline(b []byte, v int) []byte {
-	if v < 0 { return appendUintIdxFallback(b, 0) }
-	u := uint32(v & 0xFFFFFFFF)
+func appendRGBInline(b []byte, u uint8) []byte {
 	switch {
 	case u < 10:
 		return append(b, byte('0' + u))
 	case u < 100:
 		q := u / 10
 		r := u - (q * 10)
-		return append(b,
-		  byte('0' + q),
-		  byte('0' + r))
-	case u < 1000:
+		return append(b, byte('0' + q), byte('0' + r))
+	default: // 100 to 255
 		q1  :=   u / 100
 		rem :=   u - (q1 * 100)
 		q2  := rem /  10
 		r   := rem - (q2 * 10)
-		return append(b,
-		  byte('0' + q1),
-		  byte('0' + q2),
-		  byte('0' + r))
+		return append(b, byte('0' + q1), byte('0' + q2), byte('0' + r))
 	}
-
-	return appendUintIdxFallback(b, u) // fallback to avoid array-to-slice heap allocation escaping
-}
-
-//go:noinline
-func appendUintIdxFallback(b []byte, v uint32) []byte {
-	var buf [10]byte // uint32 max is 4,294,967,295 (10 digits max)
-	i := len(buf)
-	for v >= 10 {
-		i--
-		q := v / 10
-		r := v - (q * 10)
-		buf[i] = byte(('0' + r) & 0xFF)
-		v = q
-	}
-	i--
-	buf[i] = byte('0' + v)
-
-	for j := i; j < len(buf); j++ { b = append(b, buf[j]) } // prevent buf from escaping to the heap
-	return b
 }
 
 // appendRune is a fast, zero-allocation inline implementation of utf8.EncodeRune.

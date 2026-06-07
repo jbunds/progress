@@ -126,11 +126,11 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 		color := ws.theme.bgColor(float64(ws.curColPos) / float64(ws.termWidth - 1))
 
 		buf = append(buf, ansiStartBgRGB...)
-		buf = appendIntIdxInline(buf, color.r)
+		buf = appendRGBInline(buf, color.r)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, color.g)
+		buf = appendRGBInline(buf, color.g)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, color.b)
+		buf = appendRGBInline(buf, color.b)
 		buf = append(buf, 'm', ' ')
 		ws.curColPos++
 		ws.isColored = true
@@ -159,17 +159,17 @@ func (ws *writeState) writeRune(buf []byte, r rune) []byte {
 		fg := bg.fgColor()
 
 		buf = append(buf, ansiStartFgRGB...) // write foreground color sequence (\033[38;2;R;G;Bm)
-		buf = appendIntIdxInline(buf, fg.r)
+		buf = appendRGBInline(buf, fg.r)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, fg.g)
+		buf = appendRGBInline(buf, fg.g)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, fg.b)
+		buf = appendRGBInline(buf, fg.b)
 		buf = append(buf, ansiChainBgRGB...) // write background color sequence (48;2;R;G;Bm)
-		buf = appendIntIdxInline(buf, bg.r)
+		buf = appendRGBInline(buf, bg.r)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, bg.g)
+		buf = appendRGBInline(buf, bg.g)
 		buf = append(buf, ';')
-		buf = appendIntIdxInline(buf, bg.b)
+		buf = appendRGBInline(buf, bg.b)
 		buf = append(buf, 'm')
 
 		ws.isColored = true
