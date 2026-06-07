@@ -64,7 +64,8 @@ Features include:
   - dynamically adapting the layout
   - formatting the rendered output accordingly
   - ensuring layout and output integrity during concurrent writes to the terminal
-- supports [various color schemes][./themes.go] for rendering the background colors of the progress bar
+- supports [various color schemes](./themes.go) for rendering the background colors of the progress bar
+  - the [`all_themes.sh`](./all_themes.sh) script demonstrates all available themes
 
 Limitations:
 
