@@ -13,282 +13,313 @@ type themeRegistry struct { get func(name string) *theme }
 func newThemeRegistry() *themeRegistry {
 
 	blackToWhite := theme{
-		name:        "blackToWhite",
-		transitions: []endpoints{
-			{initial: rgb{r: 0, g: 0, b: 0}, final: rgb{r: 255, g: 255, b: 255}}, // black -> white
+		name:   "blackToWhite",
+		colors: []rgb{
+			{  0,   0,   0}, // black
+			{255, 255, 255}, // white
 		},
 	}
 
 	blueToRed := theme{
-		name:        "blueToRed",
-		transitions: []endpoints{
-			{initial: rgb{r: 0, g: 0, b: 255}, final: rgb{r: 255, g: 0, b: 0}}, // blue -> purple -> red
+		name:   "blueToRed",
+		colors: []rgb{
+			{  0, 0, 255}, // blue
+			{255, 0,   0}, // red
 		},
 	}
 
 	blueToGreen := theme{
-		name:        "blueToGreen",
-		transitions: []endpoints{
-			{initial: rgb{r: 0, g: 0, b: 255}, final: rgb{r: 0, g: 255, b: 0}}, // blue -> green
+		name:   "blueToGreen",
+		colors: []rgb{
+			{0,   0, 255}, // blue
+			{0, 255,   0}, // green
 		},
 	}
 
 	greenToBlue := theme{
 		name:        "greenToBlue",
-		transitions: []endpoints{
-			{initial: rgb{r: 0, g: 255, b: 0}, final: rgb{r: 0, g: 0, b: 255}}, // green -> blue
+		colors: []rgb{
+			{0, 255,   0}, // green
+			{0,   0, 255}, // blue
 		},
 	}
 
 	greenToYellow := theme{
-		name:        "greenToYellow",
-		transitions: []endpoints{
-			{initial: rgb{r: 0, g: 255, b: 0}, final: rgb{r: 255, g: 255, b: 0}}, // green -> yellow
+		name:   "greenToYellow",
+		colors: []rgb{
+			{  0, 255, 0}, // green
+			{255, 255, 0}, // yellow
 		},
 	}
 
 	fire := theme{
-		name:        "fire",
-		transitions: []endpoints{
-			{initial: rgb{r: 255, g: 0, b: 0}, final: rgb{r: 255, g: 255, b: 0}}, // red -> orange -> yellow
+		name:   "fire",
+		colors: []rgb{
+			{255,   0, 0}, // red
+			{255, 255, 0}, // yellow
 		},
 	}
 
 	thermal := theme{
-		name:        "thermal",
-		transitions: []endpoints{
-			{initial: rgb{r:   0, g:   0, b:  50}, final: rgb{r: 150, g:   0, b: 150}}, // dark blue   -> purple
-			{initial: rgb{r: 150, g:   0, b: 150}, final: rgb{r: 255, g:  70, b:   0}}, // purple      -> orange
-			{initial: rgb{r: 255, g:  70, b:   0}, final: rgb{r: 255, g: 220, b:   0}}, // orange      -> pale yellow
-			{initial: rgb{r: 255, g: 220, b:   0}, final: rgb{r: 255, g: 255, b: 255}}, // pale yellow -> white
+		name:   "thermal",
+		colors: []rgb{
+			{  0,   0,  50}, // dark blue
+			{150,   0, 150}, // purple
+			{255,  70,   0}, // orange
+			{255, 220,   0}, // pale yellow
+			{255, 255, 255}, // white
 		},
 	}
 
 	sunset := theme{
-		name:        "sunset",
-		transitions: []endpoints{
-			{initial: rgb{r:  48, g:  25, b:  52}, final: rgb{r: 199, g:   0, b:  57}}, // dark plum  -> crimson
-			{initial: rgb{r: 199, g:   0, b:  57}, final: rgb{r: 255, g:  87, b:  51}}, // crimson    -> dark coral
-			{initial: rgb{r: 255, g:  87, b:  51}, final: rgb{r: 255, g: 195, b:   0}}, // dark coral -> peach gold
+		name:   "sunset",
+		colors: []rgb{
+			{ 48,  25, 52}, // dark plum
+			{199,   0, 57}, // crimson
+			{255,  87, 51}, // dark coral
+			{255, 195,  0}, // peach gold
 		},
 	}
 
 	ocean := theme{
-		name:        "ocean",
-		transitions: []endpoints{
-			{initial: rgb{r:   0, g:  10, b:  45}, final: rgb{r:   0, g: 128, b: 128}}, // navy blue -> teal
-			{initial: rgb{r:   0, g: 128, b: 128}, final: rgb{r:   0, g: 200, b: 150}}, // teal      -> turquoise
-			{initial: rgb{r:   0, g: 200, b: 150}, final: rgb{r: 100, g: 255, b: 150}}, // turquoise -> seafoam green
+		name:   "ocean",
+		colors: []rgb{
+			{  0,  10,  45}, // navy blue
+			{  0, 128, 128}, // teal
+			{  0, 200, 150}, // turquoise
+			{100, 255, 150}, // seafoam green
 		},
 	}
 
 	rainbow := theme{
-		name:        "rainbow",
-		transitions: []endpoints{
-			{initial: rgb{r:   0, g:   0, b: 255}, final: rgb{r:   0, g: 255, b: 0}}, // blue   -> green
-			{initial: rgb{r:   0, g: 255, b:   0}, final: rgb{r: 255, g: 255, b: 0}}, // green  -> yellow
-			{initial: rgb{r: 255, g: 255, b:   0}, final: rgb{r: 255, g: 127, b: 0}}, // yellow -> orange
-			{initial: rgb{r: 255, g: 127, b:   0}, final: rgb{r: 255, g:   0, b: 0}}, // orange -> red
+		name:   "rainbow",
+		colors: []rgb{
+			{  0,   0, 255}, // blue
+			{  0, 255,   0}, // green
+			{255, 255,   0}, // yellow
+			{255, 127,   0}, // orange
+			{255,   0,   0}, // red
 		},
 	}
 
 	rainbow2 := theme{ // this variant renders a higher proportion of green gradients in the middle of its span
-		name:        "rainbow2",
-		transitions: []endpoints{
-			{initial: rgb{r:   0, g:   0, b: 255}, final: rgb{r:   0, g: 255, b: 0}}, // blue   -> green
-			{initial: rgb{r:   0, g: 255, b:   0}, final: rgb{r: 255, g: 255, b: 0}}, // green  -> yellow
-			{initial: rgb{r: 255, g: 255, b:   0}, final: rgb{r: 255, g:   0, b: 0}}, // yellow -> red
+		name:   "rainbow2",
+		colors: []rgb{
+			{  0,   0, 255}, // blue
+			{  0, 255,   0}, // green
+			{255, 255,   0}, // yellow
+			{255,   0,   0}, // red
 		},
 	}
 
 	retro := theme{
-		name:        "retro",
-		transitions: []endpoints{
-			{initial: rgb{r:  55, g: 0, b: 255}, final: rgb{r: 255, g:   0, b: 128}}, // indigo  -> magenta
-			{initial: rgb{r: 255, g: 0, b: 128}, final: rgb{r: 255, g:   0, b: 255}}, // magenta -> pink
-			{initial: rgb{r: 255, g: 0, b: 255}, final: rgb{r:   0, g: 255, b: 255}}, // pink    -> cyan
+		name:   "retro",
+		colors: []rgb{
+			{ 55,   0, 255}, // indigo
+			{255,   0, 128}, // magenta
+			{255,   0, 255}, // pink
+			{  0, 255, 255}, // cyan
 		},
 	}
 
 	vaporwave := theme{
-		name:        "vaporwave",
-		transitions: []endpoints{
-			{initial: rgb{r:  30, g: 220, b: 170}, final: rgb{r: 130, g: 180, b: 255}}, // greenish turquoise     -> pastel cornflower bluw
-			{initial: rgb{r: 130, g: 180, b: 255}, final: rgb{r: 255, g: 130, b: 210}}, // pastel cornflower blue -> bubblegum pink
+		name:   "vaporwave",
+		colors: []rgb{
+			{ 30, 220, 170}, // greenish turquoise
+			{130, 180, 255}, // pastel cornflower bluw
+			{255, 130, 210}, // bubblegum pink
 		},
 	}
 
 	toxic := theme{
-		name:        "toxic",
-		transitions: []endpoints{
-			{initial: rgb{r:  75, g:   0, b: 130}, final: rgb{r: 148, g:   0, b: 211}}, // violet     -> purple
-			{initial: rgb{r: 148, g:   0, b: 211}, final: rgb{r:  50, g: 205, b:  50}}, // purple     -> lime green
-			{initial: rgb{r:  50, g: 205, b:  50}, final: rgb{r: 173, g: 255, b:  47}}, // lime green -> green-yellow
+		name:   "toxic",
+		colors: []rgb{
+			{ 75,   0, 130}, // violet
+			{148,   0, 211}, // purple
+			{ 50, 205,  50}, // lime green
+			{173, 255,  47}, // green-yellow
 		},
 	}
 
 	trans := theme{
-		name:        "trans",
-		transitions: []endpoints{
-			{initial: rgb{r:  91, g: 206, b: 250}, final: rgb{r: 245, g: 169, b: 184}}, // light blue -> pink
-			{initial: rgb{r: 245, g: 169, b: 184}, final: rgb{r: 255, g: 255, b: 255}}, // pink       -> white
-			{initial: rgb{r: 255, g: 255, b: 255}, final: rgb{r: 245, g: 169, b: 184}}, // white      -> pink
-			{initial: rgb{r: 245, g: 169, b: 184}, final: rgb{r:  91, g: 206, b: 250}}, // pink       -> light blue
+		name:   "trans",
+		colors: []rgb{
+			{ 91, 206, 250}, // light blue
+			{245, 169, 184}, // pink
+			{255, 255, 255}, // white
+			{245, 169, 184}, // pink
+			{ 91, 206, 250}, // light blue
 		},
 	}
 
 	pride := theme{
-		name:        "pride",
-		transitions: []endpoints{
-			{initial: rgb{r: 228, g:   3, b:   3}, final: rgb{r: 255, g: 140, b:   0}}, // red    -> orange
-			{initial: rgb{r: 255, g: 140, b:   0}, final: rgb{r: 255, g: 237, b:   0}}, // orange -> yellow
-			{initial: rgb{r: 255, g: 237, b:   0}, final: rgb{r:   0, g: 128, b:  38}}, // yellow -> green
-			{initial: rgb{r:   0, g: 128, b:  38}, final: rgb{r:   0, g:  76, b: 255}}, // green  -> blue
-			{initial: rgb{r:   0, g:  76, b: 255}, final: rgb{r: 117, g:   7, b: 135}}, // blue   -> violet
+		name:   "pride",
+		colors: []rgb{
+			{228,   3,   3}, // red
+			{255, 140,   0}, // orange
+			{255, 237,   0}, // yellow
+			{  0, 128,  38}, // green
+			{  0,  76, 255}, // blue
+			{117,   7, 135}, // violet
 		},
 	}
 
 	bi := theme{
-		name:        "bi",
-		transitions: []endpoints{
-			{initial: rgb{r: 214, g:   2, b: 112}, final: rgb{r: 155, g:  79, b: 150}}, // magenta -> purple
-			{initial: rgb{r: 155, g:  79, b: 150}, final: rgb{r:   0, g:  56, b: 168}}, // purple  -> royal blue
+		name:   "bi",
+		colors: []rgb{
+			{214,  2, 112}, // magenta
+			{155, 79, 150}, // purple
+			{  0, 56, 168}, // royal blue
 		},
 	}
 
 	pan := theme{
-		name:        "pan",
-		transitions: []endpoints{
-			{initial: rgb{r: 255, g:  27, b: 141}, final: rgb{r: 255, g: 216, b:   0}}, // hot pink -> canary yellow
-			{initial: rgb{r: 255, g: 216, b:   0}, final: rgb{r:   1, g: 179, b: 247}}, // yellow   -> sky cyan
+		name:   "pan",
+		colors: []rgb{
+			{255,  27, 141}, // hot pink
+			{255, 216,   0}, // canary yellow
+			{  1, 179, 247}, // sky cyan
 		},
 	}
 
 	matrix := theme{
-		name:        "matrix",
-		transitions: []endpoints{
-			{initial: rgb{r: 0, g:  40, b:  0}, final: rgb{r:  0, g: 140, b: 40}}, // dark forest green -> kelly green
-			{initial: rgb{r: 0, g: 140, b: 40}, final: rgb{r: 50, g: 255, b: 50}}, // kelly green       -> neon green
+		name:   "matrix",
+		colors: []rgb{
+			{ 0,  40,  0}, // dark forest green
+			{ 0, 140, 40}, // kelly green
+			{50, 255, 50}, // neon green
 		},
 	}
 
 	glacier := theme{
-		name:        "glacier",
-		transitions: []endpoints{
-			{initial: rgb{r: 0, g:  30, b:  60}, final: rgb{r:   0, g: 210, b: 255}}, // midnight blue -> sky blue
-			{initial: rgb{r: 0, g: 210, b: 255}, final: rgb{r: 230, g: 250, b: 255}}, // sky blue      -> pale ice blue
+		name:   "glacier",
+		colors: []rgb{
+			{  0,  30,  60}, // midnight blue
+			{  0, 210, 255}, // sky blue
+			{230, 250, 255}, // pale ice blue
 		},
 	}
 
 	autumn := theme{
-		name:        "autumn",
-		transitions: []endpoints{
-			{initial: rgb{r:  34, g:  76, b: 34}, final: rgb{r: 218, g: 145, b: 0}}, // forest green -> ochre
-			{initial: rgb{r: 218, g: 145, b:  0}, final: rgb{r: 210, g:  60, b: 0}}, // ochre        -> burnt orange
+		name:   "autumn",
+		colors: []rgb{
+			{ 34,  76, 34}, // forest green
+			{218, 145,  0}, // ochre
+			{210,  60,  0}, // burnt orange
 		},
 	}
 
 	cyberpunk := theme{
-		name:        "cyberpunk",
-		transitions: []endpoints{
-			{initial: rgb{r:  10, g: 15, b: 45}, final: rgb{r: 255, g:   0, b: 85}}, // navy blue -> neon red
-			{initial: rgb{r: 255, g:  0, b: 85}, final: rgb{r: 243, g: 231, b:  0}}, // neon red  -> canary yellow
+		name:   "cyberpunk",
+		colors: []rgb{
+			{ 10,  15, 45}, // navy blue
+			{255,   0, 85}, // neon red
+			{243, 231,  0}, // canary yellow
 		},
 	}
 
 	magma := theme{
-		name:        "magma",
-		transitions: []endpoints{
-			{initial: rgb{r:  20, g:  0, b: 25}, final: rgb{r: 210, g:  10, b: 0}}, // deep plum -> scarlet
-			{initial: rgb{r: 210, g: 10, b:  0}, final: rgb{r: 255, g: 170, b: 0}}, // scarlet   -> amber
+		name:   "magma",
+		colors: []rgb{
+			{ 20,   0, 25}, // deep plum
+			{210,  10,  0}, // scarlet
+			{255, 170,  0}, // amber
 		},
 	}
 
 	nebula := theme{
-		name:        "nebula",
-		transitions: []endpoints{
-			{initial: rgb{r:  10, g: 0, b:  80}, final: rgb{r: 180, g:   0, b: 180}}, // midnight blue -> dark magenta
-			{initial: rgb{r: 180, g: 0, b: 180}, final: rgb{r:   0, g: 230, b: 255}}, // dark magenta  -> bright cyan
+		name:   "nebula",
+		colors: []rgb{
+			{ 10,   0,  80}, // midnight blue
+			{180,   0, 180}, // dark magenta
+			{  0, 230, 255}, // bright cyan
 		},
 	}
 
 	hazard := theme{
-		name:        "hazard",
-		transitions: []endpoints{
-			{initial: rgb{r: 255, g: 210, b: 0}, final: rgb{r: 255, g: 85, b:  0}}, // marigold yellow -> neon orange
-			{initial: rgb{r: 255, g:  85, b: 0}, final: rgb{r:  25, g: 25, b: 25}}, // neon orange     -> charcoal
+		name:   "hazard",
+		colors: []rgb{
+			{255, 210,  0}, // marigold yellow
+			{255,  85,  0}, // neon orange
+			{ 25,  25, 25}, // charcoal
 		},
 	}
 
 	coffee := theme{
-		name:        "coffee",
-		transitions: []endpoints{
-			{initial: rgb{r:  45, g: 25, b: 15}, final: rgb{r: 150, g:  90, b:  40}}, // dark coffee  -> copper brown
-			{initial: rgb{r: 150, g: 90, b: 40}, final: rgb{r: 240, g: 210, b: 170}}, // copper brown -> navajo white
+		name:   "coffee",
+		colors: []rgb{
+			{ 45,  25,  15}, // dark coffee
+			{150,  90,  40}, // copper brown
+			{240, 210, 170}, // navajo white
 		},
 	}
 
 	arcade := theme{
 		name:        "arcade",
-		transitions: []endpoints{
-			{initial: rgb{r: 255, g:   0, b: 128}, final: rgb{r: 140, g:   0, b: 255}}, // vivid rose      -> electric indigo
-			{initial: rgb{r: 140, g:   0, b: 255}, final: rgb{r:   0, g:  70, b: 255}}, // electric indigo -> neon blue
-			{initial: rgb{r:   0, g:  70, b: 255}, final: rgb{r:   0, g: 255, b: 230}}, // neon blue       -> turquoise
-			{initial: rgb{r:   0, g: 255, b: 230}, final: rgb{r:  50, g: 255, b:   0}}, // turquoise       -> lime green
-			{initial: rgb{r:  50, g: 255, b:   0}, final: rgb{r: 255, g: 230, b:   0}}, // lime green      -> canary yellow
+		colors: []rgb{
+			{255,   0, 128}, // vivid rose
+			{140,   0, 255}, // electric indigo
+			{  0,  70, 255}, // neon blue
+			{  0, 255, 230}, // turquoise
+			{ 50, 255,   0}, // lime green
+			{255, 230,   0}, // canary yellow
 		},
 	}
 
 	prism := theme{
-		name:        "prism",
-		transitions: []endpoints{
-			{initial: rgb{r: 255, g: 180, b: 255}, final: rgb{r: 180, g: 190, b: 255}}, // pastel pink   -> periwinkle
-			{initial: rgb{r: 180, g: 190, b: 255}, final: rgb{r: 170, g: 255, b: 220}}, // periwinkle    -> mint green
-			{initial: rgb{r: 170, g: 255, b: 220}, final: rgb{r: 255, g: 255, b: 160}}, // mint green    -> canary yellow
-			{initial: rgb{r: 255, g: 255, b: 160}, final: rgb{r: 255, g: 200, b: 160}}, // canary yellow -> peach
-			{initial: rgb{r: 255, g: 200, b: 160}, final: rgb{r: 255, g: 160, b: 190}}, // peach         -> bubblegum pink
+		name:   "prism",
+		colors: []rgb{
+			{255, 180, 255}, // pastel pink
+			{180, 190, 255}, // periwinkle
+			{170, 255, 220}, // mint green
+			{255, 255, 160}, // canary yellow
+			{255, 200, 160}, // peach
+			{255, 160, 190}, // bubblegum pink
 		},
 	}
 
 	biohazard := theme{
-		name:        "biohazard",
-		transitions: []endpoints{
-			{initial: rgb{r:   0, g: 255, b:  68}, final: rgb{r: 212, g: 255, b:   0}}, // spring green -> chartreuse
-			{initial: rgb{r: 212, g: 255, b:   0}, final: rgb{r: 255, g: 110, b:   0}}, // chartreuse   -> orange
-			{initial: rgb{r: 255, g: 110, b:   0}, final: rgb{r: 120, g:   0, b: 200}}, // orange       -> dark violet
-			{initial: rgb{r: 120, g:   0, b: 200}, final: rgb{r: 255, g:   0, b: 180}}, // dark violet  -> neon pink
+		name:   "biohazard",
+		colors: []rgb{
+			{  0, 255,  68}, // spring green
+			{212, 255,   0}, // chartreuse
+			{255, 110,   0}, // orange
+			{120,   0, 200}, // dark violet
+			{255,   0, 180}, // neon pink
 		},
 	}
 
 	supernova := theme{
-		name:        "supernova",
-		transitions: []endpoints{
-			{initial: rgb{r:   5, g:   5, b:  40}, final: rgb{r:  80, g:   0, b: 120}}, // midnight blue -> deep purple
-			{initial: rgb{r:  80, g:   0, b: 120}, final: rgb{r: 230, g:   0, b: 130}}, // deep purple   -> raspberry
-			{initial: rgb{r: 230, g:   0, b: 130}, final: rgb{r: 255, g:  40, b:   0}}, // raspberry     -> scarlet
-			{initial: rgb{r: 255, g:  40, b:   0}, final: rgb{r: 255, g: 130, b:   0}}, // scarlet       -> tangerine
-			{initial: rgb{r: 255, g: 130, b:   0}, final: rgb{r: 255, g: 230, b:  60}}, // tangerine     -> pastel yellow
-			{initial: rgb{r: 255, g: 230, b:  60}, final: rgb{r: 255, g: 255, b: 255}}, // pastel yellow -> white
+		name:   "supernova",
+		colors: []rgb{
+			{  5,   5,  40}, // midnight blue
+			{ 80,   0, 120}, // deep purple
+			{230,   0, 130}, // raspberry
+			{255,  40,   0}, // scarlet
+			{255, 130,   0}, // tangerine
+			{255, 230,  60}, // pastel yellow
+			{255, 255, 255}, // white
 		},
 	}
 
 	psychadelic := theme{
-		name:        "psychadelic",
-		transitions: []endpoints{
-			{initial: rgb{r:  10, g:   0, b:  30}, final: rgb{r: 255, g:   0, b: 128}}, // midnight blue    -> vivid rose
-			{initial: rgb{r: 255, g:   0, b: 128}, final: rgb{r:   0, g: 255, b: 242}}, // vivid rose       -> bright turquoise
-			{initial: rgb{r:   0, g: 255, b: 242}, final: rgb{r:  50, g: 255, b:   0}}, // bright turquoise -> lime green
-			{initial: rgb{r:  50, g: 255, b:   0}, final: rgb{r: 255, g: 215, b:   0}}, // lime green       -> gold
-			{initial: rgb{r: 255, g: 215, b:   0}, final: rgb{r: 255, g:   0, b:  40}}, // gold             -> bright crimson
-			{initial: rgb{r: 255, g:   0, b:  40}, final: rgb{r: 138, g:  43, b: 226}}, // bright crimson   -> blue violet
-			{initial: rgb{r: 138, g:  43, b: 226}, final: rgb{r:   0, g:  71, b: 255}}, // blue violet      -> neon blue
-			{initial: rgb{r:   0, g:  71, b: 255}, final: rgb{r: 255, g: 102, b:   0}}, // neon blue        -> orange
-			{initial: rgb{r: 255, g: 102, b:   0}, final: rgb{r:   0, g: 255, b: 150}}, // orange           -> spring green
-			{initial: rgb{r:   0, g: 255, b: 150}, final: rgb{r: 255, g:   0, b: 210}}, // spring green     -> neon magenta
-			{initial: rgb{r: 255, g:   0, b: 210}, final: rgb{r: 255, g:  60, b:   0}}, // neon magenta     -> scarlet
-			{initial: rgb{r: 255, g:  60, b:   0}, final: rgb{r: 255, g: 255, b: 255}}, // scarlet          -> white
-  },
-}
+		name:   "psychadelic",
+		colors: []rgb{
+			{ 10,   0,  30}, // midnight blue
+			{255,   0, 128}, // vivid rose
+			{  0, 255, 242}, // bright turquoise
+			{ 50, 255,   0}, // lime green
+			{255, 215,   0}, // gold
+			{255,   0,  40}, // bright crimson
+			{138,  43, 226}, // blue violet
+			{  0,  71, 255}, // neon blue
+			{255, 102,   0}, // orange
+			{  0, 255, 150}, // spring green
+			{255,   0, 210}, // neon magenta
+			{255,  60,   0}, // scarlet
+			{255, 255, 255}, // white
+		},
+	}
 
 	registryMap := map[string]*theme{
 		"blackToWhite":  &blackToWhite,

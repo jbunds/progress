@@ -15,22 +15,24 @@ func TestGetTheme(t *testing.T) {
 		{
 			name: "default", // no theme named "default"; should return "sunset"
 			want: &theme{
-				name:        "sunset",
-				transitions: []endpoints{
-					{initial: rgb{r:  48, g:  25, b:  52}, final: rgb{r: 199, g:   0, b:  57}},
-					{initial: rgb{r: 199, g:   0, b:  57}, final: rgb{r: 255, g:  87, b:  51}},
-					{initial: rgb{r: 255, g:  87, b:  51}, final: rgb{r: 255, g: 195, b:   0}},
+				name:   "sunset",
+				colors: []rgb{
+					{ 48,  25, 52},
+					{199,   0, 57},
+					{255,  87, 51},
+					{255, 195,  0},
 				},
 			},
     },
 		{
 			name: "ocean",
 			want: &theme{
-				name:        "ocean",
-				transitions: []endpoints{
-					{initial: rgb{r:   0, g:  10, b:  45}, final: rgb{r:   0, g: 128, b: 128}},
-					{initial: rgb{r:   0, g: 128, b: 128}, final: rgb{r:   0, g: 200, b: 150}},
-					{initial: rgb{r:   0, g: 200, b: 150}, final: rgb{r: 100, g: 255, b: 150}},
+				name:   "ocean",
+				colors: []rgb{
+					{  0,  10,  45},
+					{  0, 128, 128},
+					{  0, 200, 150},
+					{100, 255, 150},
 				},
 			},
 		},
