@@ -42,7 +42,7 @@ func main() {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(25 * time.Millisecond):
+		case <-time.After(18 * time.Millisecond):
 			prog.Report(1, fmt.Sprintf("task %d finished " + strings.Repeat(status, repeatCount), i))
 		}
 	}

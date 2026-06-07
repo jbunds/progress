@@ -104,6 +104,14 @@ func newThemeRegistry() *themeRegistry {
 		},
 	}
 
+	vaporwave := theme{
+		name:        "vaporwave",
+		transitions: []endpoints{
+			{initial: rgb{r:  30, g: 220, b: 170}, final: rgb{r: 130, g: 180, b: 255}},
+			{initial: rgb{r: 130, g: 180, b: 255}, final: rgb{r: 255, g: 130, b: 210}},
+		},
+	}
+
 	toxic := theme{
 		name:        "toxic",
 		transitions: []endpoints{
@@ -206,14 +214,6 @@ func newThemeRegistry() *themeRegistry {
 		},
 	}
 
-	vaporwave := theme{
-		name:        "vaporwave",
-		transitions: []endpoints{
-			{initial: rgb{r:  30, g: 220, b: 170}, final: rgb{r: 130, g: 180, b: 255}},
-			{initial: rgb{r: 130, g: 180, b: 255}, final: rgb{r: 255, g: 130, b: 210}},
-		},
-	}
-
 	coffee := theme{
 		name:        "coffee",
 		transitions: []endpoints{
@@ -266,8 +266,8 @@ func newThemeRegistry() *themeRegistry {
 		},
 	}
 
-	hyperdrive := theme{
-		name:        "hyperdrive",
+	psychadelic := theme{
+		name:        "psychadelic",
 		transitions: []endpoints{
 			{initial: rgb{r:  10, g:   0, b:  30}, final: rgb{r: 255, g:   0, b: 128}},
 			{initial: rgb{r: 255, g:   0, b: 128}, final: rgb{r:   0, g: 255, b: 242}},
@@ -297,6 +297,7 @@ func newThemeRegistry() *themeRegistry {
 		"rainbow":       &rainbow,
 		"rainbow2":      &rainbow2,
 		"retro":         &retro,
+		"vaporwave":     &vaporwave,
 		"toxic":         &toxic,
 		"trans":         &trans,
 		"pride":         &pride,
@@ -309,13 +310,12 @@ func newThemeRegistry() *themeRegistry {
 		"magma":         &magma,
 		"nebula":        &nebula,
 		"hazard":        &hazard,
-		"vaporwave":     &vaporwave,
 		"coffee":        &coffee,
 		"arcade":        &arcade,
 		"prism":         &prism,
 		"biohazard":     &biohazard,
 		"supernova":     &supernova,
-		"hyperdrive":    &hyperdrive,
+		"psychadelic":   &psychadelic,
 	}
 
 	return &themeRegistry{
