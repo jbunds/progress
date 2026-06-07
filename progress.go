@@ -45,6 +45,11 @@ func WithTheme(c string) Option {
 	return func(p *Progress) { p.theme = newThemeRegistry().get(c) }
 }
 
+// WithPersistBar allows callers (e.g., the example programs) to persist the progress bar on the terminal line on exit.
+func WithPersistBar(persistBar bool) Option {
+	return func(p *Progress) { if persistBar { p.persistBar = true } }
+}
+
 // Progress implements a throttled, concurrency-safe,
 // high-precision status indicator for workloads.
 type Progress struct {
@@ -70,6 +75,7 @@ type Progress struct {
 	clock         clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
 	isTerminal    func(any) bool // facilitates dependency injection for tests
 	theme         *theme         // progress bar color theme
+	persistBar    bool           // when true, don't clear the progress bar on exit
 }
 
 // New initializes a throttled, concurrency-safe, high-precision work progress
@@ -283,11 +289,16 @@ func (p *Progress) finish(ctx context.Context, buf []byte) {
 		buf = append(buf, ')')
 		buf = append(buf, p.layout.doneSeq...)
 	} else {                          // clean exit via p.Close() while context still active
-		buf = append(buf, p.layout.clearSeq...)
-		buf = append(buf, p.layout.prefix...)
-		buf = append(buf, oneHundredPct...)
-		buf = append(buf, p.layout.suffix...)
-		buf = append(buf, p.layout.finalStatus...)
+		if !p.persistBar {
+			buf = append(buf, p.layout.clearSeq...)
+			buf = append(buf, p.layout.prefix...)
+			buf = append(buf, oneHundredPct...)
+			buf = append(buf, p.layout.suffix...)
+			buf = append(buf, p.layout.finalStatus...)
+		} else {
+			buf = append(buf, p.layout.clearSeq[4:]...) // brittle, as this assumes that p.layout.clearSeq == "\r\033[K\033[?2026h\033[?7l"
+			buf = append(buf, '\n')
+		}
 		buf = append(buf, p.layout.doneSeq...)
 		if buf[len(buf) - 1] != '\n' {
 			buf = append(buf, p.layout.lineTerminator...)
