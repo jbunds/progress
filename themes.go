@@ -269,21 +269,20 @@ func newThemeRegistry() *themeRegistry {
 	hyperdrive := theme{
 		name:        "hyperdrive",
 		transitions: []endpoints{
-    {initial: rgb{r:  10, g:   0, b:  30}, final: rgb{r: 255, g:   0, b: 128}},
-    {initial: rgb{r: 255, g:   0, b: 128}, final: rgb{r:   0, g: 255, b: 242}},
-    {initial: rgb{r:   0, g: 255, b: 242}, final: rgb{r:  50, g: 255, b:   0}},
-    {initial: rgb{r:  50, g: 255, b:   0}, final: rgb{r: 255, g: 215, b:   0}},
-    {initial: rgb{r: 255, g: 215, b:   0}, final: rgb{r: 255, g:   0, b:  40}},
-    {initial: rgb{r: 255, g:   0, b:  40}, final: rgb{r: 138, g:  43, b: 226}},
-    {initial: rgb{r: 138, g:  43, b: 226}, final: rgb{r:   0, g:  71, b: 255}},
-    {initial: rgb{r:   0, g:  71, b: 255}, final: rgb{r: 255, g: 102, b:   0}},
-    {initial: rgb{r: 255, g: 102, b:   0}, final: rgb{r:   0, g: 255, b: 150}},
-    {initial: rgb{r:   0, g: 255, b: 150}, final: rgb{r: 255, g:   0, b: 210}},
-    {initial: rgb{r: 255, g:   0, b: 210}, final: rgb{r: 255, g:  60, b:   0}},
-    {initial: rgb{r: 255, g:  60, b:   0}, final: rgb{r: 255, g: 255, b: 255}},
+			{initial: rgb{r:  10, g:   0, b:  30}, final: rgb{r: 255, g:   0, b: 128}},
+			{initial: rgb{r: 255, g:   0, b: 128}, final: rgb{r:   0, g: 255, b: 242}},
+			{initial: rgb{r:   0, g: 255, b: 242}, final: rgb{r:  50, g: 255, b:   0}},
+			{initial: rgb{r:  50, g: 255, b:   0}, final: rgb{r: 255, g: 215, b:   0}},
+			{initial: rgb{r: 255, g: 215, b:   0}, final: rgb{r: 255, g:   0, b:  40}},
+			{initial: rgb{r: 255, g:   0, b:  40}, final: rgb{r: 138, g:  43, b: 226}},
+			{initial: rgb{r: 138, g:  43, b: 226}, final: rgb{r:   0, g:  71, b: 255}},
+			{initial: rgb{r:   0, g:  71, b: 255}, final: rgb{r: 255, g: 102, b:   0}},
+			{initial: rgb{r: 255, g: 102, b:   0}, final: rgb{r:   0, g: 255, b: 150}},
+			{initial: rgb{r:   0, g: 255, b: 150}, final: rgb{r: 255, g:   0, b: 210}},
+			{initial: rgb{r: 255, g:   0, b: 210}, final: rgb{r: 255, g:  60, b:   0}},
+			{initial: rgb{r: 255, g:  60, b:   0}, final: rgb{r: 255, g: 255, b: 255}},
   },
 }
-
 
 	registryMap := map[string]*theme{
 		"blackToWhite":  &blackToWhite,
