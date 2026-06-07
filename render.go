@@ -20,6 +20,12 @@ type writeState struct {
 	isColored  bool
 }
 
+// lastFrameRendered returns the last rendered frame string and is used only in tests.
+func (p *Progress) lastFrameRendered() string {
+	if v := p.lastFrame.Load(); v != nil { return *v }
+	return ""
+}
+
 // sync performs a state-aware redraw, skipping redundant redraws if the
 // progress and status values haven't changed since the last render.
 func (p *Progress) sync(buf []byte) []byte {
@@ -59,12 +65,6 @@ func (p *Progress) draw(buf []byte, state uint32) []byte {
 	buf, _ = p.writeStatus(buf, state & 0xFFFF, status, truncated)
 
 	return buf
-}
-
-// lastFrameRendered returns the last rendered frame string.
-func (p *Progress) lastFrameRendered() string {
-	if v := p.lastFrame.Load(); v != nil { return *v }
-	return ""
 }
 
 // writeStatus writes the progress status to to p.output (nominally os.Stderr) per an atomic system call.
