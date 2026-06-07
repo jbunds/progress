@@ -9,7 +9,7 @@ type percentTracker struct { lo layout }
 //             percentage rendered to the terminal does not change
 
 func (p *percentTracker) init() {
-	p.lo = defaultLayout()
+	p.lo             = defaultLayout()
 	p.lo.suffix      = "%)"
 	p.lo.finalStatus = ""
 	p.lo.staticWidth = len(prefix) + pctFieldLen + len(p.lo.suffix)

@@ -20,30 +20,30 @@ package progress
 //
 //   https://jakob-bagterp.github.io/colorist-for-python/ansi-escape-codes/rgb-colors/
 //
-//   │ atom or sequence  │ description
-//   ├───────────────────┼───────────────────────────────────────────────────────────────
-//   │ \033              │ ESC character (octal)
-//   │ \033[             │ CSI (control sequence introducer)
-//   │ ?                 │ extended terminal mode prefix (per DEC / xterm specification)
-//   │                   │
-//   │ \033[K            │ EL (Erase in Line): erase from cursor position to end of line
-//   │ \033[0m           │ SGR 0 (select graphic rendition: reset):
-//   │                   │     0: deactivate all character attributes, styles, and colors
-//   │                   │     m: SGR terminator)
-//   │                   │
-//   │ \033[48;2;        │ SGR sequence:
-//   │                   │    48: set background...
-//   │                   │     2: ...per incoming 24-bit RGB triplet
-//   │ \033[38;2;        │ SGR sequence:
-//   │                   │    38: set foreground (text) color...
-//   │                   │     2: ...per incoming 24-bit RGB triplet
-//   │                   │
-//   │ \033[?25h         │ DECTCEM (DEC Text Cursor Enable Mode) high: show the cursor
-//   │ \033[?25l         │ DECTCEM (DEC Text Cursor Enable Mode)  low: hide the cursor
-//   │                   │
-//   │   2026            │ synchronized updates mode designation number
-//   │ [?2026h           │ synchronized output high:   activate synchronized output mode
-//   │ [?2026l           │ synchronized output  low: deactivate synchronized output mode
+//   │ atom or sequence │ description
+//   ├──────────────────┼───────────────────────────────────────────────────────────────
+//   │ \033             │ ESC character (octal)
+//   │ \033[            │ CSI (control sequence introducer)
+//   │ ?                │ extended terminal mode prefix (per DEC / xterm specification)
+//   │                  │
+//   │ \033[K           │ EL (Erase in Line): erase from cursor position to end of line
+//   │ \033[0m          │ SGR 0 (select graphic rendition: reset):
+//   │                  │     0: deactivate all character attributes, styles, and colors
+//   │                  │     m: SGR terminator)
+//   │                  │
+//   │ \033[48;2;       │ SGR sequence:
+//   │                  │    48: set background...
+//   │                  │     2: ...per incoming 24-bit RGB triplet
+//   │ \033[38;2;       │ SGR sequence:
+//   │                  │    38: set foreground (text) color...
+//   │                  │     2: ...per incoming 24-bit RGB triplet
+//   │                  │
+//   │ \033[?25h        │ DECTCEM (DEC Text Cursor Enable Mode) high: show the cursor
+//   │ \033[?25l        │ DECTCEM (DEC Text Cursor Enable Mode)  low: hide the cursor
+//   │                  │
+//   │   2026           │ synchronized updates mode designation number
+//   │ [?2026h          │ synchronized output high:   activate synchronized output mode
+//   │ [?2026l          │ synchronized output  low: deactivate synchronized output mode
 
 const (
 	ansiHideCursor     = "\033[?25l"                   // hide cursor

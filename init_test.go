@@ -1,6 +1,6 @@
 package progress
 
-func init() { // override the default / production no-op stubs to enable synchronous, deterministic testing
+func init() { // override the default / production no-op stubs to facilitate synchronous, deterministic testing
 
 	isTestEnvironment = true
 
