@@ -33,34 +33,34 @@ import (
 //
 //   $ ./integration_test.sh
 //   args: -totaltasks  100 -loopiterations 100
-//   time:    0.39s
-//   rss:     7.39 MB
-//   mem:     4.45 MB
+//   time:  0.38s
+//   rss:   7.39 MB
+//   mem:   4.42 MB
 //
 //   args: -totaltasks 1000 -loopiterations 1e7
-//   time:    9.53s
-//   rss:     1513.23 MB
-//   mem:     1512.82 MB
+//   time:  8.99s
+//   rss:   1373.86 MB
+//   mem:   1372.66 MB
 //
 //   args: -totaltasks  1e6 -loopiterations 1e6
-//   time:    0.73s
-//   rss:     168.88 MB
-//   mem:     165.88 MB
+//   time:  0.65s
+//   rss:   148.77 MB
+//   mem:   145.69 MB
 //
 //   args: -totaltasks    0 -loopiterations 100
-//   time:    0.00s
-//   rss:     7.12 MB
-//   mem:     4.16 MB
+//   time:  0.00s
+//   rss:   7.30 MB
+//   mem:   4.33 MB
 //
 //   args: -totaltasks    0 -loopiterations 1e6
-//   time:    0.78s
-//   rss:     160.33 MB
-//   mem:     157.39 MB
+//   time:  0.66s
+//   rss:   152.38 MB
+//   mem:   149.38 MB
 //
 //   args: -totaltasks    0 -loopiterations 1e7
-//   time:    10.08s
-//   rss:     1494.50 MB
-//   mem:     1574.96 MB
+//   time:  8.94s
+//   rss:   1551.33 MB
+//   mem:   1549.00 MB
 //
 // see also `go build -gcflags=-m`
 
