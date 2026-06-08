@@ -8,8 +8,8 @@ import (
 // https://jakob-bagterp.github.io/colorist-for-python/ansi-escape-codes/rgb-colors/
 
 const (
-	threshold = 0.35 // foreground grey-scale inflection threshold: the lower the value, the earlier the transition will be triggered
-	power     = 24.0 // foreground grey-scale inflection exponent: the higher the value, the sharper the transition point
+	threshold = 0.35 // foreground grayscale inflection threshold: the lower the value, the earlier the transition will be triggered
+	power     = 24.0 // foreground grayscale inflection exponent: the higher the value, the sharper the transition point
 )
 
 // rgb represents a 24-bit color triplet.
@@ -30,26 +30,16 @@ func (t *theme) bgColor(fraction float64) rgb {
 	if fraction  >= 1.0 { return t.colors[numColors - 1] }
 
 	// calculate which continuous stage boundary the position current occupies
-	numSegments := numColors - 1
-	globalStage := fraction * float64(numSegments)
-	stageIdx    := int(math.Floor(globalStage))
+	numSegments     := numColors - 1
+	globalStage     := fraction * float64(numSegments)
+	stageIdx        := max(0, min(int(math.Floor(globalStage)), numSegments - 1))
+	segmentFraction := max(0, min(globalStage - float64(stageIdx), 1))
+	startColor      := t.colors[stageIdx]
+	endColor        := t.colors[stageIdx + 1]
 
-	if stageIdx >= numSegments { stageIdx = numSegments - 1 } // prevent floating-point rounding edge cases from out-of-bounds index panic
-
-	// extract the pure local interpolation fraction inside this specific stage slice
-	localT := globalStage - float64(stageIdx)
-	switch {
-	case localT > 1.0: localT = 1.0
-	case localT < 0.0: localT = 0.0
-	}
-
-	// read adjacent keyframes directly from the single array slice
-	startColor := t.colors[stageIdx]
-	endColor   := t.colors[stageIdx + 1]
-
-	lerp := func(start, end uint8) uint8 { // high-res 24-bit linear interpolation with accurate rounding
+	lerp := func(start, end uint8) uint8 { // high-res 24-bit linear interpolation (lerp) with accurate rounding
 		s, e := float64(start), float64(end)
-		return uint8(math.Floor(s + localT*(e - s) + 0.5))
+		return uint8(math.Floor(s + segmentFraction * (e - s) + 0.5))
 	}
 
 	return rgb{
@@ -59,22 +49,31 @@ func (t *theme) bgColor(fraction float64) rgb {
 	}
 }
 
-// fgColor calculates the perceptual luminance of the given background color and returns a high-contrast, grey-scale foreground color.
+// fgColor calculates the luminance of the given background color and returns a high-contrast, grayscale foreground color.
 func (c rgb) fgColor() rgb {
-	// W3C formula (https://www.w3.org/TR/WCAG20-TECHS/G17.html#G17-tests) using fast, integer-based scaling to avoid float bottlenecks:
-	//   0.2126 * 10000 ~= 2126
-	//   0.7152 * 10000 ~= 7152
-	//   0.0722 * 10000 ~=  722
+	// fast, integer-based approximation of the https://www.w3.org/TR/WCAG20-TECHS/G17.html#G17-tests W3C formula (skips gamma expansion):
+	//   R: 0.2126 * 10000 ~= 2126
+	//   G: 0.7152 * 10000 ~= 7152
+	//   B: 0.0722 * 10000 ~=  722
 	luminance           := (int(c.r) * 2126) + (int(c.g) * 7152) + (int(c.b) * 722)
-	normalizedLuminance := float64(luminance) / 2550000.0 // normalize luminance to a strict 0.0 -> 1.0 spectrum; maximum possible luminance is 255 * 10000 == 2,550,000
-	var biasedLuminance float64
+	normalizedLuminance := float64(luminance) / 2550000.0 // normalize luminance to a value on a 0.0 -> 1.0 spectrum; max luminance is 255 * 10000 == 2,550,000
+
+	var biasedLuminance float64                           // non-linear background brightness contrast scaling factor
 	if normalizedLuminance < threshold {
 		biasedLuminance = math.Pow(normalizedLuminance / threshold, power) * threshold // transition to white for dark backgrounds
 	} else {
-		biasedLuminance = 1.0 - (math.Pow((1.0 - normalizedLuminance) / (1.0 - threshold), power) * (1.0 - threshold)) // rapidly transition to black immediately past the threshold
+		biasedLuminance = 1.0 - (math.Pow((1.0 - normalizedLuminance) / (1.0 - threshold), power) * (1.0 - threshold)) // transition to black immediately past the threshold
 	}
-	// interpolate each channel linearly between white and black
-	// color == 255 + biasedLuminance * (0 - 255) => 255 * (1.0 - biasedLuminance)
+
+	// linear interpolation calculation of high-contrast grayscale foreground color based on background brightness
+	//
+	// invert the biasedLuminance contrast factor to obtain the high-contrast foreground grayscale value
+	//
+	// foreground color = 255 + biasedLuminance * (0 - 255) => 255 * (1.0 - biasedLuminance), i.e.:
+	//
+	//   as background brightness → 0.0  (dark), foreground color → 255 (white)
+	//   as background brightness → 1.0 (light), foreground color →   0 (black)
+
 	color := uint8(min(max(math.Floor(255.0 * (1.0 - biasedLuminance) + 0.5), 0), 255))
 	return rgb{r: color, g: color, b: color}
 }
