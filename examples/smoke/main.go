@@ -36,7 +36,7 @@ func main() {
 	output          := os.Stderr
 	termWidth, _, _ := term.GetSize(int(output.Fd()))
 	if termWidth < 80 { termWidth = 80 } // fallback when piped or redirected
-	tasks           := uint64(max(termWidth, 0))
+	tasks           := uint64(termWidth)
 	status          := "blah blah blah "
 	repeatCount     := termWidth / len(status) // len("task 1 finished ") == 16 > len("blah blah blah ") == 15
 

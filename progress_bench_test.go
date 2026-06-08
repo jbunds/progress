@@ -88,8 +88,7 @@ import (
 // -m: shows optimization decisions including escapes to the heap
 
 func BenchmarkRenderLoop(b *testing.B) {
-	// set storeLastFrameHook (indirectly used by unit tests) to a no-op function since it allocates onto the heap
-	// prevent test hook allocations on the heap
+	// set storeLastFrameHook (used by unit tests) to a no-op function since it allocates onto the heap
 	storeLastFrameHook = func(*Progress, []byte) {}
 
 	taskCompleteMsg := "completed a task" // pre-allocated variable to eliminate interface / string literal heap escapes

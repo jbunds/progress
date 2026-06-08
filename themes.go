@@ -37,7 +37,7 @@ func newThemeRegistry() *themeRegistry {
 	}
 
 	greenToBlue := theme{
-		name:        "greenToBlue",
+		name:   "greenToBlue",
 		colors: []rgb{
 			{0, 255,   0}, // green
 			{0,   0, 255}, // blue
@@ -255,7 +255,7 @@ func newThemeRegistry() *themeRegistry {
 	}
 
 	arcade := theme{
-		name:        "arcade",
+		name:   "arcade",
 		colors: []rgb{
 			{255,   0, 128}, // vivid rose
 			{140,   0, 255}, // electric indigo
