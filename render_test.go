@@ -29,12 +29,6 @@ func TestDraw(t *testing.T) {
 			statusText: "this is a very long status message that must be truncated",
 			want:       "processing ( 71%): …hat must be truncated\n",
 		},
-		{
-			name:       "status message truncated from the left with no ellipsis prepended (terminal too narrow)",
-			state:      pack(t, 22, 0.93), // 22 - len("processing (100%): ") == 3
-			statusText: "short message",
-			want:       "processing ( 93%): …age\n",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

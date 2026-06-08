@@ -1,10 +1,8 @@
 package progress
 
-import (
-	"unicode/utf8"
+import "github.com/rivo/uniseg"
 
-	"github.com/mattn/go-runewidth"
-)
+// https://github.com/mattn/go-runewidth/blob/master/runewidth_table.go
 
 // appendRGBInline writes a stringified integer directly into a byte slice without heap allocation.
 // optimized for RGB channel and terminal column ranges (0-255, 0-999).
@@ -52,51 +50,24 @@ func appendRune(p []byte, r rune) []byte {
 	}
 }
 
-// isWideRune returns true if the rune consumes precisely two columns.
-func isWideRune(r rune) bool {
-	if r < 0x1100 { return false } // Hangul boundary
-	return runewidth.RuneWidth(r) == 2
-}
-
-// widthInColumns calculates the visual column width of a string.
-// correctly tracks 0-wide control codes, 1-wide western text, and 2-wide characters.
-func widthInColumns(s string) int {
-	width := 0
-	for _, r := range s {
-		if isWideRune(r) {
-			width += 2
-		} else {
-			width += runewidth.RuneWidth(r) // safely resolve 0-wide control codes
-		}
-	}
-	return width
-}
-
 // truncateFromLeft constrains the length of progress status messages
 // rendered to the terminal, properly handling utf-8 strings.
 func truncateFromLeft(s string, maxCols int) (string, bool) {
-	if maxCols           <=       0 { return "", s != "" }
-	if widthInColumns(s) <= maxCols { return s, false }
+	if maxCols <= 0 { return "", s != "" }
 
-	width         := 0
-	cutoffByteIdx := 0
+	strWidth := uniseg.StringWidth(s)
+	if strWidth <= maxCols { return s, false }
 
-	i := len(s)
-	for i > 0 {
-		_, size        := utf8.DecodeLastRuneInString(s[:i])
-		currentByteIdx := i - size
-		r              := []rune(s[currentByteIdx:])[0] // safely decode the single rune at this byte position
-		
-		rWidth := runewidth.RuneWidth(r) // handle 0-wide control codes
-		if isWideRune(r) { rWidth = 2 }
+	state        := -1
+	remainder    := s
+	currentWidth := strWidth
 
-		if width + rWidth > maxCols { // if adding this character exceeds maxCols, stop here
-			cutoffByteIdx = i         // retain everything from index i onward
-			break
-		}
-		width += rWidth
-		i     -= size
+	for len(remainder) > 0 {
+		if currentWidth <= maxCols { return remainder, true }
+		_, nextRemainder, width, newState := uniseg.FirstGraphemeClusterInString(remainder, state)
+		currentWidth -= width
+		remainder = nextRemainder
+		state     = newState
 	}
-
-	return s[cutoffByteIdx:], true
+	return "", true
 }

@@ -62,6 +62,7 @@ linters:
             - unsafe  # used in fraction.go
             - github.com/hashicorp/golang-lru/v2
             - github.com/mattn/go-runewidth
+            - github.com/rivo/uniseg
             - golang.org/x/term
         test_whitelist:
           list-mode: strict

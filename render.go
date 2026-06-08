@@ -1,5 +1,7 @@
 package progress
 
+import "github.com/mattn/go-runewidth"
+
 // zero-overhead production / default no-op stubs:
 // - decoupled from the production runtime path via compiler optimization.
 // - overridden during test execution per init_test.go.
@@ -152,7 +154,7 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 
 func (ws *writeState) writeRune(buf []byte, r rune) []byte {
 	rWidth := 1
-	if r >= 0x1100 && isWideRune(r) { rWidth = 2 }
+	if runewidth.RuneWidth(r) == 2 { rWidth = 2 }
 
 	if ws.isTerminal && ws.termWidth > 0 && ws.curColPos < ws.curBarEnd {
 		bg := ws.theme.bgColor(float64(ws.curColPos) / float64(ws.termWidth - 1))
