@@ -5,7 +5,7 @@ import "github.com/rivo/uniseg"
 // https://github.com/mattn/go-runewidth/blob/master/runewidth_table.go
 
 // appendRGBInline writes a stringified integer directly into a byte slice without heap allocation.
-// optimized for RGB channel and terminal column ranges (0-255, 0-999).
+// optimized for RGB channel ranges (0-255).
 func appendRGBInline(b []byte, u uint8) []byte {
 	switch {
 	case u < 10:
