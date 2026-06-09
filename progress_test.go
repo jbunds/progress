@@ -20,9 +20,10 @@ import (
 
 func getCmpOpts() cmp.Options {
 	return cmp.Options{
-		cmpopts.IgnoreFields(Progress{}, // non-trivial to compare or irrelevant to this set of tests
-			"bufPool",    "output",        "theme",     "stopChan",   "doneChan",
-			"resizeChan", "resizeHandler", "closeOnce", "drawNotify", "isTerminal"),
+		cmpopts.IgnoreFields(Progress{}, // non-trivial to compare or irrelevant in tests
+			"theme",      "output",     "fgColor",  "bufPool",
+			"closeOnce",  "stopChan",   "doneChan", "resizeChan",
+			"drawNotify", "isTerminal", "resizeHandler"),
 		cmp.AllowUnexported(
 			Progress{},        realClock{},
 			layout{},          rgb{},

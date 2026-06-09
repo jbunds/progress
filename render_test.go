@@ -237,6 +237,7 @@ func TestWriteString(t *testing.T) {
 			buf := make([]byte, 0)
 			ws  := &writeState{
 				theme:      newThemeRegistry().get("sunset"),
+				fgColor:    fgColor(),
 				curBarEnd:  tt.curBarEnd,
 				curColPos:  tt.curColPos,
 				termWidth:  tt.curBarEnd,
@@ -314,6 +315,7 @@ func TestWriteStatus(t *testing.T) {
 				output:     io.Discard,
 				isTerminal: func(any) bool { return tt.isTerminal },
 				theme:      newThemeRegistry().get("sunset"),
+				fgColor:    fgColor(),
 			}
 			p.prepareTerminal()
 			p.state.Store(pack(t, 80, 0))

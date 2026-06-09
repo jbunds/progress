@@ -15,8 +15,9 @@ var (
 // across sequential draws in a stack-allocated block to prevent heap escaping.
 type writeState struct {
 	theme      *theme
-	curBarEnd  int // column index indicating the end of current progress bar
-	curColPos  int // tracks current column position during string serialization; used to compute gradient color fractions
+	fgColor    func(rgb) rgb // high-contrast foreground color calculation function
+	curBarEnd  int           // column index indicating the end of current progress bar
+	curColPos  int           // tracks current column position during string serialization; used to compute gradient color fractions
 	termWidth  int
 	isTerminal bool
 	isColored  bool
@@ -80,12 +81,13 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 	// global gradient: maps the color spectrum across the full terminal width.
 	//                  the color of any character depends strictly on its absolute screen column.
 	ws := writeState{
-		theme:      p.theme,
-		curBarEnd:  (termWidth * int(pctSigDigits)) / 10000,
-		curColPos:  0,
-		termWidth:  termWidth,
-		isTerminal: p.isTerminal(p.output),
-		isColored:  false,
+		theme:         p.theme,
+		fgColor:       p.fgColor,
+		curBarEnd:     (termWidth * int(pctSigDigits)) / 10000,
+		curColPos:     0,
+		termWidth:     termWidth,
+		isTerminal:    p.isTerminal(p.output),
+		isColored:     false,
 	}
 
 //	// cache loop-invariant bar gradient values
@@ -158,7 +160,7 @@ func (ws *writeState) writeRune(buf []byte, r rune) []byte {
 
 	if ws.isTerminal && ws.termWidth > 0 && ws.curColPos < ws.curBarEnd {
 		bg := ws.theme.bgColor(float64(ws.curColPos) / float64(ws.termWidth - 1))
-		fg := bg.fgColor()
+		fg := ws.fgColor(bg)
 
 		buf = append(buf, ansiStartFgRGB...) // write foreground color sequence (\033[38;2;R;G;Bm)
 		buf = appendRGBInline(buf, fg.r)

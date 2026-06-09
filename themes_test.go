@@ -42,7 +42,7 @@ func TestGetTheme(t *testing.T) {
 			t.Parallel()
 			got := newThemeRegistry().get(tt.name)
 			if diff := cmp.Diff(tt.want, got, getCmpOpts()); diff != "" {
-				t.Errorf("themeOrDefault(%q) mismatch (-want +got):\n%s", tt.name, diff)
+				t.Errorf("newThemeRegistry().get(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
 	}

@@ -75,6 +75,7 @@ type Progress struct {
 	clock         clock          // provides the timing source for throttled UI updates, allowing for fake clocks in tests
 	isTerminal    func(any) bool // facilitates dependency injection for tests
 	theme         *theme         // progress bar color theme
+	fgColor       func(rgb) rgb  // high-contrast foreground color calculator which uses a pre-computed 256-byte lookup table
 	persistBar    bool           // when true, don't clear the progress bar on exit
 }
 
@@ -94,6 +95,7 @@ func New(ctx context.Context, totalUnits uint64, output io.Writer, opts ...Optio
 		resizeChan:     make(chan os.Signal, 1),
 		clock:          &realClock{dur: 16 * time.Millisecond},
 		theme:          newThemeRegistry().get("sunset"),
+		fgColor:        fgColor(),
 	}
 
 	p.isTerminal = func(v any) bool {
