@@ -78,6 +78,12 @@ func (c rgb) fgColor() rgb {
 	return rgb{r: color, g: color, b: color}
 }
 
+func (c rgb) Equal(other rgb) bool {
+	return c.r == other.r &&
+	       c.g == other.g &&
+	       c.b == other.b
+}
+
 func (t *theme) Equal(other *theme) bool { // work around cmp's draconian strictures
 	if t == nil || other == nil { return t == other }
 	return t.name == other.name && slices.Equal(t.colors, other.colors)

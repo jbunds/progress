@@ -11,7 +11,7 @@ linters:
   default: standard # https://github.com/golangci/golangci-lint/blob/60180aacaa642385a3f683875507013b43214edf/.golangci.reference.yml#L14
   enable:                       # golangci-lint help linters
     - asasalint                 # check for pass []any as any in variadic func(...any)
-    - bidichk                   # hecks for dangerous unicode character sequences
+    - bidichk                   # checks for dangerous unicode character sequences
     - contextcheck              # check whether the function uses a non-inherited context
     - copyloopvar               # detects places where loop variables are copied
     - decorder                  # check declaration order and count of types, constants, variables and functions

@@ -62,12 +62,11 @@ func truncateFromLeft(s string, maxCols int) (string, bool) {
 	remainder    := s
 	currentWidth := strWidth
 
-	for len(remainder) > 0 {
+	for {
 		if currentWidth <= maxCols { return remainder, true }
 		_, nextRemainder, width, newState := uniseg.FirstGraphemeClusterInString(remainder, state)
 		currentWidth -= width
 		remainder     = nextRemainder
 		state         = newState
 	}
-	return "", true
 }

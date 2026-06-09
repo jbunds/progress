@@ -77,9 +77,24 @@ func TestHandleResize(t *testing.T) {
 	t.Cleanup(func() { p.Close() })
 	p.drawNotify = notify // drawNotify signals the completion of a draw cycle
 
-	mockTermWidth = 120
 	p.resizeChan <-syscall.SIGWINCH
 
+	<-notify // await a draw cycle to ensure the resize event has been processed
+
+	zeroCapBuf     := make([]byte, 0)
+	returnedBuf    := p.handleResize(zeroCapBuf)
+	expectedMinCap := p.layout.bufCap(minWidth)
+	if cap(returnedBuf) < expectedMinCap {
+		t.Errorf("handleResize() mismatch; want >= %d, got %d", expectedMinCap, cap(returnedBuf))
+	}
+
+	select {
+	case <-notify: // flush any synchronous notify token generated via the explicit p.handleResize call
+	default:
+	}
+
+	mockTermWidth = 120
+	p.resizeChan <- syscall.SIGWINCH
 	<-notify // await a draw cycle to ensure the resize event has been processed
 
 	want := uint32(120)
