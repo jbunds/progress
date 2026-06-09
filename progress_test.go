@@ -95,10 +95,10 @@ func TestNew(t *testing.T) {
 			wantTheme:   newThemeRegistry().get("sunset"),
 		},
 		{
-			name:        "verify WithTracker and WithTheme",
+			name:        "verify WithTracker, WithTheme, and WithPersistBar",
 			totalUnits:  0,
 			wantTotal:   0,
-			opts:        []Option{WithTracker(Unique), WithTheme("rainbow")},
+			opts:        []Option{WithTracker(Unique), WithTheme("rainbow"), WithPersistBar(true)},
 			wantTracker: getTracker(Unique, 0),
 			wantTheme:   newThemeRegistry().get("rainbow"),
 		},
@@ -250,7 +250,7 @@ func TestReportContention(t *testing.T) {
 	
 	statusPrefix := "hammer time! "
 
-	const numGoroutines = 150 // spam concurrent Report() calls to trigger CAS block contention
+	const numGoroutines = 600 // spam concurrent Report() calls to trigger CAS block contention
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
 
@@ -337,13 +337,14 @@ func TestRenderLoop(t *testing.T) {
 	}
 
 	go p.renderLoop(t.Context())
-	t.Cleanup(func() { p.Close() })
 
 	p.Report(10, "working...")
 	tickAndExpectDraw()
 
 	p.Report(0, "working...") // redundant report
 	tickAndExpectSkip()
+
+	p.Close()
 }
 
 func TestClose(t *testing.T) {
@@ -357,28 +358,30 @@ func TestClose(t *testing.T) {
 		{
 			name:    "succeeds",
 			total:   100,
-			wantOut: "processing (100%): done\n",
+			wantOut: ansiHideCursor + ansiClearSeq[4:] + "processing (100%): done" + ansiDoneSeq + "\n",
 		},
 		{
 			name:    "progress tracking was aborted",
 			total:   200,
 			err:     errors.New("aborted for some reason"),
-			wantOut: "stopped (aborted for some reason)\n",
+			wantOut: ansiHideCursor + ansiClearSeq + "stopped (aborted for some reason)" + ansiDoneSeq,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			ctx, cancel       := context.WithCancelCause(t.Context())
+			ctx, cancel := context.WithCancelCause(t.Context())
 			t.Cleanup(func() { cancel(nil) })
 
 			got := new(bytes.Buffer)
-			p   := New(ctx, tt.total, got)
+			p   := New(ctx, tt.total, got, WithIsTerminalFunc(func(any) bool { return true }), WithPersistBar(true))
+
 
 			wantProg := &Progress{
-				tracker: getTracker(Standard, tt.total),
-				clock:   &realClock{ dur: 16 * time.Millisecond },
-				layout:  p.layout,
+				tracker:    getTracker(Standard, tt.total),
+				clock:      &realClock{ dur: 16 * time.Millisecond },
+				layout:     p.layout,
+				persistBar: true,
 			}
 			wantProg.total.Store(tt.total)
 

@@ -37,7 +37,6 @@ func TestGetTracker(t *testing.T) {
 		},
 		{
 			name:  "fraction",
-			total: 0,
 			strat: Fraction,
 			want:  &standardTracker{},
 		},
@@ -51,6 +50,24 @@ func TestGetTracker(t *testing.T) {
 				t.Errorf("getTracker(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
+	}
+}
+
+func TestStandardTrackerLoad(t *testing.T) {
+	t.Parallel()
+	s   := &standardTracker{}
+	got := s.load()
+	if diff := cmp.Diff("", got); diff != "" {
+		t.Errorf("load() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestUniqueTrackerLoad(t *testing.T) {
+	t.Parallel()
+	u   := &uniqueTracker{}
+	got := u.load()
+	if diff := cmp.Diff("", got); diff != "" {
+		t.Errorf("load() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -84,6 +101,19 @@ func TestUniqueTrackerStoreAndLoad(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUniqueTrackerAddTotalAndLoad(t *testing.T) {
+	t.Parallel()
+	t.Run("uniqueTracker.load", func(t *testing.T) {
+		t.Parallel()
+		u := getTracker(Unique, 0)
+		u.addTotal(3)
+		got := u.load()
+		if diff := cmp.Diff("", got); diff != "" {
+			t.Errorf("load() mismatch (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func TestUniqueTrackerEqualMethod(t *testing.T) {
@@ -125,26 +155,15 @@ func TestPercentTrackerStoreAndLoad(t *testing.T) {
 	})
 }
 
-func TestUniqueTrackerLoad(t *testing.T) {
+func TestFractionTrackerAddTotalAndLoad(t *testing.T) {
 	t.Parallel()
-	t.Run("uniqueTracker.load", func(t *testing.T) {
+	t.Run("fractionTracker.addTotal", func(t *testing.T) {
 		t.Parallel()
-		u   := getTracker(Unique, 0)
-		got := u.load()
-		if diff := cmp.Diff("", got); diff != "" {
-			t.Errorf("load() mismatch (-want +got):\n%s", diff)
-		}
-	})
-}
-
-func TestFractionTrackerLoad(t *testing.T) {
-	t.Parallel()
-	t.Run("fractionTracker.load", func(t *testing.T) {
-		t.Parallel()
-		f   := getTracker(Fraction, 3)
+		f := getTracker(Fraction, 3)
+		f.addTotal(3)
 		got := f.load()
-		if diff := cmp.Diff("0/3", got); diff != "" {
-			t.Errorf("load() mismatch (-want +got):\n%s", diff)
+		if diff := cmp.Diff("0/6", got); diff != "" {
+			t.Errorf("addTotal() mismatch (-want +got):\n%s", diff)
 		}
 	})
 }

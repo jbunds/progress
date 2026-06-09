@@ -274,11 +274,6 @@ func (p *Progress) renderLoop(ctx context.Context) {
 	p.finish(ctx, buf) // render the final frame to the terminal and perform any necessary cleanup
 }
 
-var (
-	stoppedPrefix = []byte("stopped (")
-	oneHundredPct = []byte("100")
-)
-
 // finish renders the final progress frame to the terminal.
 func (p *Progress) finish(ctx context.Context, buf []byte) {
 	buf = buf[:0]
@@ -286,22 +281,22 @@ func (p *Progress) finish(ctx context.Context, buf []byte) {
 		errStr := err.Error()
 		if cause := context.Cause(ctx); cause != nil { errStr = cause.Error() }
 		buf = append(buf, p.layout.clearSeq...)
-		buf = append(buf, stoppedPrefix...)
+		buf = append(buf, "stopped ("...)
 		buf = append(buf, errStr...)
 		buf = append(buf, ')')
 		buf = append(buf, p.layout.doneSeq...)
 	} else {                          // clean exit via p.Close() while context still active
 		if !p.persistBar {
 			buf = append(buf, p.layout.clearSeq...)
-			buf = append(buf, p.layout.prefix...)
-			buf = append(buf, oneHundredPct...)
-			buf = append(buf, p.layout.suffix...)
-			buf = append(buf, p.layout.finalStatus...)
 		} else {
 			buf = append(buf, p.layout.clearSeq[4:]...) // brittle, as this assumes that p.layout.clearSeq == "\r\033[K\033[?2026h\033[?7l"
-			buf = append(buf, '\n')
 		}
+		buf = append(buf, p.layout.prefix...)
+		buf = append(buf, "100"...)
+		buf = append(buf, p.layout.suffix...)
+		buf = append(buf, p.layout.finalStatus...)
 		buf = append(buf, p.layout.doneSeq...)
+		if p.persistBar { buf = append(buf, '\n') } // TODO(jeff): clean up this ugly mess
 		if buf[len(buf) - 1] != '\n' {
 			buf = append(buf, p.layout.lineTerminator...)
 		}

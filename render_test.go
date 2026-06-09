@@ -329,3 +329,12 @@ func TestWriteStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestLastFrameRendered(t *testing.T) {
+	t.Parallel()
+	p   := &Progress{}
+	got := p.lastFrameRendered()
+	if diff := cmp.Diff("", got); diff != "" {
+		t.Errorf("lastFrameRendered() mismatch (-want +got):\n%s", diff)
+	}
+}
