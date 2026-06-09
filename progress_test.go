@@ -24,7 +24,8 @@ func getCmpOpts() cmp.Options {
 			"bufPool",    "output",        "theme",     "stopChan",   "doneChan",
 			"resizeChan", "resizeHandler", "closeOnce", "drawNotify", "isTerminal"),
 		cmp.AllowUnexported(
-			Progress{},        realClock{},     layout{},
+			Progress{},        realClock{},
+			layout{},          rgb{},
 			standardTracker{}, uniqueTracker{},
 			percentTracker{},  fractionTracker{}),
 		cmpopts.IgnoreUnexported(theme{}),

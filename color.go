@@ -32,14 +32,20 @@ func (t *theme) bgColor(fraction float64) rgb {
 	// calculate which continuous stage boundary the position current occupies
 	numSegments     := numColors - 1
 	globalStage     := fraction * float64(numSegments)
-	stageIdx        := max(0, min(int(math.Floor(globalStage)), numSegments - 1))
-	segmentFraction := max(0, min(globalStage - float64(stageIdx), 1))
+	floorStage      := math.Floor(globalStage)
+	stageIdx        := max(0, min(int(floorStage), numSegments - 1))
+	scaledFraction  := int((globalStage - floorStage) * float64(math.MaxInt16 + 1) + 0.5)
 	startColor      := t.colors[stageIdx]
 	endColor        := t.colors[stageIdx + 1]
 
-	lerp := func(start, end uint8) uint8 { // high-res 24-bit linear interpolation (lerp) with accurate rounding
-		s, e := float64(start), float64(end)
-		return uint8(math.Floor(s + segmentFraction * (e - s) + 0.5))
+	lerp := func(start, end uint8) uint8 { // high-res 15-bit fixed-point linear interpolation (lerp) with accurate rounding
+		s, e := int(start), int(end)
+		// 1. (s << 15) shifts the start color to a matching 15-bit fixed-point scale
+		// 2. (e - s) * scaledFraction calculates the exact distance delta using a 0-2^15 integer scale
+		// 3. adding 2^14 (half of 2^15) ensures accurate rounding
+		// 4. >> 15 divides by 2^15 to shift back to standard 8-bit integer space (0-255)
+		val := (s << 15 + (e - s) * scaledFraction + int(math.MaxInt16 + 1) / 2) >> 15
+		return uint8(max(0, min(val, 255))) // satisfy gosec
 	}
 
 	return rgb{
