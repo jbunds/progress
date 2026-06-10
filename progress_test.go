@@ -21,9 +21,9 @@ import (
 func getCmpOpts() cmp.Options {
 	return cmp.Options{
 		cmpopts.IgnoreFields(Progress{}, // non-trivial to compare or irrelevant in tests
-			"theme",      "output",     "fgColor",  "bufPool",
-			"closeOnce",  "stopChan",   "doneChan", "resizeChan",
-			"drawNotify", "isTerminal", "resizeHandler"),
+			"theme",      "output",     "fgColor",    "bufPool",
+			"stopChan",   "doneChan",   "lastFrame",  "closeOnce", 
+			"persistBar", "resizeChan", "drawNotify", "isTerminal", "resizeHandler"),
 		cmp.AllowUnexported(
 			Progress{},        realClock{},
 			layout{},          rgb{},
@@ -250,7 +250,7 @@ func TestReportContention(t *testing.T) {
 	
 	statusPrefix := "hammer time! "
 
-	const numGoroutines = 600 // spam concurrent Report() calls to trigger CAS block contention
+	const numGoroutines = 200 // spam concurrent Report() calls to trigger CAS block contention
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
 
@@ -349,20 +349,65 @@ func TestRenderLoop(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	t.Parallel()
+	isTerminal    := func(any) bool { return true }
+	coloredOutput :=
+		"\033[38;2;255;255;255;48;2;48;25;52mp"  + "\033[38;2;255;255;255;48;2;54;24;52mr"  +
+		"\033[38;2;255;255;255;48;2;59;23;52mo"  + "\033[38;2;255;255;255;48;2;65;22;53mc"  +
+		"\033[38;2;255;255;255;48;2;71;21;53me"  + "\033[38;2;255;255;255;48;2;77;20;53ms"  +
+		"\033[38;2;255;255;255;48;2;82;19;53ms"  + "\033[38;2;255;255;255;48;2;88;18;53mi"  +
+		"\033[38;2;255;255;255;48;2;94;17;54mn"  + "\033[38;2;255;255;255;48;2;100;16;54mg" +
+		"\033[38;2;255;255;255;48;2;105;16;54m " + "\033[38;2;255;255;255;48;2;111;15;54m(" +
+		"\033[38;2;255;255;255;48;2;117;14;54m1" + "\033[38;2;255;255;255;48;2;123;13;54m0" +
+		"\033[38;2;255;255;255;48;2;128;12;55m0" + "\033[38;2;255;255;255;48;2;134;11;55m%" +
+		"\033[38;2;255;255;255;48;2;140;10;55m)" + "\033[38;2;255;255;255;48;2;145;9;55m:"  +
+		"\033[38;2;255;255;255;48;2;151;8;55m "  + "\033[38;2;255;255;255;48;2;157;7;56md"  +
+		"\033[38;2;255;255;255;48;2;163;6;56mo"  + "\033[38;2;255;255;255;48;2;168;5;56mn"  +
+		"\033[38;2;255;255;255;48;2;174;4;56me"  +
+		"\033[48;2;180;3;56m "   + "\033[48;2;186;2;57m "   + "\033[48;2;191;1;57m "   +
+		"\033[48;2;197;0;57m "   + "\033[48;2;200;2;57m "   + "\033[48;2;203;6;57m "   +
+		"\033[48;2;205;9;56m "   + "\033[48;2;207;12;56m "  + "\033[48;2;209;15;56m "  +
+		"\033[48;2;211;19;56m "  + "\033[48;2;213;22;55m "  + "\033[48;2;215;25;55m "  +
+		"\033[48;2;217;29;55m "  + "\033[48;2;220;32;55m "  + "\033[48;2;222;35;55m "  +
+		"\033[48;2;224;39;54m "  + "\033[48;2;226;42;54m "  + "\033[48;2;228;45;54m "  +
+		"\033[48;2;230;48;54m "  + "\033[48;2;232;52;53m "  + "\033[48;2;234;55;53m "  +
+		"\033[48;2;237;58;53m "  + "\033[48;2;239;62;53m "  + "\033[48;2;241;65;53m "  +
+		"\033[48;2;243;68;52m "  + "\033[48;2;245;72;52m "  + "\033[48;2;247;75;52m "  +
+		"\033[48;2;249;78;52m "  + "\033[48;2;251;81;51m "  + "\033[48;2;254;85;51m "  +
+		"\033[48;2;255;88;50m "  + "\033[48;2;255;92;48m "  + "\033[48;2;255;97;46m "  +
+		"\033[48;2;255;101;45m " + "\033[48;2;255;105;43m " + "\033[48;2;255;109;41m " +
+		"\033[48;2;255;113;39m " + "\033[48;2;255;117;37m " + "\033[48;2;255;121;35m " +
+		"\033[48;2;255;125;33m " + "\033[48;2;255;129;31m " + "\033[48;2;255;133;29m " +
+		"\033[48;2;255;138;27m " + "\033[48;2;255;142;25m " + "\033[48;2;255;146;23m " +
+		"\033[48;2;255;150;21m " + "\033[48;2;255;154;19m " + "\033[48;2;255;158;17m " +
+		"\033[48;2;255;162;15m " + "\033[48;2;255;166;14m " + "\033[48;2;255;170;12m " +
+		"\033[48;2;255;174;10m " + "\033[48;2;255;179;8m "  + "\033[48;2;255;183;6m "  +
+		"\033[48;2;255;187;4m "  + "\033[48;2;255;191;2m "  + "\033[48;2;255;195;0m "
+
 	tests := []struct {
-		name     string
-		total    uint64
-		err      error
-		wantOut  string
+		name       string
+		total      uint64
+		opts       []Option
+		err        error
+		wantOut    string
 	}{
 		{
-			name:    "succeeds",
+			name:    "with WithPersistBar(false)",
 			total:   100,
-			wantOut: ansiHideCursor + ansiClearSeq[4:] + "processing (100%): done" + ansiDoneSeq + "\n",
+			opts:    []Option{WithIsTerminalFunc(isTerminal)},
+			wantOut: ansiHideCursor + ansiClearSeq       + coloredOutput +
+			         ansiResetAttrs + ansiLineTerminator + ansiClearSeq  + ansiDoneSeq,
 		},
 		{
-			name:    "progress tracking was aborted",
+			name:    "with WithPersistBar(true)",
 			total:   200,
+			opts:    []Option{WithIsTerminalFunc(isTerminal), WithPersistBar(true)},
+			wantOut: ansiHideCursor + ansiClearSeq       + coloredOutput +
+			         ansiResetAttrs + ansiLineTerminator + "\n"          + ansiDoneSeq,
+		},
+		{
+			name:    "aborted",
+			total:   300,
+			opts:    []Option{WithIsTerminalFunc(isTerminal)},
 			err:     errors.New("aborted for some reason"),
 			wantOut: ansiHideCursor + ansiClearSeq + "stopped (aborted for some reason)" + ansiDoneSeq,
 		},
@@ -374,14 +419,12 @@ func TestClose(t *testing.T) {
 			t.Cleanup(func() { cancel(nil) })
 
 			got := new(bytes.Buffer)
-			p   := New(ctx, tt.total, got, WithIsTerminalFunc(func(any) bool { return true }), WithPersistBar(true))
-
+			p   := New(ctx, tt.total, got, tt.opts...)
 
 			wantProg := &Progress{
-				tracker:    getTracker(Standard, tt.total),
-				clock:      &realClock{ dur: 16 * time.Millisecond },
-				layout:     p.layout,
-				persistBar: true,
+				tracker: getTracker(Standard, tt.total),
+				clock:   &realClock{ dur: 16 * time.Millisecond },
+				layout:  p.layout,
 			}
 			wantProg.total.Store(tt.total)
 

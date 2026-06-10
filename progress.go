@@ -284,23 +284,15 @@ func (p *Progress) finish(ctx context.Context, buf []byte) {
 		buf = append(buf, "stopped ("...)
 		buf = append(buf, errStr...)
 		buf = append(buf, ')')
-		buf = append(buf, p.layout.doneSeq...)
 	} else {                          // clean exit via p.Close() while context still active
-		if !p.persistBar {
-			buf = append(buf, p.layout.clearSeq...)
+		_, _ = p.writeStatus(buf, 10000, p.layout.finalStatus, false)
+		if p.persistBar {
+			buf = append(buf, '\n')
 		} else {
-			buf = append(buf, p.layout.clearSeq[4:]...) // brittle, as this assumes that p.layout.clearSeq == "\r\033[K\033[?2026h\033[?7l"
-		}
-		buf = append(buf, p.layout.prefix...)
-		buf = append(buf, "100"...)
-		buf = append(buf, p.layout.suffix...)
-		buf = append(buf, p.layout.finalStatus...)
-		buf = append(buf, p.layout.doneSeq...)
-		if p.persistBar { buf = append(buf, '\n') } // TODO(jeff): clean up this ugly mess
-		if buf[len(buf) - 1] != '\n' {
-			buf = append(buf, p.layout.lineTerminator...)
+			buf = append(buf, p.layout.clearSeq...)
 		}
 	}
+	buf = append(buf, p.layout.doneSeq...)
 
 	_, _ = p.output.Write(buf)
 }

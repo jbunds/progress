@@ -13,7 +13,6 @@ for theme in ${themes[@]}; do
 	go run -tags examples ./examples/smoke \
 	-forcetty                              \
 	-persistbar                            \
-	-tracker percent                       \
-	-theme   $theme
+	-theme $theme
 	echo
 done
