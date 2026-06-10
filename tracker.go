@@ -9,7 +9,7 @@ const (
 	// Unique is suitable for tracking repetitive status updates.
 	Unique
 
-	// Fraction renders status updates to the UI as a proper fraction (x/y).
+	// Fraction renders status updates as a proper fraction (x/y).
 	Fraction
 
 	// Percent renders only the percentage of completed work.
