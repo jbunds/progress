@@ -31,7 +31,7 @@ jobs:
 
     - name: test                # https://pkg.go.dev/cmd/go#hdr-Testing_functions
       id:   test
-      run:  go test -race -count=100 -gcflags=-d=checkptr .
+      run:  go test -race -count=100 -gcflags=-d=checkptr ./...
 
     - name: coverage report
       id:   coverage_report
