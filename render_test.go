@@ -89,40 +89,23 @@ func TestPercentTrackerDraw(t *testing.T) {
 
 func TestUniqueTrackerDraw(t *testing.T) {
 	t.Parallel()
-	tests  := []struct {
-		name       string
-		total      uint64
-		state      uint32
-		statusText string
-		want       string
-	}{
-		{
-			name:       "succeeds",
-			total:      100,
-			state:      pack(t, minWidth, 0.37),
-			statusText: "working...",
-			want:       "processing ( 37%): working...\n",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			p := &Progress{
-				tracker:    getTracker(Unique, 0),
-				output:     io.Discard,
-				isTerminal: isTerminal,
-			}
-			p.tracker.store(0, tt.statusText)
-			p.prepareTerminal()
+	t.Run("uniqueTracker draw", func(t *testing.T) {
+		t.Parallel()
+		p := &Progress{
+			tracker:    getTracker(Unique, 0),
+			output:     io.Discard,
+			isTerminal: isTerminal,
+		}
+		p.tracker.store(0, "working...")
+		p.prepareTerminal()
 
-			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
-			p.draw(buf, tt.state)
+		buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+		p.draw(buf, pack(t, minWidth, 0.37))
 
-			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
-				t.Errorf("draw(%q) mismatch (-want +got):\n%s", tt.name, diff)
-			}
-		})
-	}
+		if diff := cmp.Diff("processing ( 37%): working...\n", p.lastFrameRendered()); diff != "" {
+			t.Errorf("draw() mismatch (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func TestFractionTrackerRedraw(t *testing.T) {

@@ -127,7 +127,7 @@ func TestNew(t *testing.T) {
 
 func TestInitialBudget(t *testing.T) {
 	t.Parallel()
-	t.Run("succeeds", func(t *testing.T) {
+	t.Run("InitialBudget returns scale", func(t *testing.T) {
 		t.Parallel()
 		ctx := t.Context()
 		p   := New(ctx, 0, io.Discard)
