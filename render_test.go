@@ -60,36 +60,12 @@ func TestPercentTrackerDraw(t *testing.T) {
 		state uint32
 		want  string
 	}{
-		{
-			name:  "0.9%",
-			state: pack(t, termWidth, 0.0094),
-			want:  "processing (0.9%)\n",
-		},
-		{
-			name:  "1.0%",
-			state: pack(t, termWidth, 0.0095),
-			want:  "processing (1.0%)\n",
-		},
-		{
-			name:  "9.9%",
-			state: pack(t, termWidth, 0.0994),
-			want:  "processing (9.9%)\n",
-		},
-		{
-			name:  "10%",
-			state: pack(t, termWidth, 0.0995),
-			want:  "processing ( 10%)\n",
-		},
-		{
-			name:  "99%",
-			state: pack(t, termWidth, 0.9949),
-			want:  "processing ( 99%)\n",
-		},
-		{
-			name:  "100%",
-			state: pack(t, termWidth, 0.9950),
-			want:  "processing (100%)\n",
-		},
+		{ "0.9%", pack(t, termWidth, 0.0094), "processing (0.9%)\n" },
+		{ "1.0%", pack(t, termWidth, 0.0095), "processing (1.0%)\n" },
+		{ "9.9%", pack(t, termWidth, 0.0994), "processing (9.9%)\n" },
+		{  "10%", pack(t, termWidth, 0.0995), "processing ( 10%)\n" },
+		{  "99%", pack(t, termWidth, 0.9949), "processing ( 99%)\n" },
+		{ "100%", pack(t, termWidth, 0.9950), "processing (100%)\n" },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -214,22 +190,8 @@ func TestWriteString(t *testing.T) {
 		want          string
 		wantIsColored bool
 	}{
-		{
-			name:          "wide load",
-			curBarEnd:     30,
-			curColPos:     20,
-			str:           "🙃",
-			want:          "\033[38;2;1;1;1;48;2;255;94;47m🙃",
-			wantIsColored: true,
-		},
-		{
-			name:      "reset",
-			curBarEnd: 30,
-			curColPos: 30,
-			isColored: true,
-			str:       "foo",
-			want:      "\033[0mfoo",
-		},
+		{ "wide load", 30, 20, false, "🙃",  "\033[38;2;1;1;1;48;2;255;94;47m🙃", true  },
+		{ "reset",     30, 30, true,  "foo", "\033[0mfoo",                        false },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -303,8 +265,8 @@ func TestWriteStatus(t *testing.T) {
 			              "\033[48;2;249;78;52m "  + "\033[48;2;251;81;51m "  + "\033[48;2;254;85;51m "  +
 			              "\033[48;2;255;88;50m "  + "\033[48;2;255;92;48m "  + "\033[48;2;255;97;46m "  +
 			              "\033[48;2;255;101;45m " + "\033[48;2;255;105;43m " + "\033[48;2;255;109;41m " +
-			              "\033[48;2;255;113;39m " + "\033[48;2;255;117;37m " + ansiResetAttrs +
-			              ansiLineTerminator,
+			              "\033[48;2;255;113;39m " + "\033[48;2;255;117;37m " +
+			              ansiResetAttrs + ansiLineTerminator,
 		},
 	}
 	for _, tt := range tests {

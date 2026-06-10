@@ -14,32 +14,11 @@ func TestGetTracker(t *testing.T) {
 		total uint64
 		want  statusTracker
 	}{
-		{
-			name:  "standard",
-			strat: Standard,
-			want:  &standardTracker{},
-		},
-		{
-			name:  "unique",
-			strat: Unique,
-			want:  &uniqueTracker{},
-		},
-		{
-			name:  "percent",
-			strat: Percent,
-			want:  &percentTracker{},
-		},
-		{
-			name:  "fraction",
-			total: 3,
-			strat: Fraction,
-			want:  &fractionTracker{ initialTotal: 3 },
-		},
-		{
-			name:  "fraction",
-			strat: Fraction,
-			want:  &standardTracker{},
-		},
+		{ "standard", Standard, 0, &standardTracker{}                  },
+		{ "unique",   Unique,   0, &uniqueTracker{}                    },
+		{ "percent",  Percent,  0, &percentTracker{}                   },
+		{ "fraction", Fraction, 0, &standardTracker{}                  },
+		{ "fraction", Fraction, 3, &fractionTracker{ initialTotal: 3 } },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,34 +52,19 @@ func TestUniqueTrackerLoad(t *testing.T) {
 
 func TestUniqueTrackerStoreAndLoad(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name   string
-		status string
-		want1  string
-		want2  string
-	}{
-		{
-			name:   "succeeds",
-			status: "foo",
-			want1:  "",
-			want2:  "foo",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			u   := getTracker(Unique, 0)
-			got := u.load()
-			if diff := cmp.Diff(tt.want1, got); diff != "" {
-				t.Errorf("load(%q) mismatch (-want +got):\n%s", tt.name, diff)
-			}
-			u.store(0, tt.status)
-			got = u.load()
-			if diff := cmp.Diff(tt.want2, got); diff != "" {
-				t.Errorf("store(%q} / load() mismatch (-want +got):\n%s", tt.name, diff)
-			}
-		})
-	}
+	t.Run("uniqueTracker.store and uniqueTracker.load", func(t *testing.T) {
+		t.Parallel()
+		u   := getTracker(Unique, 0)
+		got := u.load()
+		if diff := cmp.Diff("", got); diff != "" {
+			t.Errorf("load() mismatch (-want +got):\n%s", diff)
+		}
+		u.store(0, "foo")
+		got = u.load()
+		if diff := cmp.Diff("foo", got); diff != "" {
+			t.Errorf("store(} / load() mismatch (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func TestUniqueTrackerAddTotalAndLoad(t *testing.T) {

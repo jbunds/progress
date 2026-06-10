@@ -13,21 +13,9 @@ func TestBgColor(t *testing.T) {
 		fraction float64
 		want     rgb
 	}{
-		{
-			name:     "sunset",
-			fraction: 0.5,
-			want:     rgb{r: 227, g: 44, b: 54},
-		},
-		{
-			name:     "ocean",
-			fraction: 0.7,
-			want:     rgb{r: 10, g: 206, b: 150},
-		},
-		{
-			name:     "thermal",
-			fraction: 0.3,
-			want:     rgb{r: 171, g: 14, b: 120},
-		},
+		{ "sunset",  0.5, rgb{227,  44,  54} },
+		{ "ocean",   0.7, rgb{ 10, 206, 150} },
+		{ "thermal", 0.3, rgb{171,  14, 120} },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -48,27 +36,9 @@ func TestBgColorEdgeCases(t *testing.T) {
 		fraction float64
 		want     rgb
 	}{
-		{
-			name:     "no colors",
-			theme:    &theme{},
-			fraction: 0.1,
-			want:     rgb{},
-		},
-		{
-			name:     "one color",
-			theme:    &theme{ colors: []rgb{{1, 2, 3}} },
-			fraction: 0.2,
-			want:     rgb{1, 2, 3},
-		},
-		{
-			name:    "fraction exceeds 1.0",
-			theme:    &theme{ colors: []rgb{
-				{4, 5, 6},
-				{7, 8, 9},
-			}},
-			fraction: 3,
-			want:     rgb{7, 8, 9},
-		},
+		{ "no colors",            &theme{                                     }, 0.1, rgb{       } },
+		{ "one color",            &theme{ colors: []rgb{{1, 2, 3}}            }, 0.2, rgb{1, 2, 3} },
+		{ "fraction exceeds 1.0", &theme{ colors: []rgb{{4, 5, 6}, {7, 8, 9}} }, 3.0, rgb{7, 8, 9} },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

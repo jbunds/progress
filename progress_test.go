@@ -127,27 +127,16 @@ func TestNew(t *testing.T) {
 
 func TestInitialBudget(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name string
-		want float64
-	}{
-		{
-			name: "succeeds",
-			want: float64(scale),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			ctx := t.Context()
-			p   := New(ctx, 0, io.Discard)
-			t.Cleanup(func() { p.Close() })
-			got := p.InitialBudget()
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("InitialBudget(%q) mismatch (-want +got):\n%s", tt.name, diff)
-			}
-		})
-	}
+	t.Run("succeeds", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		p   := New(ctx, 0, io.Discard)
+		t.Cleanup(func() { p.Close() })
+		got := p.InitialBudget()
+		if diff := cmp.Diff(float64(scale), got); diff != "" {
+			t.Errorf("InitialBudget() mismatch (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func TestAddTotal(t *testing.T) {
@@ -157,16 +146,8 @@ func TestAddTotal(t *testing.T) {
 		units uint64
 		want  uint64
 	}{
-		{
-			name:  "less than scale added",
-			units: 100,
-			want:  100,
-		},
-		{
-			name:  "more than scale added; total capped at scale",
-			units: scale + 1000,
-			want:  scale,
-		},
+		{ "less than scale added",                                 100,   100 },
+		{ "more than scale added; total capped at scale", scale + 1000, scale },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

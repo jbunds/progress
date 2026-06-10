@@ -127,26 +127,13 @@ func TestGetTermWidth(t *testing.T) {
 	t.Cleanup(func() { if err := r.Close(); err != nil { t.Log(err) } })
 	t.Cleanup(func() { if err := w.Close(); err != nil { t.Log(err) } })
 
-	tests := []struct {
-		name   string
-		output *os.File
-		want   int
-	}{
-		{
-			name:  "falls back to minWidth for non-terminal files",
-			output: w, // pipes have no width
-			want:   minWidth,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := getTermWidth(tt.output)
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("getTermWidth(%q) mismatch (-want +got):\n%s", tt.name, diff)
-			}
-		})
-	}
+	t.Run("falls back to minWidth for non-terminal files", func(t *testing.T) {
+		t.Parallel()
+		got := getTermWidth(w)
+		if diff := cmp.Diff(minWidth, got); diff != "" {
+			t.Errorf("getTermWidth() mismatch (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func TestGetFD(t *testing.T) {
