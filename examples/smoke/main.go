@@ -27,11 +27,25 @@ import (
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(),
-		os.Interrupt,    // interrupt signal (ctrl+c)
-		syscall.SIGTERM, // kill signal
-		syscall.SIGHUP)  // terminal closed signal
-	defer stop()
+	exitCode := 0
+	defer func() { os.Exit(exitCode) }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan,
+		os.Interrupt,    // SIGINT  ( 2)
+		syscall.SIGQUIT, // SIGQUIT ( 3)
+		syscall.SIGTERM, // SIGTERM (15)
+		syscall.SIGHUP)  // SIGHUP  ( 1)
+
+	var receivedSignal os.Signal
+	go func() {
+		receivedSignal = <-sigChan
+		signal.Stop(sigChan)
+		cancel() // trigger ctx.Done()
+	}()
 
 	output          := os.Stderr
 	termWidth, _, _ := term.GetSize(int(output.Fd()))
@@ -46,6 +60,11 @@ func main() {
 	for i := range tasks {
 		select {
 		case <-ctx.Done():
+			if receivedSignal != nil {
+				if sig, ok := receivedSignal.(syscall.Signal); ok {
+					exitCode = int(sig) + 128
+				}
+			}
 			return
 		case <-time.After(18 * time.Millisecond):
 			prog.Report(1, fmt.Sprintf("task %d finished " + strings.Repeat(status, repeatCount), i))

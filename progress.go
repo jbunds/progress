@@ -317,7 +317,7 @@ type fakeClock  struct { c  chan time.Time } // simulates the passage of time in
 func (r *realTicker) ch() <-chan time.Time { return r.C }
 func (f  fakeTicker) ch() <-chan time.Time { return f.c }
 
-func (r *realClock ) tick() ticker { return &realTicker{ Ticker: time.NewTicker(r.dur) }}
-func (f  fakeClock ) tick() ticker { return  fakeTicker(f)                              }
+func (r *realClock ) tick() ticker { return &realTicker{ time.NewTicker(r.dur) }}
+func (f  fakeClock ) tick() ticker { return  fakeTicker(f)                      }
 
 func (f  fakeTicker) Stop() {}
