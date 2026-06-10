@@ -6,8 +6,10 @@ import (
 	"errors"
 	"io"
 	"math"
+	"os"
 	"reflect"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -242,7 +244,7 @@ func TestReport(t *testing.T) {
 func TestRenderLoop(t *testing.T) {
 	t.Parallel()
 
-	tickTrigger := make(chan time.Time, 1)
+	tickTrigger := make(chan time.Time, 2) // capacity of 2 to cover the post-loop drain case
 	notify      := make(chan struct{},  1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
 
 	p := &Progress{
@@ -254,6 +256,7 @@ func TestRenderLoop(t *testing.T) {
 		stopChan:   make(chan struct{}),
 		doneChan:   make(chan struct{}),
 	}
+	p.resizeHandler = p.getResizedTermWidth
 
 	p.initBufPool()
 
@@ -275,7 +278,9 @@ func TestRenderLoop(t *testing.T) {
 		}
 	}
 
-	go p.renderLoop(t.Context())
+	ctx, cancel := context.WithCancel(t.Context())
+
+	go p.renderLoop(ctx)
 
 	p.Report(10, "working...")
 	tickAndExpectDraw()
@@ -283,7 +288,35 @@ func TestRenderLoop(t *testing.T) {
 	p.Report(0, "working...") // redundant report
 	tickAndExpectSkip()
 
-	p.Close()
+	// avert thine eyes, for the remainder of this test just ekes out gratuitous test coverage...
+
+	p.Report(20, "post-loop drain case")
+	tickTrigger <- time.Time{} // send a tick to wake up the loop select block
+	tickTrigger <- time.Time{} // send a tick to wake up the loop select block
+	<-notify                   // wait for the sync logic to execute and notify
+	<-notify                   // wait for the post-loop drain to catch the second tick
+
+	cancel()                   // cover the first select block's ctx.Done() case
+
+	<-p.doneChan               // wait for the first renderLoop goroutine to exit
+
+	select {
+	case <-notify:             // drain the notify channel
+	default:
+	}
+
+	p.stopChan   = make(chan struct{})
+	p.doneChan   = make(chan struct{})
+	resizeSig   := make(chan os.Signal, 1)
+	p.resizeChan = resizeSig // hijack resizeChan to ensure the p.Close() call is caught by the second select block
+
+	go p.renderLoop(t.Context())
+
+	resizeSig <- syscall.SIGWINCH // send a SIGWINCH signal to the hijacked resizeChan
+	<-notify                      // wait for renderLoop to handle the resize signal
+
+	p.Close()    // cover the second select block's stopChan case
+	<-p.doneChan // wait for the second renderLoop goroutine to exit
 }
 
 func TestClose(t *testing.T) {
