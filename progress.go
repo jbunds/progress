@@ -46,8 +46,8 @@ func WithTheme(c string) Option {
 }
 
 // WithPersistBar allows callers (e.g., the example programs) to persist the progress bar on the terminal line on exit.
-func WithPersistBar(persistBar bool) Option {
-	return func(p *Progress) { if persistBar { p.persistBar = true } }
+func WithPersistBar(t bool) Option {
+	return func(p *Progress) { if t { p.persistBar = true } }
 }
 
 // Progress implements a throttled, concurrency-safe,
