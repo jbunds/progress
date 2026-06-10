@@ -66,7 +66,7 @@ func main() {
 				}
 			}
 			return
-		case <-time.After(18 * time.Millisecond):
+		case <-time.After(time.Microsecond):
 			prog.Report(1, fmt.Sprintf("task %d finished " + strings.Repeat(status, repeatCount), i))
 		}
 	}

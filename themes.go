@@ -20,11 +20,35 @@ func newThemeRegistry() *themeRegistry {
 		},
 	}
 
-	blueToRed := theme{
-		name:   "blueToRed",
+	blackToBlue := theme{
+		name:   "blackToBlue",
 		colors: []rgb{
-			{  0, 0, 255}, // blue
-			{255, 0,   0}, // red
+			{0, 0,   0}, // black
+			{0, 0, 255}, // blue
+		},
+	}
+
+	blackToGreen := theme{
+		name:   "blackToGreen",
+		colors: []rgb{
+			{0,   0, 0}, // black
+			{0, 255, 0}, // green
+		},
+	}
+
+	blackToRed := theme{
+		name:   "blackToRed",
+		colors: []rgb{
+			{  0, 0, 0}, // black
+			{255, 0, 0}, // red
+		},
+	}
+
+	blackToYellow := theme{
+		name:   "blackToYellow",
+		colors: []rgb{
+			{  0,   0, 0}, // black
+			{255, 255, 0}, // yellow
 		},
 	}
 
@@ -33,6 +57,63 @@ func newThemeRegistry() *themeRegistry {
 		colors: []rgb{
 			{0,   0, 255}, // blue
 			{0, 255,   0}, // green
+		},
+	}
+
+	blueToRed := theme{
+		name:   "blueToRed",
+		colors: []rgb{
+			{  0, 0, 255}, // blue
+			{255, 0,   0}, // red
+		},
+	}
+
+	rainbow2 := theme{
+		name:   "rainbow2",
+		colors: []rgb{
+			{  0,   0, 255}, // blue
+			{  0, 255,   0}, // green
+			{255, 255,   0}, // yellow
+			{255,   0,   0}, // red
+		},
+	}
+
+	rainbow := theme{
+		name:   "rainbow",
+		colors: []rgb{
+			{  0,   0, 255}, // blue
+			{  0, 255,   0}, // green
+			{255, 255,   0}, // yellow
+			{255, 127,   0}, // orange
+			{255,   0,   0}, // red
+		},
+	}
+
+	glacier := theme{
+		name:   "glacier",
+		colors: []rgb{
+			{  0,  30,  60}, // midnight blue
+			{  0, 210, 255}, // sky blue
+			{230, 250, 255}, // pale ice blue
+		},
+	}
+
+	ocean := theme{
+		name:   "ocean",
+		colors: []rgb{
+			{  0,  10,  45}, // navy blue
+			{  0, 128, 128}, // teal
+			{  0, 200, 150}, // turquoise
+			{100, 255, 150}, // seafoam green
+		},
+	}
+
+	matrix := theme{
+		name:   "matrix",
+		colors: []rgb{
+			{ 0,  40,  0}, // dark forest green
+			{ 0, 140, 40}, // kelly green
+			{50, 255, 50}, // neon green
 		},
 	}
 
@@ -52,73 +133,14 @@ func newThemeRegistry() *themeRegistry {
 		},
 	}
 
-	fire := theme{
-		name:   "fire",
+	biohazard := theme{
+		name:   "biohazard",
 		colors: []rgb{
-			{255,   0, 0}, // red
-			{255, 255, 0}, // yellow
-		},
-	}
-
-	thermal := theme{
-		name:   "thermal",
-		colors: []rgb{
-			{  0,   0,  50}, // dark blue
-			{150,   0, 150}, // purple
-			{255,  70,   0}, // orange
-			{255, 220,   0}, // pale yellow
-			{255, 255, 255}, // white
-		},
-	}
-
-	sunset := theme{
-		name:   "sunset",
-		colors: []rgb{
-			{ 48,  25, 52}, // dark plum
-			{199,   0, 57}, // crimson
-			{255,  87, 51}, // dark coral
-			{255, 195,  0}, // peach gold
-		},
-	}
-
-	ocean := theme{
-		name:   "ocean",
-		colors: []rgb{
-			{  0,  10,  45}, // navy blue
-			{  0, 128, 128}, // teal
-			{  0, 200, 150}, // turquoise
-			{100, 255, 150}, // seafoam green
-		},
-	}
-
-	rainbow := theme{
-		name:   "rainbow",
-		colors: []rgb{
-			{  0,   0, 255}, // blue
-			{  0, 255,   0}, // green
-			{255, 255,   0}, // yellow
-			{255, 127,   0}, // orange
-			{255,   0,   0}, // red
-		},
-	}
-
-	rainbow2 := theme{ // this variant renders a higher proportion of green gradients in the middle of its span
-		name:   "rainbow2",
-		colors: []rgb{
-			{  0,   0, 255}, // blue
-			{  0, 255,   0}, // green
-			{255, 255,   0}, // yellow
-			{255,   0,   0}, // red
-		},
-	}
-
-	retro := theme{
-		name:   "retro",
-		colors: []rgb{
-			{ 55,   0, 255}, // indigo
-			{255,   0, 128}, // magenta
-			{255,   0, 255}, // pink
-			{  0, 255, 255}, // cyan
+			{  0, 255,  68}, // spring green
+			{212, 255,   0}, // chartreuse
+			{255, 110,   0}, // orange
+			{120,   0, 200}, // dark violet
+			{255,   0, 180}, // neon pink
 		},
 	}
 
@@ -128,16 +150,6 @@ func newThemeRegistry() *themeRegistry {
 			{ 30, 220, 170}, // greenish turquoise
 			{130, 180, 255}, // pastel cornflower bluw
 			{255, 130, 210}, // bubblegum pink
-		},
-	}
-
-	toxic := theme{
-		name:   "toxic",
-		colors: []rgb{
-			{ 75,   0, 130}, // violet
-			{148,   0, 211}, // purple
-			{ 50, 205,  50}, // lime green
-			{173, 255,  47}, // green-yellow
 		},
 	}
 
@@ -152,60 +164,15 @@ func newThemeRegistry() *themeRegistry {
 		},
 	}
 
-	pride := theme{
-		name:   "pride",
+	prism := theme{
+		name:   "prism",
 		colors: []rgb{
-			{228,   3,   3}, // red
-			{255, 140,   0}, // orange
-			{255, 237,   0}, // yellow
-			{  0, 128,  38}, // green
-			{  0,  76, 255}, // blue
-			{117,   7, 135}, // violet
-		},
-	}
-
-	bi := theme{
-		name:   "bi",
-		colors: []rgb{
-			{214,  2, 112}, // magenta
-			{155, 79, 150}, // purple
-			{  0, 56, 168}, // royal blue
-		},
-	}
-
-	pan := theme{
-		name:   "pan",
-		colors: []rgb{
-			{255,  27, 141}, // hot pink
-			{255, 216,   0}, // canary yellow
-			{  1, 179, 247}, // sky cyan
-		},
-	}
-
-	matrix := theme{
-		name:   "matrix",
-		colors: []rgb{
-			{ 0,  40,  0}, // dark forest green
-			{ 0, 140, 40}, // kelly green
-			{50, 255, 50}, // neon green
-		},
-	}
-
-	glacier := theme{
-		name:   "glacier",
-		colors: []rgb{
-			{  0,  30,  60}, // midnight blue
-			{  0, 210, 255}, // sky blue
-			{230, 250, 255}, // pale ice blue
-		},
-	}
-
-	autumn := theme{
-		name:   "autumn",
-		colors: []rgb{
-			{ 34,  76, 34}, // forest green
-			{218, 145,  0}, // ochre
-			{210,  60,  0}, // burnt orange
+			{255, 180, 255}, // pastel pink
+			{180, 190, 255}, // periwinkle
+			{170, 255, 220}, // mint green
+			{255, 255, 160}, // canary yellow
+			{255, 200, 160}, // peach
+			{255, 160, 190}, // bubblegum pink
 		},
 	}
 
@@ -215,6 +182,16 @@ func newThemeRegistry() *themeRegistry {
 			{ 10,  15, 45}, // navy blue
 			{255,   0, 85}, // neon red
 			{243, 231,  0}, // canary yellow
+		},
+	}
+
+	sunset := theme{
+		name:   "sunset",
+		colors: []rgb{
+			{ 48,  25, 52}, // dark plum
+			{199,   0, 57}, // crimson
+			{255,  87, 51}, // dark coral
+			{255, 195,  0}, // peach gold
 		},
 	}
 
@@ -236,59 +213,6 @@ func newThemeRegistry() *themeRegistry {
 		},
 	}
 
-	hazard := theme{
-		name:   "hazard",
-		colors: []rgb{
-			{255, 210,  0}, // marigold yellow
-			{255,  85,  0}, // neon orange
-			{ 25,  25, 25}, // charcoal
-		},
-	}
-
-	coffee := theme{
-		name:   "coffee",
-		colors: []rgb{
-			{ 45,  25,  15}, // dark coffee
-			{150,  90,  40}, // copper brown
-			{240, 210, 170}, // navajo white
-		},
-	}
-
-	arcade := theme{
-		name:   "arcade",
-		colors: []rgb{
-			{255,   0, 128}, // vivid rose
-			{140,   0, 255}, // electric indigo
-			{  0,  70, 255}, // neon blue
-			{  0, 255, 230}, // turquoise
-			{ 50, 255,   0}, // lime green
-			{255, 230,   0}, // canary yellow
-		},
-	}
-
-	prism := theme{
-		name:   "prism",
-		colors: []rgb{
-			{255, 180, 255}, // pastel pink
-			{180, 190, 255}, // periwinkle
-			{170, 255, 220}, // mint green
-			{255, 255, 160}, // canary yellow
-			{255, 200, 160}, // peach
-			{255, 160, 190}, // bubblegum pink
-		},
-	}
-
-	biohazard := theme{
-		name:   "biohazard",
-		colors: []rgb{
-			{  0, 255,  68}, // spring green
-			{212, 255,   0}, // chartreuse
-			{255, 110,   0}, // orange
-			{120,   0, 200}, // dark violet
-			{255,   0, 180}, // neon pink
-		},
-	}
-
 	supernova := theme{
 		name:   "supernova",
 		colors: []rgb{
@@ -298,6 +222,17 @@ func newThemeRegistry() *themeRegistry {
 			{255,  40,   0}, // scarlet
 			{255, 130,   0}, // tangerine
 			{255, 230,  60}, // pastel yellow
+			{255, 255, 255}, // white
+		},
+	}
+
+	thermal := theme{
+		name:   "thermal",
+		colors: []rgb{
+			{  0,   0,  50}, // dark blue
+			{150,   0, 150}, // purple
+			{255,  70,   0}, // orange
+			{255, 220,   0}, // pale yellow
 			{255, 255, 255}, // white
 		},
 	}
@@ -321,8 +256,109 @@ func newThemeRegistry() *themeRegistry {
 		},
 	}
 
+	toxic := theme{
+		name:   "toxic",
+		colors: []rgb{
+			{ 75,   0, 130}, // violet
+			{148,   0, 211}, // purple
+			{ 50, 205,  50}, // lime green
+			{173, 255,  47}, // green-yellow
+		},
+	}
+
+	retro := theme{
+		name:   "retro",
+		colors: []rgb{
+			{ 55,   0, 255}, // indigo
+			{255,   0, 128}, // magenta
+			{255,   0, 255}, // pink
+			{  0, 255, 255}, // cyan
+		},
+	}
+
+	bi := theme{
+		name:   "bi",
+		colors: []rgb{
+			{214,  2, 112}, // magenta
+			{155, 79, 150}, // purple
+			{  0, 56, 168}, // royal blue
+		},
+	}
+
+	arcade := theme{
+		name:   "arcade",
+		colors: []rgb{
+			{255,   0, 128}, // vivid rose
+			{140,   0, 255}, // electric indigo
+			{  0,  70, 255}, // neon blue
+			{  0, 255, 230}, // turquoise
+			{ 50, 255,   0}, // lime green
+			{255, 230,   0}, // canary yellow
+		},
+	}
+
+	pan := theme{
+		name:   "pan",
+		colors: []rgb{
+			{255,  27, 141}, // hot pink
+			{255, 216,   0}, // canary yellow
+			{  1, 179, 247}, // sky cyan
+		},
+	}
+
+	fire := theme{
+		name:   "fire",
+		colors: []rgb{
+			{255,   0, 0}, // red
+			{255, 255, 0}, // yellow
+		},
+	}
+
+	pride := theme{
+		name:   "pride",
+		colors: []rgb{
+			{228,   3,   3}, // red
+			{255, 140,   0}, // orange
+			{255, 237,   0}, // yellow
+			{  0, 128,  38}, // green
+			{  0,  76, 255}, // blue
+			{117,   7, 135}, // violet
+		},
+	}
+
+	coffee := theme{
+		name:   "coffee",
+		colors: []rgb{
+			{ 45,  25,  15}, // dark coffee
+			{150,  90,  40}, // copper brown
+			{240, 210, 170}, // navajo white
+		},
+	}
+
+	autumn := theme{
+		name:   "autumn",
+		colors: []rgb{
+			{ 34,  76, 34}, // forest green
+			{218, 145,  0}, // ochre
+			{210,  60,  0}, // burnt orange
+		},
+	}
+
+	hazard := theme{
+		name:   "hazard",
+		colors: []rgb{
+			{255, 210,  0}, // marigold yellow
+			{255,  85,  0}, // neon orange
+			{ 25,  25, 25}, // charcoal
+		},
+	}
+
 	registryMap := map[string]*theme{
 		"blackToWhite":  &blackToWhite,
+		"blackToBlue":   &blackToBlue,
+		"blackToGreen":  &blackToGreen,
+		"blackToRed":    &blackToRed,
+		"blackToYellow": &blackToYellow,
 		"blueToRed":     &blueToRed,
 		"blueToGreen":   &blueToGreen,
 		"greenToBlue":   &greenToBlue,
