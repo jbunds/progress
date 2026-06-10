@@ -24,12 +24,12 @@ type layout struct {
 
 func defaultLayout() layout {
 	layout := layout{
-		colorBlockFactor: 1,
 		prefix:           prefix,
 		suffix:           defaultSuffix,
-		clearSeq:         "",
-		doneSeq:          "\n",
-		lineTerminator:   "\n",
+		colorBlockFactor: 1,    // conditionally overridden in prepareTerminal
+		clearSeq:         "",   // conditionally overridden in prepareTerminal
+		doneSeq:          "\n", // conditionally overridden in prepareTerminal
+		lineTerminator:   "\n", // conditionally overridden in prepareTerminal
 		finalStatus:      "done",
 	}
 	layout.staticWidth = len(layout.prefix) + pctFieldLen + len(layout.suffix)
