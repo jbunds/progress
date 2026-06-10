@@ -38,7 +38,7 @@ func (t *theme) bgColor(fraction float64) rgb {
 		// 1. (s << 15) shifts the start color to a matching 15-bit fixed-point scale
 		// 2. (e - s) * scaledFraction calculates the exact distance delta using a 0-2^15 integer scale
 		// 3. adding 2^14 (half of 2^15) ensures accurate rounding
-		// 4. >> 15 divides by 2^15 to shift back to standard 8-bit integer space (0-255)
+		// 4. >> 15 divides by 2^15 to shift back to the 8-bit integer space (0-255)
 		val := (s << 15 + (e - s) * scaledFraction + int(math.MaxInt16 + 1) / 2) >> 15
 		return uint8(val & 0xFF) // satisfy gosec
 	}
@@ -57,9 +57,9 @@ func fgColor() func(c rgb) rgb {
 	const power     = 24.0 // foreground grayscale inflection exponent: the higher the value, the sharper the transition point
 	for i := range 256 {
 		normalizedLuminance := (float64(uint8(i)) * 10000.0) / 2550000.0 // normalize luminance to a 0.0 -> 1.0 spectrum; max luminance is 255 * 10000 == 2,550,000
-		var biasedLuminance float64 // non-linear background brightness contrast scaling factor
+		var biasedLuminance float64                                      // non-linear background brightness contrast scaling factor
 		if normalizedLuminance < threshold {
-			biasedLuminance = math.Pow(normalizedLuminance / threshold, power) * threshold // transition to white for dark backgrounds
+			biasedLuminance = math.Pow(normalizedLuminance / threshold, power) * threshold                         // transition to white for dark backgrounds
 		} else {
 			biasedLuminance = 1 - (math.Pow((1 - normalizedLuminance) / (1 - threshold), power) * (1 - threshold)) // transition to black immediately past the threshold
 		}
@@ -67,10 +67,10 @@ func fgColor() func(c rgb) rgb {
 		contrastLUT[i] = uint8(int(val) & 0xFF)
 	}
 	return func(c rgb) rgb {
-		// fast, integer-based approximation of the https://www.w3.org/TR/WCAG20-TECHS/G17.html#G17-tests W3C formula (skips gamma expansion):
-		//   R: 0.2126 * 10000 ~= 2126
-		//   G: 0.7152 * 10000 ~= 7152
-		//   B: 0.0722 * 10000 ~=  722
+		// fast, integer-based approximation of the https://www.w3.org/TR/WCAG20-TECHS/G17.html#G17-tests W3C formula
+		//   R: 0.2126 * 10000 ≈ 2126
+		//   G: 0.7152 * 10000 ≈ 7152
+		//   B: 0.0722 * 10000 ≈  722
 		luminance := (int(c.r) * 2126) + (int(c.g) * 7152) + (int(c.b) * 722)
 		lumIdx    := (luminance / 10000) & 0xFF
 		color     := contrastLUT[lumIdx]
