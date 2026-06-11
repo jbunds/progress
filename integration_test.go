@@ -16,7 +16,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"unsafe"
 )
 
 // system info:
@@ -32,42 +31,37 @@ import (
 // test results:
 //
 //   $ ./integration_test.sh
-//   args: -totaltasks  100 -loopiterations 100
-//   time:  0.38s
-//   rss:   7.39 MB
-//   mem:   4.42 MB
+//    args: -totaltasks  100 -loopiterations 100
+//    time:  0.39s
+//    rss:   7.23 MB
+//    mem:   4.24 MB
 //
-//   args: -totaltasks 1000 -loopiterations 1e7
-//   time:  8.99s
-//   rss:   1373.86 MB
-//   mem:   1372.66 MB
+//    args: -totaltasks 1000 -loopiterations 1e7
+//    time:  4.77s
+//    rss:   16.17 MB
+//    mem:   12.91 MB
 //
-//   args: -totaltasks  1e6 -loopiterations 1e6
-//   time:  0.65s
-//   rss:   148.77 MB
-//   mem:   145.69 MB
+//    args: -totaltasks  1e6 -loopiterations 1e6
+//    time:  0.47s
+//    rss:   15.88 MB
+//    mem:   12.70 MB
 //
-//   args: -totaltasks    0 -loopiterations 100
-//   time:  0.00s
-//   rss:   7.30 MB
-//   mem:   4.33 MB
+//    args: -totaltasks    0 -loopiterations 100
+//    time:  0.00s
+//    rss:   7.45 MB
+//    mem:   4.47 MB
 //
-//   args: -totaltasks    0 -loopiterations 1e6
-//   time:  0.66s
-//   rss:   152.38 MB
-//   mem:   149.38 MB
+//    args: -totaltasks    0 -loopiterations 1e6
+//    time:  0.47s
+//    rss:   15.88 MB
+//    mem:   12.19 MB
 //
-//   args: -totaltasks    0 -loopiterations 1e7
-//   time:  8.94s
-//   rss:   1551.33 MB
-//   mem:   1549.00 MB
+//    args: -totaltasks    0 -loopiterations 1e7
+//    time:  4.72s
+//    rss:   15.44 MB
+//    mem:   12.19 MB
 //
 // see also `go build -gcflags=-m`
-
-// digits is used by the nextUniqueString helper function to generate status
-// strings unique to a worker goroutine to observe heap allocations by
-// the SUT while it's being bombarded with concurrent calls to Report().
-var digits = []byte("0123456789abcdef")
 
 // TestStreamingStress is quick-and-dirty smoke / stress test designed to reveal the heap allocation
 // behavior of the SUT as it's being bombarded with concurrent calls to Report() by workers.
@@ -86,24 +80,30 @@ func TestStreamingStress(t *testing.T) {
 		WithIsTerminalFunc(func(any) bool { return true }), // force ANSI sequence-encoded rendering
 		withClock(fakeClock{c: timeChan}))
 
-	const workerCount = 3
+	const workerCount = 4
 	iterationsPerWorker := loopIterations / workerCount
 
 	var wg sync.WaitGroup
 
 	for w := range workerCount {
 		wg.Add(1)
-		go func(workerID int) {
+		go func(workerID uint64) {
 			defer wg.Done()
 
 			// #nosec G404 G115 - allow math/rand/v2 for non-crypto use
-			localRand := rand.New(rand.NewPCG(rand.Uint64(), uint64(workerID))) // fast local, non-crypto math/rand source to bypass the global CSPRNG lock
-			startIdx  := workerID * int(iterationsPerWorker)            // #nosec G115 - workerID is 0-2, loopIterations is <= 1e7, so guaranteed to never overflow uint64
-			endIdx    := startIdx + int(iterationsPerWorker)            // #nosec G115 - workerIS is 0-2, loopIterations is <= 1e7, so guaranteed to never overflow uint64
-			taskID    := []byte("worker chunk 0000000000000000")        // 16 digits for uint64 space
+			localRand := rand.New(rand.NewPCG(rand.Uint64(), workerID)) // fast local, non-crypto math/rand source to bypass the global CSPRNG lock
+			startIdx  := workerID * iterationsPerWorker
+			endIdx    := startIdx + iterationsPerWorker
+
+			var statusMsgBuf []byte
 
 			for i := startIdx; i < endIdx; i++ {
-				taskCompleteMsg := nextUniqueString(t, taskID, i)       // causes heap allocs to explode in proportion to loop iterations
+				statusMsgBuf     = statusMsgBuf[:0]
+				statusMsgBuf     = append(statusMsgBuf, "worker-"...)
+				statusMsgBuf     = strconv.AppendUint(statusMsgBuf, workerID, 10)
+				statusMsgBuf     = append(statusMsgBuf, '-')
+				statusMsgBuf     = strconv.AppendUint(statusMsgBuf, i, 10)
+				taskCompleteMsg := string(statusMsgBuf)                 // causes heap allocs to explode in proportion to loop iterations
 				if totalTasks == 0 {                                    // fractional path allocation API mode (dynamic task discovery)
 					taskSize := localRand.Uint64N(50) + 1
 					if localRand.Uint64N(20) == 0 {                     // interleave concurrent task discovery with 5% probability trigger to stress test atomic operations
@@ -121,7 +121,7 @@ func TestStreamingStress(t *testing.T) {
 				default: // buffer saturated; drop the frame tick to prevent worker starvation
 				}
 			}
-		}(w)
+		}(uint64(w))
 	}
 
 	wg.Wait()
@@ -133,19 +133,6 @@ func TestStreamingStress(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("test timed out waiting for renderLoop to finalize")
 	}
-}
-
-// nextUniqueString mutates the passed byte array in-place to generate a new string
-// unique among the set of calls to Report() within its parent worker goroutine.
-func nextUniqueString(t *testing.T, buf []byte, val int) string {
-	t.Helper()
-	pos := len(buf) - 1 // mutate the numeric suffix of the buffer from right to left
-	for range 16 {
-		buf[pos] = digits[val & 0xF]
-		val >>= 4
-		pos--
-	}
-	return unsafe.String(&buf[0], len(buf)) // #nosec G103 - safe zero-alloc conversion of locally-owned scratch buffer to string
 }
 
 // params parses the -totaltasks and -loopiterations command line flag parameters used to define the runtime bounds of the test.
