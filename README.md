@@ -60,7 +60,7 @@ Features include:
   - `progress.Percent`:  writes only the percentage calculation to the terminal
 - transparently handles pipes, redirections, and non-TTY environments
 - correctly and efficiently handles UTF-8 status strings passed by callers
-- supports concurrency-safe terminal window resizing by:
+- safely handles terminal window resizing by:
   - dynamically adapting the layout
   - formatting the rendered output accordingly
   - ensuring layout and output integrity during concurrent writes to the terminal
