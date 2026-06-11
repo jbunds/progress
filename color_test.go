@@ -21,7 +21,7 @@ func TestBgColor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := newThemeRegistry().get(tt.name).bgColor(tt.fraction)
-			if diff := cmp.Diff(tt.want, got, getCmpOpts()); diff != "" {
+			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("bgColor(%f) mismatch (-want +got):\n%s", tt.fraction, diff)
 			}
 		})
