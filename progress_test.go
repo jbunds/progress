@@ -24,10 +24,9 @@ func getCmpOpts() cmp.Options {
 			"stopChan",   "doneChan",   "lastFrame",  "closeOnce", 
 			"persistBar", "resizeChan", "drawNotify", "isTerminal", "resizeHandler"),
 		cmp.AllowUnexported(
-			Progress{},        realClock{},
-			layout{},          rgb{},
-			standardTracker{}, uniqueTracker{},
-			percentTracker{},  fractionTracker{}),
+			Progress{},      rgb{},            layout{},
+			realClock{},     fakeClock{},      standardTracker{},
+			uniqueTracker{}, percentTracker{}, fractionTracker{}),
 		cmpopts.IgnoreUnexported(theme{}),
 		cmpopts.EquateComparable(
 			atomic.Value{},
@@ -370,12 +369,13 @@ func TestClose(t *testing.T) {
 			ctx, cancel := context.WithCancelCause(t.Context())
 			t.Cleanup(func() { cancel(nil) })
 
+			fc  := &fakeClock{ c: make(chan time.Time, 1) }
 			got := new(bytes.Buffer)
-			p   := New(ctx, tt.total, got, tt.opts...)
+			p   := New(ctx, tt.total, got, append(tt.opts, withClock(fc))...)
 
 			wantProg := &Progress{
 				tracker: getTracker(Standard, tt.total),
-				clock:   &realClock{ dur: 16 * time.Millisecond },
+				clock:   fc,
 				layout:  p.layout,
 			}
 			wantProg.total.Store(tt.total)
@@ -395,5 +395,22 @@ func TestClose(t *testing.T) {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
+	}
+}
+
+func TestRealClock(t *testing.T) {
+	t.Parallel()
+	rc := &realClock{ dur: time.Millisecond }
+	tk := rc.tick()
+	defer tk.Stop()
+
+	if rt, _ := tk.(*realTicker); tk.ch() != rt.C {
+		t.Error("ch() did not return an underlying time.Ticker.C channel")
+	}
+
+	select {
+	case <-tk.ch():
+	case <-time.After(50 * time.Millisecond):
+		t.Errorf("realTicker did not tick")
 	}
 }
