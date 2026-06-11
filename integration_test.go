@@ -31,35 +31,35 @@ import (
 // test results:
 //
 //   $ ./integration_test.sh
-//    args: -totaltasks  100 -loopiterations 100
-//    time:  0.39s
-//    rss:   7.23 MB
-//    mem:   4.24 MB
+//   args: -totaltasks  100 -loopiterations 100
+//   time:  0.40s
+//   rss:   7.30 MB
+//   mem:   4.31 MB
 //
-//    args: -totaltasks 1000 -loopiterations 1e7
-//    time:  4.77s
-//    rss:   16.17 MB
-//    mem:   12.91 MB
+//   args: -totaltasks 1000 -loopiterations 1e8
+//   time:  47.35s
+//   rss:   16.67 MB
+//   mem:   12.24 MB
 //
-//    args: -totaltasks  1e6 -loopiterations 1e6
-//    time:  0.47s
-//    rss:   15.88 MB
-//    mem:   12.70 MB
+//   args: -totaltasks  1e6 -loopiterations 1e6
+//   time:  0.46s
+//   rss:   16.12 MB
+//   mem:   12.92 MB
 //
-//    args: -totaltasks    0 -loopiterations 100
-//    time:  0.00s
-//    rss:   7.45 MB
-//    mem:   4.47 MB
+//   args: -totaltasks    0 -loopiterations 100
+//   time:  0.00s
+//   rss:   7.23 MB
+//   mem:   4.24 MB
 //
-//    args: -totaltasks    0 -loopiterations 1e6
-//    time:  0.47s
-//    rss:   15.88 MB
-//    mem:   12.19 MB
+//   args: -totaltasks    0 -loopiterations 1e6
+//   time:  0.47s
+//   rss:   14.84 MB
+//   mem:   11.66 MB
 //
-//    args: -totaltasks    0 -loopiterations 1e7
-//    time:  4.72s
-//    rss:   15.44 MB
-//    mem:   12.19 MB
+//   args: -totaltasks    0 -loopiterations 1e8
+//   time:  48.27s
+//   rss:   15.88 MB
+//   mem:   11.75 MB
 //
 // see also `go build -gcflags=-m`
 
