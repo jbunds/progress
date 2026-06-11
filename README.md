@@ -53,8 +53,8 @@ Features include:
   - **weight-based accumulation**: callers specify the total known amount of work (e.g., 100 tasks)
   - **fractional allocation**: callers add the relative share of the total budget as work is discovered (e.g., recursively traversing a directory to process its contents)
 - supports multiple progress status tracking implementations which are well-suited to different sets of inputs:
-  - `progress.Standard`: suitable for mostly unique status updates (uses `atomic.Value`)
-  - `progress.Unique`:   suitable for mostly repetitive status updates (uses `atomic.Value` and `unique.Handle[string]` to canonicalize (intern) status
+  - `progress.Standard`: suitable for mostly unique status updates (uses `atomic.Pointer[string]`)
+  - `progress.Unique`:   suitable for mostly repetitive status updates (uses `atomic.Value` and `unique.Handle[string]` to canonicalize (intern) status strings)
 - supports multiple progress status formats:
   - `progress.Fraction`: writes progress status as a proper fraction (`x/y`) given a prescribed fixed total units of work (`y`)
   - `progress.Percent`:  writes only the percentage calculation to the terminal
