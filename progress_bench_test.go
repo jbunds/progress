@@ -14,24 +14,24 @@ import (
 // goarch: arm64
 // pkg: github.com/jbunds/progress
 // cpu: Apple M1
-// BenchmarkRenderLoop/Standard/throughput-8           14640556         360.2 ns/op         0 B/op        0 allocs/op
-// BenchmarkRenderLoop/Standard/isolated_sample-8      14676440         409.8 ns/op         0 B/op        0 allocs/op
+// BenchmarkRenderLoop/Standard/throughput-8           13541190         395.8 ns/op         0 B/op        0 allocs/op
+// BenchmarkRenderLoop/Standard/isolated_sample-8      13976658         431.2 ns/op         0 B/op        0 allocs/op
 // --- BENCH: BenchmarkRenderLoop/Standard/isolated_sample-8
-//     progress_bench_test.go:212: total memory allocated: 368 bytes (0.36 kB)
-// BenchmarkRenderLoop/Unique/throughput-8             16938537         354.8 ns/op         0 B/op        0 allocs/op
-// BenchmarkRenderLoop/Unique/isolated_sample-8        14884677         401.9 ns/op         0 B/op        0 allocs/op
+//     progress_bench_test.go:220: total memory allocated: 320 bytes (0.31 kB)
+// BenchmarkRenderLoop/Unique/throughput-8             15652609         380.2 ns/op         0 B/op        0 allocs/op
+// BenchmarkRenderLoop/Unique/isolated_sample-8        13769311         437.1 ns/op         0 B/op        0 allocs/op
 // --- BENCH: BenchmarkRenderLoop/Unique/isolated_sample-8
-//     progress_bench_test.go:212: total memory allocated: 176 bytes (0.17 kB)
-// BenchmarkRenderLoop/Fraction/throughput-8           22857309         264.1 ns/op         0 B/op        0 allocs/op
-// BenchmarkRenderLoop/Fraction/isolated_sample-8      19893648         302.1 ns/op         0 B/op        0 allocs/op
+//     progress_bench_test.go:220: total memory allocated: 208 bytes (0.20 kB)
+// BenchmarkRenderLoop/Fraction/throughput-8           22029908         274.1 ns/op         0 B/op        0 allocs/op
+// BenchmarkRenderLoop/Fraction/isolated_sample-8      18032866         332.5 ns/op         0 B/op        0 allocs/op
 // --- BENCH: BenchmarkRenderLoop/Fraction/isolated_sample-8
-//     progress_bench_test.go:212: total memory allocated: 128 bytes (0.12 kB)
-// BenchmarkRenderLoop/Percent/throughput-8            26312851         226.4 ns/op         0 B/op        0 allocs/op
-// BenchmarkRenderLoop/Percent/isolated_sample-8       22056454         272.1 ns/op         0 B/op        0 allocs/op
+//     progress_bench_test.go:220: total memory allocated: 128 bytes (0.12 kB)
+// BenchmarkRenderLoop/Percent/throughput-8            25747536         233.1 ns/op         0 B/op        0 allocs/op
+// BenchmarkRenderLoop/Percent/isolated_sample-8       20289648         299.7 ns/op         0 B/op        0 allocs/op
 // --- BENCH: BenchmarkRenderLoop/Percent/isolated_sample-8
-//     progress_bench_test.go:212: total memory allocated: 0 bytes (0.00 kB)
+//     progress_bench_test.go:220: total memory allocated: 32 bytes (0.03 kB)
 // PASS
-// ok    github.com/jbunds/progress  47.794s
+// ok    github.com/jbunds/progress  47.691s
 
 // see also `go build -gcflags=-m`
 
@@ -104,8 +104,8 @@ func BenchmarkRenderLoop(b *testing.B) {
 	}{
 		{ "Standard", Standard, 1e8 },
 		{ "Unique",   Unique,   1e8 },
-		{ "Fraction", Fraction, 1e6 },
-		{ "Percent",  Percent,  0   },
+		{ "Fraction", Fraction, 1e8 },
+		{ "Percent",  Percent,  1e8 },
 	}
 
 	for _, bm := range benchmarks {
