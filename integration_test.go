@@ -61,7 +61,10 @@ import (
 //   rss:   15.23 MB
 //   mem:   12.11 MB
 //
-// see also `go build -gcflags=-m`
+// see also:
+//
+//   go build -gcflags=-m
+//   go test -gcflags=-m -l' . | fgrep 'escapes to heap'
 
 // TestStreamingStress is quick-and-dirty smoke / stress test designed to reveal the heap allocation
 // behavior of the SUT as it's being bombarded with concurrent calls to Report() by workers.
