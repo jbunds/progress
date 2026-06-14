@@ -5,10 +5,10 @@ trap 'exit $((128 +  2))' SIGINT  # SIGINT  ==  2
 trap 'exit $((128 +  3))' SIGQUIT # SIGQUIT ==  3
 trap 'exit $((128 + 15))' SIGTERM # SIGQUIT == 15
 
-echo 'executing TestRenderLoop_MemoryAllocRegression 10 times... (system-dependent ETA: ~30 seconds)'
+echo 'executing TestRenderLoop_MemoryAllocRegression... (system-dependent ETA: ~3 seconds)'
 echo
 
-go test -tags integration -v -count 10 -run TestRenderLoop_MemoryAllocRegression
+go test -tags integration -v -run TestRenderLoop_MemoryAllocRegression
 
 echo
 

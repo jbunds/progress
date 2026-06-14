@@ -22,7 +22,8 @@ type statusTracker interface {
 	store(uint64, string) // stores the current status string
 	load() string         // returns the current status string
 	addTotal(uint64)      // used by fractionTracker to add to the total units (denominator) when workers call AddTotal()
-	baseLayout() layout   // returns the UI layout configuration and metadata for a tracker
+	layout() layout       // returns the UI layout configuration and metadata for a tracker
+	setLayout(*layout)    // sets the UI layout configuration and metadata for a tracker (in prepareTerminal())
 }
 
 func getTracker(strat strategy, totalUnits uint64) statusTracker {

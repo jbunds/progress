@@ -94,8 +94,8 @@ func TestRenderLoop_MemoryAllocRegression(t *testing.T) {
 					t.Errorf("%s memory regression: expected < 0.0001 allocs/op, got %.6f (total allocs: %d)", bm.name, allocsPerOp, totalAllocs)
 				}
 
-				if bytesPerOp > 0.1 { // a readl memory leak will scale lineraly with bm.totalWorkUnits
-					t.Errorf("%s memory regression: expected < 0.1 bytes/op, got %.6f (total bytes: %d)", bm.name, bytesPerOp, totalBytes)
+				if bytesPerOp > 0.001 { // a readl memory leak will scale lineraly with bm.totalWorkUnits
+					t.Errorf("%s memory regression: expected < 0.001 bytes/op, got %.6f (total bytes: %d)", bm.name, bytesPerOp, totalBytes)
 				}
 
 				p.Close()

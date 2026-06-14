@@ -42,7 +42,7 @@ func TestDraw(t *testing.T) {
 			p.tracker.store(0, tt.statusText)
 			p.prepareTerminal()
 
-			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+			buf := make([]byte, 0, p.tracker.layout().bufCap(int(p.state.Load() >> 16)))
 			p.draw(buf, tt.state)
 
 			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
@@ -78,7 +78,7 @@ func TestPercentTrackerDraw(t *testing.T) {
 			}
 			p.prepareTerminal()
 
-			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+			buf := make([]byte, 0, p.tracker.layout().bufCap(int(p.state.Load() >> 16)))
 			p.draw(buf, tt.state)
 
 			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {
@@ -100,7 +100,7 @@ func TestUniqueTrackerDraw(t *testing.T) {
 		p.tracker.store(0, "working...")
 		p.prepareTerminal()
 
-		buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+		buf := make([]byte, 0, p.tracker.layout().bufCap(int(p.state.Load() >> 16)))
 		p.draw(buf, pack(t, minWidth, 0.37))
 
 		if diff := cmp.Diff("processing ( 37%): working...\n", p.lastFrameRendered()); diff != "" {
@@ -256,7 +256,7 @@ func TestWriteStatus(t *testing.T) {
 			p.prepareTerminal()
 			p.state.Store(pack(t, 80, 0))
 
-			buf := make([]byte, 0, p.layout.bufCap(int(p.state.Load() >> 16)))
+			buf := make([]byte, 0, p.tracker.layout().bufCap(int(p.state.Load() >> 16)))
 			_, _ = p.writeStatus(buf, tt.pctSigDigits, tt.status, false)
 
 			if diff := cmp.Diff(tt.want, p.lastFrameRendered()); diff != "" {

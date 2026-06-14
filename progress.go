@@ -65,7 +65,6 @@ type Progress struct {
 
 	// configuration (read-only after construction)
 	output         io.Writer      // destination writer for the terminal-formatted work progress status updates (nominally os.Stderr)
-	layout         layout         // terminal-aware layout state copy used for rendering progress status
 	stopChan       chan struct{}  // signals the background rendering loop to perform final cleanup
 	doneChan       chan struct{}  // doneChan is closed once the rendering loop has finished its final draw and cursor restoration
 	tickerDuration time.Duration  // duration between UI render cycles, nominally 16ms to render at ~60 FPS
@@ -259,19 +258,19 @@ func (p *Progress) finish(ctx context.Context, buf []byte) {
 	if err := ctx.Err(); err != nil { // context was aborted via signal, timeout, or parent cancelation
 		errStr := err.Error()
 		if cause := context.Cause(ctx); cause != nil { errStr = cause.Error() }
-		buf = append(buf, p.layout.clearSeq...)
+		buf = append(buf, p.tracker.layout().clearSeq...)
 		buf = append(buf, "stopped ("...)
 		buf = append(buf, errStr...)
 		buf = append(buf, ')')
 	} else {                          // clean exit via p.Close() while context still active
-		_, _ = p.writeStatus(buf, 10000, p.layout.finalStatus, false)
+		_, _ = p.writeStatus(buf, 10000, p.tracker.layout().finalStatus, false)
 		if p.persistBar {
 			buf = append(buf, '\n')
 		} else {
-			buf = append(buf, p.layout.clearSeq...)
+			buf = append(buf, p.tracker.layout().clearSeq...)
 		}
 	}
-	buf = append(buf, p.layout.doneSeq...)
+	buf = append(buf, p.tracker.layout().doneSeq...)
 
 	_, _ = p.output.Write(buf)
 }

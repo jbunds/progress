@@ -52,7 +52,7 @@ func (p *Progress) sync(buf []byte) []byte {
 // draw formats and renders the current progress status to the terminal,
 // truncating text as needed to fit within the terminal width.
 func (p *Progress) draw(buf []byte, state uint32) []byte {
-	maxLen    := state >> 16 - uint32(p.layout.staticWidth & 0xFFFF)
+	maxLen    := state >> 16 - uint32(p.tracker.layout().staticWidth & 0xFFFF)
 	status    := ""
 	truncated := false
 
@@ -67,7 +67,7 @@ func (p *Progress) draw(buf []byte, state uint32) []byte {
 
 // writeStatus writes the progress status to to p.output (nominally os.Stderr) per an atomic system call.
 func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, truncated bool) ([]byte, error) {
-	buf = append(buf, p.layout.clearSeq...)
+	buf = append(buf, p.tracker.layout().clearSeq...)
 
 	termWidth := int(p.state.Load() >> 16)
 
@@ -100,7 +100,7 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 //		isColored:  false,
 //	}
 
-	buf = ws.writeString(buf, p.layout.prefix)
+	buf = ws.writeString(buf, p.tracker.layout().prefix)
 
 	switch {
 	case pctSigDigits >= 9950:           // 99.5% < pctSigDigits >  100% => "100%"
@@ -117,7 +117,7 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 		buf = ws.writeRune(buf, rune('0' + (val % 10)))
 	}
 
-	buf = ws.writeString(buf, p.layout.suffix)
+	buf = ws.writeString(buf, p.tracker.layout().suffix)
 	if truncated { buf = ws.writeRune(buf, '…') }
 	buf = ws.writeString(buf, status)
 
@@ -140,7 +140,7 @@ func (p *Progress) writeStatus(buf []byte, pctSigDigits uint32, status string, t
 		ws.isColored = false
 	}
 
-	buf = append(buf, p.layout.lineTerminator...)
+	buf = append(buf, p.tracker.layout().lineTerminator...)
 
 	_, err := p.output.Write(buf)
 

@@ -436,9 +436,10 @@ func TestClose(t *testing.T) {
 			p   := New(ctx, tt.total, got, tt.opts...)
 
 			wantProg := &Progress{
-				tracker: getTracker(Standard, tt.total),
-				layout:  p.layout,
+				tracker:    getTracker(Standard, tt.total),
+				isTerminal: isTerminal,
 			}
+			wantProg.prepareTerminal()
 			wantProg.total.Store(tt.total)
 
 			if tt.err == nil {

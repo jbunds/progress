@@ -17,14 +17,14 @@ func WithIsTerminalFunc(f func(any) bool) Option { return func(p *Progress) { p.
 // prepareTerminal sets the line terminator character and ANSI escape sequences to
 // be used when p.output (nominally os.Stderr) has not been piped or redirected.
 func (p *Progress) prepareTerminal() {
-	layout := p.tracker.baseLayout()
+	layout := p.tracker.layout()
 	if p.isTerminal(p.output) {
 		layout.colorBlockFactor = colorBlockFactor   // provision adequate capacity for rendering a 24-bit color block for every terminal column
 		layout.clearSeq         = ansiClearSeq       // move cursor to beginning of line; freeze screen rendering for this atomic update block
 		layout.doneSeq          = ansiDoneSeq        // restore all attributes to defaults; restore cursor
 		layout.lineTerminator   = ansiLineTerminator // erase line; restore all attributes to defaults; flush atomic update block
 	}
-	p.layout = layout
+	p.tracker.setLayout(&layout)
 }
 
 // handleResize records the new terminal width to be respected by subsequent render cycles.
@@ -35,7 +35,7 @@ func (p *Progress) handleResize(buf []byte) []byte {
 		oldState := p.state.Load()
 		newState := (oldState & 0xFFFF) | (uint32(termWidth & 0xFFFF) << 16) // pack p.termWidth into upper 16 bits, retaining pctSigDigits in lower 16 bits
 		if p.state.CompareAndSwap(oldState, newState) {
-			if increasedBufCap := p.layout.bufCap(termWidth); cap(buf) < increasedBufCap {
+			if increasedBufCap := p.tracker.layout().bufCap(termWidth); cap(buf) < increasedBufCap {
 				buf = make([]byte, 0, increasedBufCap) // grow the buffer to accommodate the increased terminal width
 			}
 			p.sync(buf)
@@ -46,9 +46,9 @@ func (p *Progress) handleResize(buf []byte) []byte {
 }
 
 // getResizedTermWidth returns the current terminal width, enforcing
-// p.layout.staticWidth as the minimum layout threshold.
+// p.tracker.layout().staticWidth as the minimum layout threshold.
 func (p *Progress) getResizedTermWidth() int {
-	width := p.layout.staticWidth // assume a human manually resized the terminal, so support terminal widths as narrow as p.layout.staticWidth
+	width := p.tracker.layout().staticWidth // assume a human manually resized the terminal, so support terminal widths as narrow as p.tracker.layout().staticWidth
 	fd    := getFD(p.output)
 	if fd < 0 { return width }
 	if w, _, err := term.GetSize(fd); err == nil && w > 0 {

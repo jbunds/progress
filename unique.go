@@ -23,8 +23,9 @@ func (u *uniqueTracker) load() string {
 	return ""
 }
 
-func (u *uniqueTracker) addTotal(_ uint64)  {             }
-func (u *uniqueTracker) baseLayout() layout { return u.lo }
+func (u *uniqueTracker) addTotal(_ uint64)    {             }
+func (u *uniqueTracker) layout() layout       { return u.lo }
+func (u *uniqueTracker) setLayout(lo *layout) { u.lo = *lo  }
 
 func (u *uniqueTracker) Equal(other *uniqueTracker) bool { // work around cmp's draconian strictures
 	if u == nil || other == nil { return u == other }

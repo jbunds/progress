@@ -16,7 +16,7 @@ type fractionTracker struct {
 }
 
 func (f *fractionTracker) init() {
-	f.lo  = defaultLayout() // TODO(jeff); override default f.lo.finalStatus with fmt.Sprintf("%d/%d", f.total, f.total)
+	f.lo = defaultLayout()
 	f.total.Store(f.initialTotal)
 	f.buf = make([]byte, 0, f.lo.bufCap(minWidth))
 }
@@ -33,6 +33,11 @@ func (f *fractionTracker) load() string {
 	return unsafe.String(&b[0], len(b)) // zero-alloc cast: convert stack bytes into a string header
 }
 
-func (f *fractionTracker) addTotal(n uint64) { f.total.Store(min(f.total.Load() + n, scale)) }
+func (f *fractionTracker) addTotal(n uint64) {
+	newTotal := min(f.total.Load() + n, scale)
+	f.total.Store(newTotal)
+	f.lo.finalStatus = strconv.FormatUint(newTotal, 10) + "/" + strconv.FormatUint(newTotal, 10)
+}
 
-func (f *fractionTracker) baseLayout() layout { return f.lo }
+func (f *fractionTracker) layout() layout       { return f.lo }
+func (f *fractionTracker) setLayout(lo *layout) { f.lo = *lo  }

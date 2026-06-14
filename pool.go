@@ -37,5 +37,5 @@ func (p *bufPool) put(x []byte) {
 func (p *Progress) initBufPool() {
 	termWidth := int(p.state.Load() >> 16)
 	if p.isTerminal(p.output) && termWidth < 256 { termWidth = 256 }
-	p.bufPool = newBufPool(func() []byte { return make([]byte, 0, p.layout.bufCap(termWidth)) })
+	p.bufPool = newBufPool(func() []byte { return make([]byte, 0, p.tracker.layout().bufCap(termWidth)) })
 }

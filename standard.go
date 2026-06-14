@@ -36,8 +36,9 @@ func (s *standardTracker) load() string {
 	return ""
 }
 
-func (s *standardTracker) addTotal(_ uint64)  {             }
-func (s *standardTracker) baseLayout() layout { return s.lo }
+func (s *standardTracker) addTotal(_ uint64)    {             }
+func (s *standardTracker) layout() layout       { return s.lo }
+func (s *standardTracker) setLayout(lo *layout) { s.lo = *lo  }
 
 func (s *standardTracker) Equal(other *standardTracker) bool { // work around cmp's draconian strictures
 	if s == nil || other == nil { return s == other }

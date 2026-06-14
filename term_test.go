@@ -42,7 +42,7 @@ func TestPrepareTerminal(t *testing.T) {
 				isTerminal: func(any) bool { return tt.isTerminal },
 			}
 			p.prepareTerminal()
-			got := p.layout
+			got := p.tracker.layout()
 			if diff := cmp.Diff(tt.wantClearSeq, got.clearSeq); diff != "" {
 				t.Errorf("prepareTerminal(%q) clearSeq mismatch (-want +got):\n%s", tt.name, diff)
 			}
@@ -78,7 +78,7 @@ func TestHandleResize(t *testing.T) {
 
 	zeroCapBuf := make([]byte, 0)
 
-	wantBufCap := p.layout.bufCap(mockTermWidth)
+	wantBufCap := p.tracker.layout().bufCap(mockTermWidth)
 	gotBufCap  := cap(p.handleResize(zeroCapBuf))
 
 	if diff := cmp.Diff(wantBufCap, gotBufCap); diff != "" {
@@ -87,7 +87,7 @@ func TestHandleResize(t *testing.T) {
 
 	mockTermWidth = 120
 
-	wantBufCap    = p.layout.bufCap(mockTermWidth)
+	wantBufCap    = p.tracker.layout().bufCap(mockTermWidth)
 	gotBufCap     = cap(p.handleResize(zeroCapBuf))
 
 	wantTermWidth = uint32(mockTermWidth)
@@ -106,7 +106,7 @@ func TestGetResizedTermWidth(t *testing.T) {
 	t.Parallel()
 	p := New(t.Context(), 0, io.Discard)
 	t.Cleanup(func() { p.Close() })
-	want := p.layout.staticWidth
+	want := p.tracker.layout().staticWidth
 	got  := p.getResizedTermWidth()
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("getResizedTermWidth() mismatch (-want +got):\n%s", diff)
