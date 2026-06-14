@@ -225,7 +225,7 @@ type writeCounter struct {
 
 func (w *writeCounter) Write(p []byte) (int, error) {
 	w.count++
-	w.buf.Reset() // capture only the last Write
+	w.buf.Reset() // capture only the last Write, since the finish() method resets the output buffer before constructing the final frame
 	w.buf.Write(p)
 	return len(p), nil
 }
