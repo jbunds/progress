@@ -262,13 +262,6 @@ func (p *Progress) renderLoop(ctx context.Context) {
 			buf = p.handleResize(buf)
 		}
 
-		if running {
-			select { // post-loop drain: ensure any final pending tick is flushed before deferred cleanup routines execute
-			case <-ticker.ch():
-				buf = p.sync(buf)
-			default:
-			}
-		}
 	}
 
 	p.finish(ctx, buf) // render the final frame to the terminal and perform any necessary cleanup
