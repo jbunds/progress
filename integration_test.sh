@@ -1,5 +1,10 @@
 #!/bin/bash
 
+trap 'exit $((128 +  1))' SIGHUP  # SIGHUP  ==  1
+trap 'exit $((128 +  2))' SIGINT  # SIGINT  ==  2
+trap 'exit $((128 +  3))' SIGQUIT # SIGQUIT ==  3
+trap 'exit $((128 + 15))' SIGTERM # SIGQUIT == 15
+
 go test -tags integration -c -o integration_test .
 
 # see also:
@@ -21,15 +26,22 @@ args=(
 )
 
 for a in "${args[@]}"; do
-  echo "args: $a"
-  { "${base_cmd[@]}" $a ; } 2>&1 | \
-    awk '/real/ {
-      print "time:\t", $1
-    };
-    /maximum resident set size/ {
-      printf "rss:\t %.2f MB\n",   $1 / (1024 * 1024)
-    };
-    /peak memory footprint/ {
-      printf "mem:\t %.2f MB\n\n", $1 / (1024 * 1024)
-    }'
+	echo "args: $a"
+	{ "${base_cmd[@]}" $a ; } 2>&1 | \
+		awk '/real/ {
+			print "time:\t", $1
+		};
+		/maximum resident set size/ {
+			printf "rss:\t %.2f MB\n",   $1 / (1024 * 1024)
+		};
+		/peak memory footprint/ {
+			printf "mem:\t %.2f MB\n\n", $1 / (1024 * 1024)
+		}'
+	status=$?
+	if [[ $status -eq 129 ||
+	      $status -eq 130 ||
+	      $status -eq 131 ||
+	      $status -eq 143 ]]; then
+		exit $status
+	fi
 done

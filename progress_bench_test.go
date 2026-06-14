@@ -2,7 +2,9 @@ package progress
 
 import (
 	"io"
+	"os"
 	"runtime"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -12,24 +14,24 @@ import (
 // goarch: arm64
 // pkg: github.com/jbunds/progress
 // cpu: Apple M1
-// BenchmarkRenderLoop/Standard/throughput-8           11964782         466.6 ns/op         0 B/op        0 allocs/op
-// BenchmarkRenderLoop/Standard/isolated_sample-8      12751640         465.9 ns/op         0 B/op        0 allocs/op
+// BenchmarkRenderLoop/Standard/throughput-8           14640556         360.2 ns/op         0 B/op        0 allocs/op
+// BenchmarkRenderLoop/Standard/isolated_sample-8      14676440         409.8 ns/op         0 B/op        0 allocs/op
 // --- BENCH: BenchmarkRenderLoop/Standard/isolated_sample-8
-//     progress_bench_test.go:206: total memory allocated: 320 bytes (0.31 kB)
-// BenchmarkRenderLoop/Unique/throughput-8             12237109         490.1 ns/op         0 B/op        0 allocs/op
-// BenchmarkRenderLoop/Unique/isolated_sample-8        12148382         490.1 ns/op         0 B/op        0 allocs/op
+//     progress_bench_test.go:212: total memory allocated: 368 bytes (0.36 kB)
+// BenchmarkRenderLoop/Unique/throughput-8             16938537         354.8 ns/op         0 B/op        0 allocs/op
+// BenchmarkRenderLoop/Unique/isolated_sample-8        14884677         401.9 ns/op         0 B/op        0 allocs/op
 // --- BENCH: BenchmarkRenderLoop/Unique/isolated_sample-8
-//     progress_bench_test.go:206: total memory allocated: 192 bytes (0.19 kB)
-// BenchmarkRenderLoop/Fraction/throughput-8           13043986         463.8 ns/op         0 B/op        0 allocs/op
-// BenchmarkRenderLoop/Fraction/isolated_sample-8      13006806         464.8 ns/op         0 B/op        0 allocs/op
+//     progress_bench_test.go:212: total memory allocated: 176 bytes (0.17 kB)
+// BenchmarkRenderLoop/Fraction/throughput-8           22857309         264.1 ns/op         0 B/op        0 allocs/op
+// BenchmarkRenderLoop/Fraction/isolated_sample-8      19893648         302.1 ns/op         0 B/op        0 allocs/op
 // --- BENCH: BenchmarkRenderLoop/Fraction/isolated_sample-8
-//     progress_bench_test.go:206: total memory allocated: 128 bytes (0.12 kB)
-// BenchmarkRenderLoop/Percent/throughput-8            13644954         439.5 ns/op         0 B/op        0 allocs/op
-// BenchmarkRenderLoop/Percent/isolated_sample-8       13671897         439.6 ns/op         0 B/op        0 allocs/op
+//     progress_bench_test.go:212: total memory allocated: 128 bytes (0.12 kB)
+// BenchmarkRenderLoop/Percent/throughput-8            26312851         226.4 ns/op         0 B/op        0 allocs/op
+// BenchmarkRenderLoop/Percent/isolated_sample-8       22056454         272.1 ns/op         0 B/op        0 allocs/op
 // --- BENCH: BenchmarkRenderLoop/Percent/isolated_sample-8
-//     progress_bench_test.go:206: total memory allocated: 0 bytes (0.00 kB)
+//     progress_bench_test.go:212: total memory allocated: 0 bytes (0.00 kB)
 // PASS
-// ok    github.com/jbunds/progress  47.863s
+// ok    github.com/jbunds/progress  47.794s
 
 // see also `go build -gcflags=-m`
 
@@ -70,6 +72,8 @@ import (
 //   top -cum:                   sorts functions by cumulative memory (the function itself plus all functions it called). Excellent for tracing the execution path
 //   list <functionName>:        shows line-by-line memory allocation for a specific function. This will tell you the exact line of code causing the leak
 //
+// profile targets: filter using pprof focus / hide directives as required
+//
 // because pprof indexes only those symbols which actually allocate memory onto
 // the heap during the profiling window (between b.ResetTimer() and b.StopTimer()),
 // a null result from any queries specifying symbols unique to the "progress"
@@ -108,22 +112,24 @@ func BenchmarkRenderLoop(b *testing.B) {
 		b.Run(bm.name, func(b *testing.B) {
 
 			// sub-benchmark 1: profile real-world renderLoop throughput
-			// profile targets: filter using pprof focus / hide directives as required
 			b.Run("throughput", func(subB *testing.B) {
-				tickTrigger := make(chan time.Time, 1)
-				notify      := make(chan struct{},  1) // awaits the completion of a draw cycle; buffered to prevent deadlocks
-				p           := &Progress{
-					tracker:    getTracker(bm.strategy, bm.totalWorkUnits),
-					output:     io.Discard,
-					isTerminal: func(any) bool { return true }, // force ANSI sequence encoding
-					clock:      fakeClock{ c: tickTrigger },
-					drawNotify: notify,
-					stopChan:   make(chan struct{}),
-					doneChan:   make(chan struct{}),
+				p := &Progress{
+					tracker:        getTracker(bm.strategy, bm.totalWorkUnits),
+					output:         io.Discard,
+					tickerDuration: 16 * time.Millisecond,
+					isTerminal:     func(any) bool { return true }, // force ANSI sequence encoding
+					resizeHandler:  func() int { return minWidth },
+					stopChan:       make(chan struct{}),
+					doneChan:       make(chan struct{}),
+					// resizeChan is hijacked to trigger immediate renderLoop iterations by flooding the channel with SIGWINCH signals,
+					// thus bypassing the 16ms ticker delay, and forcing the renderLoop goroutine to continuously execute draw cycles,
+					// effectively transforming the time-throttled renderLoop into an unthrottled, CPU-bound process
+					resizeChan:     make(chan os.Signal, 1),
 				}
-				p.state.Store(uint32(256 & 0xFFFF) << 16)
-				p.prepareTerminal()
 				p.initBufPool()
+				p.prepareTerminal()
+
+				p.state.Store(uint32(256 & 0xFFFF) << 16)
 
 				go p.renderLoop(subB.Context())
 				subB.Cleanup(func() { p.Close() })
@@ -133,35 +139,41 @@ func BenchmarkRenderLoop(b *testing.B) {
 
 				for subB.Loop() {
 					p.Report(10, taskCompleteMsg)
-					tickTrigger <- time.Time{}
-					<-notify // draw() cycle completed
+					select {
+					case p.resizeChan <- syscall.SIGWINCH: // trigger a window resize event to force a draw cycle
+					default:
+					}
+					runtime.Gosched() // yield the scheduler to allow the renderLoop goroutine to flush its channel buffer
 				}
 
 				subB.StopTimer()
 			})
 
-			b.Run("isolated sample", func(subB *testing.B) { // isolated zero-alloc test guard
-				tickTrigger := make(chan time.Time, 1)
-				notify      := make(chan struct{},  1) // awaits the completion of a draw cycle; buffered to prevent deadlocks
-				testP       := &Progress{
-					tracker:    getTracker(bm.strategy, bm.totalWorkUnits),
-					output:     io.Discard,
-					isTerminal: func(any) bool { return true }, // force ANSI sequence encoding
-					clock:      fakeClock{ c: tickTrigger },
-					drawNotify: notify,
-					stopChan:   make(chan struct{}),
-					doneChan:   make(chan struct{}),
+			// sub-benchmark 2: isolated zero-alloc test guard using real-world memory profiles
+			b.Run("isolated sample", func(subB *testing.B) {
+				p := &Progress{
+					tracker:        getTracker(bm.strategy, bm.totalWorkUnits),
+					output:         io.Discard,
+					tickerDuration: 16 * time.Millisecond,
+					isTerminal:     func(any) bool { return true }, // force ANSI sequence encoding
+					resizeHandler:  func() int { return minWidth },
+					stopChan:       make(chan struct{}),
+					doneChan:       make(chan struct{}),
+					// resizeChan is hijacked to trigger immediate renderLoop iterations by flooding the channel with SIGWINCH signals,
+					// thus bypassing the 16ms ticker delay, and forcing the renderLoop goroutine to continuously execute draw cycles,
+					// effectively transforming the time-throttled renderLoop into an unthrottled, CPU-bound process
+					resizeChan:     make(chan os.Signal, 1),
 				}
-				testP.state.Store(uint32(256 & 0xFFFF) << 16)
-				testP.prepareTerminal()
-				testP.initBufPool()
+				p.initBufPool()
+				p.prepareTerminal()
 
-				go testP.renderLoop(subB.Context())
-				subB.Cleanup(func() { testP.Close() })
+				p.state.Store(uint32(256 & 0xFFFF) << 16)
+
+				go p.renderLoop(subB.Context())
+				subB.Cleanup(func() { p.Close() })
 
 				subB.ResetTimer()
 				subB.ReportAllocs()
-
 				subB.ReportMetric(0, "allocs/op") // clear default metric display
 
 				var memBefore, memAfter runtime.MemStats
@@ -178,9 +190,12 @@ func BenchmarkRenderLoop(b *testing.B) {
 					//
 					//   allocs/op == 1
 					//    bytes/op == 8
-					testP.Report(10, taskCompleteMsg)
-					tickTrigger <- time.Time{}
-					<-notify // draw() cycle completed
+					p.Report(10, taskCompleteMsg)
+					select {
+					case p.resizeChan <- syscall.SIGWINCH: // trigger a window resize event to force a draw cycle
+					default:
+					}
+					runtime.Gosched() // yield the scheduler to allow the renderLoop goroutine to flush its channel buffer
 					iterations++
 				}
 

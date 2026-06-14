@@ -7,10 +7,10 @@ import (
 	"io"
 	"math"
 	"os"
-	"reflect"
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -22,35 +22,32 @@ func getCmpOpts() cmp.Options {
 		cmpopts.IgnoreFields(Progress{}, // non-trivial to compare or irrelevant in tests
 			"theme",      "output",     "fgColor",    "bufPool",
 			"stopChan",   "doneChan",   "lastFrame",  "closeOnce", 
-			"persistBar", "resizeChan", "drawNotify", "isTerminal", "resizeHandler"),
+			"persistBar", "resizeChan", "isTerminal", "resizeHandler", "tickerDuration"),
 		cmp.AllowUnexported(
-			Progress{},      rgb{},            layout{},
-			realClock{},     fakeClock{},      standardTracker{},
-			uniqueTracker{}, percentTracker{}, fractionTracker{}),
+			Progress{},        rgb{},           layout{},
+			standardTracker{}, uniqueTracker{}, percentTracker{}, fractionTracker{}),
 		cmpopts.IgnoreUnexported(theme{}),
 		cmpopts.EquateComparable(
-			atomic.Value{},
 			atomic.Uint32{},
 			atomic.Uint64{},
+			atomic.Value{},
 			atomic.Pointer[string]{}),
-		cmp.FilterValues(func(x, _ any) bool { // recursively unwraps atomic types to facilitate deep comparison of underlying values
-			_, ok := x.(interface{ Load() any })
-			if !ok && reflect.ValueOf(x).CanAddr() {
-				_, ok = reflect.ValueOf(x).Addr().Interface().(interface{ Load() any })
-			}
-			return ok
-		}, cmp.Transformer("unwrapAtomic", func(x any) any {
-			if loader, ok := x.(interface{ Load() any }); ok {
-				return loader.Load()
-			}
-			v := reflect.ValueOf(x)
-			if v.CanAddr() {
-				if loader, ok := v.Addr().Interface().(interface{ Load() any }); ok {
-					return loader.Load()
-				}
-			}
-			return x
-		})),
+		cmpopts.AcyclicTransformer("unwrapAtomicUint32", func(x *atomic.Uint32) uint32 {
+			if x == nil { return 0 }
+			return x.Load()
+		}),
+		cmpopts.AcyclicTransformer("unwrapAtomicUint64", func(x *atomic.Uint64) uint64 {
+			if x == nil { return 0 }
+			return x.Load()
+		}),
+		cmpopts.AcyclicTransformer("unwrapAtomicValue", func(x *atomic.Value) any {
+			if x == nil { return nil }
+			return x.Load()
+		}),
+		cmpopts.AcyclicTransformer("unwrapAtomicPointerString", func(x *atomic.Pointer[string]) *string {
+			if x == nil { return nil }
+			return x.Load()
+		}),
 	}
 }
 
@@ -221,82 +218,135 @@ func TestReport(t *testing.T) {
 	}
 }
 
-func TestRenderLoop(t *testing.T) {
+type writeCounter struct { count int }
+
+func (w *writeCounter) Write(p []byte) (int, error) {
+	w.count++
+	return len(p), nil
+}
+
+func TestRenderLoop_TickAndContextCanceled(t *testing.T) {
 	t.Parallel()
 
-	tickTrigger := make(chan time.Time, 2) // capacity of 2 to cover the post-loop drain case
-	notify      := make(chan struct{},  1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
+	synctest.Test(t, func(t *testing.T) {
+		drawTracker := &writeCounter{}
 
-	p := &Progress{
-		tracker:    getTracker(Standard, 100),
-		output:     io.Discard,
-		isTerminal: isTerminal,
-		clock:      fakeClock{ c: tickTrigger },
-		drawNotify: notify,
-		stopChan:   make(chan struct{}),
-		doneChan:   make(chan struct{}),
-	}
-	p.resizeHandler = p.getResizedTermWidth
-
-	p.initBufPool()
-
-	tickAndExpectDraw := func() {
-		tickTrigger <-time.Time{}
-		<-notify // draw() cycle completed
-	}
-
-	tickAndExpectSkip := func() {
-		beforeTickFrame := p.lastFrameRendered()
-
-		tickTrigger <-time.Time{}
-		<-notify
-
-		afterTickFrame := p.lastFrameRendered()
-
-		if beforeTickFrame != afterTickFrame {
-			t.Errorf("redundant frame rendered:\n%q", afterTickFrame)
+		tick := func() {                    // helper to advance the synctest bubble's virtual time (i.e., tick) to trigger a draw cycle
+			time.Sleep(50 * time.Millisecond) // advance virtual time in the synctest bubble by 50ms
+			synctest.Wait()                   // wait for the renderLoop to execute its logic
 		}
-	}
 
-	ctx, cancel := context.WithCancel(t.Context())
+		p := &Progress{
+			tracker:        getTracker(Standard, 100),
+			output:         drawTracker,
+			isTerminal:     isTerminal,
+			tickerDuration: 16 * time.Millisecond,
+			doneChan:       make(chan struct{}),
+		}
+		p.initBufPool()
+		p.prepareTerminal()
 
-	go p.renderLoop(ctx)
+		p.total.Store(100)
+		p.state.Store(pack(t, minWidth, 0))
 
-	p.Report(10, "working...")
-	tickAndExpectDraw()
+		ctx, cancel := context.WithCancel(t.Context())
 
-	p.Report(0, "working...") // redundant report
-	tickAndExpectSkip()
+		go p.renderLoop(ctx)
 
-	// avert thine eyes, for the remainder of this test just ekes out gratuitous test coverage...
+		p.Report(10, "normal draw cycle")
+		tick()
 
-	p.Report(20, "post-loop drain case")
-	tickTrigger <- time.Time{} // send a tick to wake up the loop select block
-	tickTrigger <- time.Time{} // send a tick to wake up the loop select block
-	<-notify                   // wait for the sync logic to execute and notify
-	<-notify                   // wait for the post-loop drain to catch the second tick
+		initialCount := drawTracker.count
+		want         := "processing ( 10%): normal draw cycle\n"
 
-	cancel()                   // cover the first select block's ctx.Done() case
+		if diff := cmp.Diff(want, p.lastFrameRendered()); diff != "" {
+			t.Errorf("rendered frame mismatch (-want +got):\n%s", diff)
+		}
 
-	<-p.doneChan               // wait for the first renderLoop goroutine to exit
+		p.Report(0, "normal draw cycle") // redundant report
+		tick()
 
-	select {
-	case <-notify:             // drain the notify channel
-	default:
-	}
+		if diff := cmp.Diff(initialCount, drawTracker.count); diff != "" {
+			t.Errorf("redundant frame not skipped (-want +got):\n%s", diff)
+		}
 
-	p.stopChan   = make(chan struct{})
-	p.doneChan   = make(chan struct{})
-	resizeSig   := make(chan os.Signal, 1)
-	p.resizeChan = resizeSig // hijack resizeChan to ensure the p.Close() call is caught by the second select block
+		if diff := cmp.Diff(want, p.lastFrameRendered()); diff != "" {
+			t.Errorf("rendered frame mismatch (-want +got):\n%s", diff)
+		}
 
-	go p.renderLoop(t.Context())
+		cancel() // <-ctx.Done() case
+		tick()
 
-	resizeSig <- syscall.SIGWINCH // send a SIGWINCH signal to the hijacked resizeChan
-	<-notify                      // wait for renderLoop to handle the resize signal
+		select {
+		case <-p.doneChan:
+		default:
+			t.Error("renderLoop did not exit after context cancelation")
+		}
+	})
+}
 
-	p.Close()    // cover the second select block's stopChan case
-	<-p.doneChan // wait for the second renderLoop goroutine to exit
+func TestRenderLoop_ResizeAndClose(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		mockTermWidth := minWidth
+
+		tick := func() {                    // helper to advance the synctest bubble's virtual time (i.e., tick) to trigger a draw cycle
+			time.Sleep(50 * time.Millisecond) // advance virtual time in the synctest bubble by 50ms
+			synctest.Wait()                   // wait for the renderLoop to execute its logic
+		}
+
+		p := &Progress{
+			tracker:        getTracker(Standard, 100),
+			output:         io.Discard,
+			isTerminal:     isTerminal,
+			tickerDuration: 16 * time.Millisecond,
+			resizeHandler:  func() int { return mockTermWidth },
+			stopChan:       make(chan struct{}),
+			doneChan:       make(chan struct{}),
+			resizeChan:     make(chan os.Signal, 1),
+		}
+		p.initBufPool()
+		p.prepareTerminal()
+
+		p.total.Store(100)
+		p.state.Store(pack(t, minWidth, 0))
+
+		go p.renderLoop(t.Context())
+
+		mockTermWidth = 120
+
+		time.Sleep(16 * time.Millisecond) // advance the bubble's virtual clock to land on a ticker boundary so a tick is primed
+		p.resizeChan <- syscall.SIGWINCH
+		synctest.Wait()
+
+		gotWidth := int(p.state.Load() >> 16)
+
+		if diff := cmp.Diff(mockTermWidth, gotWidth); diff != "" {
+			t.Errorf("mishandled resize (-want +got):\n%s", diff)
+		}
+
+		want := "processing (0.0%): \n"
+
+		if diff := cmp.Diff(want, p.lastFrameRendered()); diff != "" {
+			t.Errorf("resize did not trigger a draw cycle (-want +got):\n%s", diff)
+		}
+
+		p.Close() // <-p.stopChan case
+		tick()
+
+		want = "processing (100%): done\n"
+
+		if diff := cmp.Diff(want, p.lastFrameRendered()); diff != "" {
+			t.Errorf("rendered frame mismatch (-want +got):\n%s", diff)
+		}
+
+		select {
+		case <-p.doneChan:
+		default:
+			t.Error("renderLoop did not exit after calling Close()")
+		}
+	})
 }
 
 func TestClose(t *testing.T) {
@@ -369,19 +419,20 @@ func TestClose(t *testing.T) {
 			ctx, cancel := context.WithCancelCause(t.Context())
 			t.Cleanup(func() { cancel(nil) })
 
-			fc  := &fakeClock{ c: make(chan time.Time, 1) }
 			got := new(bytes.Buffer)
-			p   := New(ctx, tt.total, got, append(tt.opts, withClock(fc))...)
+			p   := New(ctx, tt.total, got, tt.opts...)
 
 			wantProg := &Progress{
 				tracker: getTracker(Standard, tt.total),
-				clock:   fc,
 				layout:  p.layout,
 			}
 			wantProg.total.Store(tt.total)
 
-			if tt.err != nil { cancel(tt.err) }
-			p.Close()
+			if tt.err == nil {
+				p.Close()
+			} else {
+				cancel(tt.err)
+			}
 			<-p.doneChan
 
 			finalState := p.state.Load() // capture final state
@@ -395,22 +446,5 @@ func TestClose(t *testing.T) {
 				t.Errorf("Close(%q) mismatch (-want +got):\n%s", tt.name, diff)
 			}
 		})
-	}
-}
-
-func TestRealClock(t *testing.T) {
-	t.Parallel()
-	rc := &realClock{ dur: time.Millisecond }
-	tk := rc.tick()
-	defer tk.Stop()
-
-	if rt, _ := tk.(*realTicker); tk.ch() != rt.C {
-		t.Error("ch() did not return an underlying time.Ticker.C channel")
-	}
-
-	select {
-	case <-tk.ch():
-	case <-time.After(50 * time.Millisecond):
-		t.Errorf("realTicker did not tick")
 	}
 }

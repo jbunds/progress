@@ -2,14 +2,11 @@ package progress
 
 import "github.com/mattn/go-runewidth"
 
-// zero-overhead production / default no-op stubs:
-// - decoupled from the production runtime path via compiler optimization.
-// - overridden during test execution per init_test.go.
-// - enables instrumentation hooks to be injected to ensure synchronous, deterministic tests.
-var (
-	syncCompleteHook   = func(*Progress        ) {}
-	storeLastFrameHook = func(*Progress, []byte) {}
-)
+// zero-overhead production / default no-op stub:
+//   - decoupled from the production runtime path via compiler optimization
+//   - overridden during test execution per init_test.go
+//   - enables instrumentation hooks to be injected to ensure synchronous, deterministic tests
+var storeLastFrameHook = func(*Progress, []byte) {}
 
 // writeState encapsulates canvas boundaries, color theme, and cursor positions
 // across sequential draws in a stack-allocated block to prevent heap escaping.
@@ -32,8 +29,6 @@ func (p *Progress) lastFrameRendered() string {
 // sync performs a state-aware redraw, skipping redundant redraws if the
 // progress and status values haven't changed since the last render.
 func (p *Progress) sync(buf []byte) []byte {
-	defer func() { syncCompleteHook(p) }()
-
 	currentState     := p.state.Load()
 	lastState        := p.lastState.Load()
 	currentStatusVal := p.tracker.load()

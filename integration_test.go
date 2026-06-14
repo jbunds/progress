@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
+	"testing/synctest"
 )
 
 // system info:
@@ -32,34 +32,34 @@ import (
 //
 //   $ ./integration_test.sh
 //   args: -totaltasks  100 -loopiterations 100
-//   time:  0.40s
-//   rss:   7.30 MB
-//   mem:   4.31 MB
+//   time:  0.48s
+//   rss:   6.91 MB
+//   mem:   3.97 MB
 //
 //   args: -totaltasks 1000 -loopiterations 1e8
-//   time:  47.35s
-//   rss:   16.67 MB
-//   mem:   12.24 MB
+//   time:  42.30s
+//   rss:   15.25 MB
+//   mem:   12.14 MB
 //
 //   args: -totaltasks  1e6 -loopiterations 1e6
-//   time:  0.46s
-//   rss:   16.12 MB
-//   mem:   12.92 MB
+//   time:  0.42s
+//   rss:   14.44 MB
+//   mem:   10.39 MB
 //
 //   args: -totaltasks    0 -loopiterations 100
 //   time:  0.00s
-//   rss:   7.23 MB
-//   mem:   4.24 MB
+//   rss:   6.95 MB
+//   mem:   4.02 MB
 //
 //   args: -totaltasks    0 -loopiterations 1e6
-//   time:  0.47s
-//   rss:   14.84 MB
-//   mem:   11.66 MB
+//   time:  0.42s
+//   rss:   14.48 MB
+//   mem:   11.49 MB
 //
 //   args: -totaltasks    0 -loopiterations 1e8
-//   time:  48.27s
-//   rss:   15.88 MB
-//   mem:   11.75 MB
+//   time:  43.77s
+//   rss:   15.23 MB
+//   mem:   12.11 MB
 //
 // see also `go build -gcflags=-m`
 
@@ -74,65 +74,69 @@ import (
 func TestStreamingStress(t *testing.T) {
 	totalTasks, loopIterations := params(flag.CommandLine, validateAndFilterArgs(os.Args[1:]))
 
-	timeChan := make(chan time.Time, 5000) // high-capacity buffer to handle concurrent worker status updates
-	
-	prog := New(t.Context(), totalTasks, io.Discard,
-		WithIsTerminalFunc(func(any) bool { return true }), // force ANSI sequence-encoded rendering
-		withClock(fakeClock{c: timeChan}))
+	synctest.Test(t, func(t *testing.T) {
+		// WithIsTerminalFunc cannot be used here because doing so triggers an internal signal.Notify call
+		// in the Progress struct's New constructor, which registers a channel created inside the synctest
+		// bubble with an external host OS background thread, causing a fatal boundary-crossing panic:
+		//
+		//   "select on synctest channel from outside bubble"
+		//
+		// manually overriding prog.isTerminal and re-running prog.prepareTerminal() immediately after
+		// initialization safely forces ANSI sequence-encoded rendering without exposing any channels
+		// to the kernel
+		p := New(t.Context(), totalTasks, io.Discard)
+		p.isTerminal = func(any) bool { return true } // force ANSI sequence-encoded rendering
+		p.prepareTerminal()
 
-	const workerCount = 4
-	iterationsPerWorker := loopIterations / workerCount
+		const workerCount = 4
+		iterationsPerWorker := loopIterations / workerCount
 
-	var wg sync.WaitGroup
+		var wg sync.WaitGroup
 
-	for w := range workerCount {
-		wg.Add(1)
-		go func(workerID uint64) {
-			defer wg.Done()
+		for w := range workerCount {
+			wg.Add(1)
+			go func(workerID uint64) {
+				defer wg.Done()
 
-			// #nosec G404 G115 - allow math/rand/v2 for non-crypto use
-			localRand := rand.New(rand.NewPCG(rand.Uint64(), workerID)) // fast local, non-crypto math/rand source to bypass the global CSPRNG lock
-			startIdx  := workerID * iterationsPerWorker
-			endIdx    := startIdx + iterationsPerWorker
+				// #nosec G404 G115 - allow math/rand/v2 for non-crypto use
+				localRand := rand.New(rand.NewPCG(rand.Uint64(), workerID)) // fast local, non-crypto math/rand source to bypass the global CSPRNG lock
+				startIdx  := workerID * iterationsPerWorker
+				endIdx    := startIdx + iterationsPerWorker
 
-			var statusMsgBuf []byte
+				var statusMsgBuf []byte
 
-			for i := startIdx; i < endIdx; i++ {
-				statusMsgBuf     = statusMsgBuf[:0]
-				statusMsgBuf     = append(statusMsgBuf, "worker-"...)
-				statusMsgBuf     = strconv.AppendUint(statusMsgBuf, workerID, 10)
-				statusMsgBuf     = append(statusMsgBuf, '-')
-				statusMsgBuf     = strconv.AppendUint(statusMsgBuf, i, 10)
-				taskCompleteMsg := string(statusMsgBuf)                 // causes heap allocs to explode in proportion to loop iterations
-				if totalTasks == 0 {                                    // fractional path allocation API mode (dynamic task discovery)
-					taskSize := localRand.Uint64N(50) + 1
-					if localRand.Uint64N(20) == 0 {                     // interleave concurrent task discovery with 5% probability trigger to stress test atomic operations
-						taskSize = localRand.Uint64N(100) + 1           // simulate variable weight tasks
-						prog.AddTotal(taskSize)                         // simulate variable task size ranging from 1 to 100 units
+				for i := startIdx; i < endIdx; i++ {
+					statusMsgBuf     = statusMsgBuf[:0]
+					statusMsgBuf     = append(statusMsgBuf, "worker-"...)
+					statusMsgBuf     = strconv.AppendUint(statusMsgBuf, workerID, 10)
+					statusMsgBuf     = append(statusMsgBuf, '-')
+					statusMsgBuf     = strconv.AppendUint(statusMsgBuf, i, 10)
+					taskCompleteMsg := string(statusMsgBuf)                 // causes heap allocs to explode in proportion to loop iterations
+					if totalTasks == 0 {                                    // fractional path allocation API mode (dynamic task discovery)
+						taskSize := localRand.Uint64N(50) + 1
+						if localRand.Uint64N(20) == 0 {                     // interleave concurrent task discovery with 5% probability trigger to stress test atomic operations
+							taskSize = localRand.Uint64N(100) + 1           // simulate variable weight tasks
+							p.AddTotal(taskSize)                         // simulate variable task size ranging from 1 to 100 units
+						}
+						p.Report(float64(taskSize), taskCompleteMsg)
+					} else {                                                // weight-based accumulation API mode (fixed number of tasks)
+						currentWeight := float64(localRand.Uint64N(50) + 1) // simulate variable weight tasks
+						p.Report(currentWeight, taskCompleteMsg)
 					}
-					prog.Report(float64(taskSize), taskCompleteMsg)
-				} else {                                                // weight-based accumulation API mode (fixed number of tasks)
-					currentWeight := float64(localRand.Uint64N(50) + 1) // simulate variable weight tasks
-					prog.Report(currentWeight, taskCompleteMsg)
 				}
+			}(uint64(w))
+		}
 
-				select { // notify renderLoop without deadlocking workers
-				case timeChan <- time.Time{}:
-				default: // buffer saturated; drop the frame tick to prevent worker starvation
-				}
-			}
-		}(uint64(w))
-	}
+		wg.Wait()
+		p.Close()
+		synctest.Wait()
 
-	wg.Wait()
-
-	prog.Close()
-
-	select {
-	case <-prog.doneChan: // blocks until the renderLoop goroutine exits
-	case <-time.After(2 * time.Second):
-		t.Fatal("test timed out waiting for renderLoop to finalize")
-	}
+		select {
+		case <-p.doneChan: // blocks until the renderLoop goroutine exits
+		default:
+			t.Fatal("renderLoop did not exit after calling Close()")
+		}
+	})
 }
 
 // params parses the -totaltasks and -loopiterations command line flag parameters used to define the runtime bounds of the test.

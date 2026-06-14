@@ -4,9 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
-	"syscall"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -61,51 +59,47 @@ func TestPrepareTerminal(t *testing.T) {
 func TestHandleResize(t *testing.T) {
 	t.Parallel()
 
-	fakeClock := fakeClock{ c: make(chan time.Time, 1) }
-	notify    := make(chan struct{}, 1)
-
-	mockTermWidth     := minWidth
-	mockResizeHandler := func() int { return mockTermWidth }
+	mockTermWidth := minWidth
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	p := New(ctx, 0, io.Discard,
-		withClock(fakeClock),
-		withResizeHandler(mockResizeHandler),
+		withResizeHandler(func() int { return mockTermWidth }),
 		WithIsTerminalFunc(func(any) bool { return true }))
 	t.Cleanup(func() { p.Close() })
-	p.drawNotify = notify // drawNotify signals the completion of a draw cycle
 
-	p.resizeChan <-syscall.SIGWINCH
+	wantTermWidth := uint32(mockTermWidth)
+	gotTermWidth  := p.state.Load() >> 16
 
-	<-notify // await a draw cycle to ensure the resize event has been processed
-
-	zeroCapBuf     := make([]byte, 0)
-	returnedBuf    := p.handleResize(zeroCapBuf)
-	expectedMinCap := p.layout.bufCap(minWidth)
-	if cap(returnedBuf) < expectedMinCap {
-		t.Errorf("handleResize() mismatch; want >= %d, got %d", expectedMinCap, cap(returnedBuf))
-	}
-
-	select {
-	case <-notify: // flush any synchronous notify token generated via the explicit p.handleResize call
-	default:
-	}
-
-	mockTermWidth = 120
-	p.resizeChan <- syscall.SIGWINCH
-	<-notify // await a draw cycle to ensure the resize event has been processed
-
-	want := uint32(120)
-	got  := p.state.Load() >> 16
-
-	if diff := cmp.Diff(want, got); diff != "" {
+	if diff := cmp.Diff(wantTermWidth, gotTermWidth); diff != "" {
 		t.Errorf("handleResize() mismatch (-want +got):\n%s", diff)
 	}
 
-	cancel()
-	<-p.doneChan
+	zeroCapBuf := make([]byte, 0)
+
+	wantBufCap := p.layout.bufCap(mockTermWidth)
+	gotBufCap  := cap(p.handleResize(zeroCapBuf))
+
+	if diff := cmp.Diff(wantBufCap, gotBufCap); diff != "" {
+		t.Errorf("handleResize() mismatch (-want +got):\n%s", diff)
+	}
+
+	mockTermWidth = 120
+
+	wantBufCap    = p.layout.bufCap(mockTermWidth)
+	gotBufCap     = cap(p.handleResize(zeroCapBuf))
+
+	wantTermWidth = uint32(mockTermWidth)
+	gotTermWidth  = p.state.Load() >> 16
+
+	if diff := cmp.Diff(wantBufCap, gotBufCap); diff != "" {
+		t.Errorf("handleResize() mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(wantTermWidth, gotTermWidth); diff != "" {
+		t.Errorf("handleResize() mismatch (-want +got):\n%s", diff)
+	}
 }
 
 func TestGetResizedTermWidth(t *testing.T) {

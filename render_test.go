@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -111,55 +112,45 @@ func TestUniqueTrackerDraw(t *testing.T) {
 func TestFractionTrackerRedraw(t *testing.T) {
 	t.Parallel()
 
-	got         := new(bytes.Buffer)
-	tickTrigger := make(chan time.Time, 1)
-	notify      := make(chan struct{},  1) // awaits the completion of a draw cycle, buffered to prevent deadlocks
+	synctest.Test(t, func(t *testing.T) {
+		got := new(bytes.Buffer)
+		
+		p := &Progress{
+			tracker:        getTracker(Fraction, 73),
+			output:         got,
+			isTerminal:     isTerminal,
+			tickerDuration: 16 * time.Millisecond,
+			stopChan:       make(chan struct{}),
+			doneChan:       make(chan struct{}),
+		}
+		p.initBufPool()
+		p.prepareTerminal()
 
-	p := &Progress{
-		tracker:    getTracker(Fraction, 73),
-		output:     got,
-		isTerminal: isTerminal,
-		clock:      fakeClock{ c: tickTrigger },
-		drawNotify: notify,
-		stopChan:   make(chan struct{}),
-		doneChan:   make(chan struct{}),
-	}
-	p.initBufPool()
-	p.prepareTerminal()
+		p.total.Store(73)
+		p.state.Store(pack(t, minWidth, 0))
 
-	p.total.Store(73)
-	p.state.Store(pack(t, minWidth, 0))
+		go p.renderLoop(t.Context())
+		t.Cleanup(func() { p.Close() })
 
-	go p.renderLoop(t.Context())
-	t.Cleanup(func() { p.Close() })
+		p.Report(11, "completed 11 units of work") // first report: 11/73
+		time.Sleep(20 * time.Millisecond)
+		synctest.Wait()
 
-	p.Report(11, "completed 11 units of work") // first report: 11/73
-	tickTrigger <-time.Time{}
-	<-notify
+		want := "processing ( 15%): 11/73\n"
+		if diff := cmp.Diff(want, p.lastFrameRendered()); diff != "" {
+			t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
+		}
 
-	tickTrigger <-time.Time{} // should skip redundant redraw
-	<-notify
+		p.Report(34, "completed another 34 units of work") // second report: 45/73
+		time.Sleep(20 * time.Millisecond)
+		synctest.Wait()
 
-	wantFrame := "processing ( 15%): 11/73\n"
-	want      := wantFrame
-	if diff := cmp.Diff(wantFrame, p.lastFrameRendered()); diff != "" {
-		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
-	}
+		want += "processing ( 62%): 45/73\n"
 
-	p.Report(34, "completed another 34 units of work") // second report: 45/73
-
-	wantFrame = "processing ( 62%): 45/73\n"
-	want     += wantFrame
-
-	for range 10 { // accommodate scheduler jitter and frame queuing by consuming notifications until we reach the expected state, otherwise fail fast
-		tickTrigger <-time.Time{}
-		<-notify
-		if p.lastFrameRendered() == wantFrame { break }
-	}
-
-	if diff := cmp.Diff(want, got.String()); diff != "" {
-		t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
-	}
+		if diff := cmp.Diff(want, got.String()); diff != "" {
+			t.Errorf("renderLoop() mismatch (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func TestWriteString(t *testing.T) {
