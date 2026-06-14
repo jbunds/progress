@@ -218,12 +218,19 @@ func TestReport(t *testing.T) {
 	}
 }
 
-type writeCounter struct { count int }
+type writeCounter struct {
+	count int
+	buf   bytes.Buffer
+}
 
 func (w *writeCounter) Write(p []byte) (int, error) {
 	w.count++
+	w.buf.Reset() // capture only the last Write
+	w.buf.Write(p)
 	return len(p), nil
 }
+
+func (w *writeCounter) String() string { return w.buf.String() }
 
 func TestRenderLoop_TickAndContextCanceled(t *testing.T) {
 	t.Parallel()
@@ -276,6 +283,12 @@ func TestRenderLoop_TickAndContextCanceled(t *testing.T) {
 
 		cancel() // <-ctx.Done() case
 		tick()
+
+		want = "stopped (context canceled)\n"
+
+		if diff := cmp.Diff(want, drawTracker.String()); diff != "" {
+			t.Errorf("rendered frame mismatch (-want +got):\n%s", diff)
+		}
 
 		select {
 		case <-p.doneChan:
