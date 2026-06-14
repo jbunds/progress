@@ -13,11 +13,11 @@ import (
 	"time"
 )
 
-// TestRenderLoop_MemoryAllocRegression verifies that the unthrottled renderLoop and
-// tracking strategies remain entirely allocation-free during steady-state cycles.
+// TestRenderLoop_MemoryAllocRegression verifies that the unthrottled renderLoop
+// and downstream trackers remain allocation-free during steady-state cycles.
 //
-// It utilizes 'testing/synctest' to execute a high-volume workload inside a
-// virtualized scheduler bubble, running large iteration loops for each tracker.
+// The test utilizes 'testing/synctest' to execute a high-volume workload inside a
+// virtualized scheduler bubble, executing large iteration loops for each tracker.
 //
 // Regression detection thresholds are assessed proportionally (per operation)
 // to mitigate background Go runtime housekeeping noise.
