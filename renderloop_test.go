@@ -4,6 +4,7 @@ package progress
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"runtime"
@@ -87,8 +88,8 @@ func TestRenderLoop_MemoryAllocRegression(t *testing.T) {
 				allocsPerOp := float64(totalAllocs) / float64(bm.totalWorkUnits)
 				bytesPerOp  := float64(totalBytes)  / float64(bm.totalWorkUnits)
 
-				t.Logf("%s results -> total allocs: %d, allocs/op: %.6f, total bytes: %d, bytes/op: %.6f",
-					bm.name, totalAllocs, allocsPerOp, totalBytes, bytesPerOp)
+				t.Logf("%s results -> total allocs: %2d, allocs/op: %.6f, total bytes: %3d, bytes/op: %.6f",
+					fmt.Sprintf("%-8s", bm.name), totalAllocs, allocsPerOp, totalBytes, bytesPerOp)
 
 				if allocsPerOp > 0.0001 { // a real memory leak will scale lineraly with bm.totalWorkUnits
 					t.Errorf("%s memory regression: expected < 0.0001 allocs/op, got %.6f (total allocs: %d)", bm.name, allocsPerOp, totalAllocs)
