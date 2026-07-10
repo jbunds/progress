@@ -21,7 +21,7 @@ jobs:
     runs-on: macos-26 # https://docs.github.com/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for--private-repositories
     steps:
 
-    - uses: actions/checkout@v6 # http://github.com/actions/checkout
+    - uses: actions/checkout@v7 # http://github.com/actions/checkout
       with:
         fetch-depth: 10         # https://github.com/gwatts/go-coverage-action#example-workflow
 
