@@ -16,7 +16,7 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7 # http://github.com/actions/checkout; v6 enforces secure credential storage under $RUNNER_TEMP
-      - uses: actions/setup-go@v6 # http://github.com/actions/setup-go
+      - uses: actions/setup-go@v7 # http://github.com/actions/setup-go
         with:
           go-version-file: go.mod # https://github.com/actions/setup-go/blob/main/docs/advanced-usage.md#using-the-go-version-file-input
       - uses: golang/govulncheck-action@v1 # https://github.com/golang/govulncheck-action
