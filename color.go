@@ -40,7 +40,7 @@ func (t *theme) bgColor(fraction float64) rgb {
 		// 3. adding 2^14 (half of 2^15) ensures accurate rounding
 		// 4. >> 15 divides by 2^15 to shift back to the 8-bit integer space (0-255)
 		val := (s << 15 + (e - s) * scaledFraction + int(math.MaxInt16 + 1) / 2) >> 15
-		return uint8(val & 0xFF) // satisfy gosec
+		return uint8(val & 0xFF)
 	}
 
 	return rgb{

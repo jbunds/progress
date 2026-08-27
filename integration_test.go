@@ -101,7 +101,7 @@ func TestStreamingStress(t *testing.T) {
 			go func(workerID uint64) {
 				defer wg.Done()
 
-				// #nosec G404 G115 - allow math/rand/v2 for non-crypto use
+				// #nosec G404 G115 - allow math/rand/v2 for non-crypto use in a test
 				localRand := rand.New(rand.NewPCG(rand.Uint64(), workerID)) // fast local, non-crypto math/rand source to bypass the global CSPRNG lock
 				startIdx  := workerID * iterationsPerWorker
 				endIdx    := startIdx + iterationsPerWorker
