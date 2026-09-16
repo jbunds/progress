@@ -27,7 +27,7 @@ func TestRenderLoop_MemoryAllocRegression(t *testing.T) {
 
 	benchmarks := []struct {
 		name           string
-		strategy       strategy
+		strategy       Strategy
 		totalWorkUnits uint64
 	}{
 		{ "Standard", Standard, 1e6 },

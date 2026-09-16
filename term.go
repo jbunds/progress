@@ -9,10 +9,12 @@ import (
 
 var isTestEnvironment = false
 
-// WithIsTerminalFunc allows callers to override internal terminal detection, e.g.:
-//
-//   progress.New(ctx, 100, os.Stderr, progress.WithIsTerminalFunc(func(any) bool { return true }))
-func WithIsTerminalFunc(f func(any) bool) Option { return func(p *Progress) { p.isTerminal = f } }
+// WithForceTerminal forces terminal capabilities regardles of the actual output target.
+func WithForceTerminal() Option {
+	return withIsTerminalFunc(func(any) bool { return true })
+}
+
+func withIsTerminalFunc(f func(any) bool) Option { return func(p *Progress) { p.isTerminal = f } }
 
 // prepareTerminal sets the line terminator character and ANSI escape sequences to
 // be used when p.output (nominally os.Stderr) has not been piped or redirected.

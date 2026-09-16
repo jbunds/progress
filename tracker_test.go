@@ -10,7 +10,7 @@ func TestGetTracker(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name  string
-		strat strategy
+		strat Strategy
 		total uint64
 		want  statusTracker
 	}{
@@ -34,7 +34,7 @@ func TestGetTracker(t *testing.T) {
 
 func TestStandardTrackerLoad(t *testing.T) {
 	t.Parallel()
-	s   := &standardTracker{}
+	s   := getTracker(Standard, 0)
 	got := s.load()
 	if diff := cmp.Diff("", got); diff != "" {
 		t.Errorf("load() mismatch (-want +got):\n%s", diff)
@@ -43,7 +43,7 @@ func TestStandardTrackerLoad(t *testing.T) {
 
 func TestUniqueTrackerLoad(t *testing.T) {
 	t.Parallel()
-	u   := &uniqueTracker{}
+	u   := getTracker(Unique, 0)
 	got := u.load()
 	if diff := cmp.Diff("", got); diff != "" {
 		t.Errorf("load() mismatch (-want +got):\n%s", diff)
@@ -63,19 +63,6 @@ func TestUniqueTrackerStoreAndLoad(t *testing.T) {
 		got = u.load()
 		if diff := cmp.Diff("foo", got); diff != "" {
 			t.Errorf("store(} / load() mismatch (-want +got):\n%s", diff)
-		}
-	})
-}
-
-func TestUniqueTrackerAddTotalAndLoad(t *testing.T) {
-	t.Parallel()
-	t.Run("uniqueTracker.load", func(t *testing.T) {
-		t.Parallel()
-		u := getTracker(Unique, 0)
-		u.addTotal(3)
-		got := u.load()
-		if diff := cmp.Diff("", got); diff != "" {
-			t.Errorf("load() mismatch (-want +got):\n%s", diff)
 		}
 	})
 }
@@ -124,7 +111,9 @@ func TestFractionTrackerAddTotalAndLoad(t *testing.T) {
 	t.Run("fractionTracker.addTotal", func(t *testing.T) {
 		t.Parallel()
 		f := getTracker(Fraction, 3)
-		f.addTotal(3)
+		if ft, ok := f.(interface{ addTotal(uint64) }); ok {
+			ft.addTotal(3)
+		}
 		got := f.load()
 		if diff := cmp.Diff("0/6", got); diff != "" {
 			t.Errorf("addTotal() mismatch (-want +got):\n%s", diff)

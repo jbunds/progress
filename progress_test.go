@@ -364,7 +364,6 @@ func TestRenderLoop_ResizeAndClose(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	t.Parallel()
-	isTerminal    := func(any) bool { return true }
 	coloredOutput :=
 		"\033[38;2;255;255;255;48;2;48;25;52mp"  + "\033[38;2;255;255;255;48;2;54;24;52mr"  +
 		"\033[38;2;255;255;255;48;2;59;23;52mo"  + "\033[38;2;255;255;255;48;2;65;22;53mc"  +
@@ -407,21 +406,21 @@ func TestClose(t *testing.T) {
 		{
 			name:    "with WithPersistBar(false)",
 			total:   100,
-			opts:    []Option{WithIsTerminalFunc(isTerminal)},
+			opts:    []Option{WithForceTerminal()},
 			wantOut: ansiHideCursor + ansiClearSeq       + coloredOutput +
 			         ansiResetAttrs + ansiLineTerminator + ansiClearSeq  + ansiDoneSeq,
 		},
 		{
 			name:    "with WithPersistBar(true)",
 			total:   200,
-			opts:    []Option{WithIsTerminalFunc(isTerminal), WithPersistBar(true)},
+			opts:    []Option{WithForceTerminal(), WithPersistBar(true)},
 			wantOut: ansiHideCursor + ansiClearSeq       + coloredOutput +
 			         ansiResetAttrs + ansiLineTerminator + "\n"          + ansiDoneSeq,
 		},
 		{
 			name:    "aborted",
 			total:   300,
-			opts:    []Option{WithIsTerminalFunc(isTerminal)},
+			opts:    []Option{WithForceTerminal()},
 			err:     errors.New("aborted for some reason"),
 			wantOut: ansiHideCursor + ansiClearSeq + "stopped (aborted for some reason)" + ansiDoneSeq,
 		},
@@ -437,7 +436,7 @@ func TestClose(t *testing.T) {
 
 			wantProg := &Progress{
 				tracker:    getTracker(Standard, tt.total),
-				isTerminal: isTerminal,
+				isTerminal: func(any) bool { return true },
 			}
 			wantProg.prepareTerminal()
 			wantProg.total.Store(tt.total)

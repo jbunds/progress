@@ -1,10 +1,11 @@
 package progress
 
-type strategy int
+// Strategy selects the progress tracking strategy used to render status updates.
+type Strategy int
 
 const (
 	// Standard is the default tracker, and is suitable for tracking mostly unique status updates.
-	Standard strategy = iota
+	Standard Strategy = iota
 
 	// Unique is suitable for tracking repetitive status updates.
 	Unique
@@ -21,12 +22,11 @@ type statusTracker interface {
 	init()                // initializes tracker-specific UI layout configuration and metadata
 	store(uint64, string) // stores the current status string
 	load() string         // returns the current status string
-	addTotal(uint64)      // used by fractionTracker to add to the total units (denominator) when workers call AddTotal()
 	layout() layout       // returns the UI layout configuration and metadata for a tracker
 	setLayout(*layout)    // sets the UI layout configuration and metadata for a tracker (in prepareTerminal())
 }
 
-func getTracker(strat strategy, totalUnits uint64) statusTracker {
+func getTracker(strat Strategy, totalUnits uint64) statusTracker {
 	var tracker statusTracker
 
 	switch strat {

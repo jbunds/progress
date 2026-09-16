@@ -66,7 +66,7 @@ func TestHandleResize(t *testing.T) {
 
 	p := New(ctx, 0, io.Discard,
 		withResizeHandler(func() int { return mockTermWidth }),
-		WithIsTerminalFunc(func(any) bool { return true }))
+		WithForceTerminal())
 	t.Cleanup(func() { p.Close() })
 
 	wantTermWidth := uint32(mockTermWidth)

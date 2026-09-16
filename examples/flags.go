@@ -33,7 +33,7 @@ func Flags(fs *flag.FlagSet, args []string) ([]progress.Option) {
 	if len(fs.Args()) > 0 {
 		_, _ = fmt.Fprintf(fs.Output(), "ignored arguments: %s\n", strings.Join(fs.Args(), ", "))
 	}
-	strategies := map[string]any{
+	strategies := map[string]progress.Strategy{
 		"unique":   progress.Unique,
 		"percent":  progress.Percent,
 		"fraction": progress.Fraction,
@@ -44,7 +44,7 @@ func Flags(fs *flag.FlagSet, args []string) ([]progress.Option) {
 		progress.WithPersistBar(persistBar),
 		func(p *progress.Progress) {
 			if forceTTY {
-				progress.WithIsTerminalFunc(func(any) bool { return true })(p)
+				progress.WithForceTerminal()(p)
 			}
 		},
 	}

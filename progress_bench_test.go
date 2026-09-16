@@ -99,7 +99,7 @@ func BenchmarkRenderLoop(b *testing.B) {
 
 	benchmarks := []struct {
 		name           string
-		strategy       strategy
+		strategy       Strategy
 		totalWorkUnits uint64
 	}{
 		{ "Standard", Standard, 1e8 },

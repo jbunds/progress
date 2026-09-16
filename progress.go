@@ -28,11 +28,9 @@ type Option func(*Progress) // exported to allow callers to create []*progress.O
 // WithTracker allows callers to override the default progress.Standard status tracker, e.g.:
 //
 //   progress.New(ctx, 100, os.Stderr, progress.WithTracker(progress.Fraction))
-func WithTracker(s any) Option {
+func WithTracker(s Strategy) Option {
 	return func(p *Progress) {
-		if strategy, ok := s.(strategy); ok {
-			p.tracker = getTracker(strategy, p.total.Load())
-		}
+		p.tracker = getTracker(s, p.total.Load())
 	}
 }
 
@@ -130,8 +128,10 @@ func (p *Progress) InitialBudget() float64 { return float64(scale) }
 // AddTotal dynamically increases the total work budget as new tasks are discovered.
 // It is concurrency-safe and ensures the total budget never exceeds scale.
 func (p *Progress) AddTotal(n uint64) {
+	if ft, ok := p.tracker.(interface{ addTotal(uint64) }); ok { // handle fractionTracker case
+		ft.addTotal(n) // TODO(jeff): clean this up with more a transparent polymorphic implementation
+	}
 	for {
-		p.tracker.addTotal(n) // pure no-op call except for fractionTracker; TODO(jeff): clean this up with more a transparent polymorphic implementation
 		oldTotal := p.total.Load()
 		newTotal := min(oldTotal + n, scale) // fall back to scale if total exceeds max precision
 		if p.total.CompareAndSwap(oldTotal, newTotal) { break }
