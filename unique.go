@@ -23,7 +23,6 @@ func (u *uniqueTracker) load() string {
 	return ""
 }
 
-func (u *uniqueTracker) addTotal(_ uint64)    {             }
 func (u *uniqueTracker) layout() layout       { return u.lo }
 func (u *uniqueTracker) setLayout(lo *layout) { u.lo = *lo  }
 

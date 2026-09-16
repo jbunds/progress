@@ -36,7 +36,6 @@ func (s *standardTracker) load() string {
 	return ""
 }
 
-func (s *standardTracker) addTotal(_ uint64)    {             }
 func (s *standardTracker) layout() layout       { return s.lo }
 func (s *standardTracker) setLayout(lo *layout) { s.lo = *lo  }
 
