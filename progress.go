@@ -198,7 +198,7 @@ func (p *Progress) Report(weight float64, status string) {
 	}
 }
 
-// Close stops the background renderer and waits for cleanup to complete.
+// Close stops the background renderer and waits for cleanup to complete (idempotent).
 func (p *Progress) Close() {
 	p.closeOnce.Do(func() {
 		close(p.stopChan) // stop the renderLoop goroutine
