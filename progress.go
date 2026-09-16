@@ -70,7 +70,7 @@ type Progress struct {
 	tickerDuration time.Duration  // duration between UI render cycles, nominally 16ms to render at ~60 FPS
 	resizeChan     chan os.Signal // handles terminal window resizing events via the syscall.SIGWINCH signal
 	resizeHandler  resizeHandler  // handles terminal resize events (enables dependency injection in tests)
-	closeOnce      sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once
+	closeOnce      sync.Once      // closeOnce ensures that cursor restoration and cleanup logic are executed only once (i.e., Close() is idempotent)
 	isTerminal     func(any) bool // facilitates dependency injection for tests
 	theme          *theme         // progress bar color theme
 	fgColor        func(rgb) rgb  // high-contrast foreground color calculator which uses a pre-computed 256-byte lookup table
