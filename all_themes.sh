@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 themes=($(egrep '^\s+name:\s+"[^"]+",' themes.go |  # brittle hack, but it works...
 	tr -d \" | tr -d , |

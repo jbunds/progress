@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 trap 'exit $((128 +  1))' SIGHUP  # SIGHUP  ==  1
 trap 'exit $((128 +  2))' SIGINT  # SIGINT  ==  2
