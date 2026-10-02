@@ -75,7 +75,7 @@ Limitations:
 - truncated status updates may render incorrectly in terminal emulators which lack UTF-8 support
 - has not been tested on terminal emulators which lack support for rendering 24-bit colors
 
-See [![Go Reference](https://pkg.go.dev/badge/github.com/jbunds/progress.svg)](https://pkg.go.dev/github.com/jbunds/progress) for API documentation and [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jbunds/progress) for technical internal implementation details.
+See [![Go Reference](https://pkg.go.dev/badge/github.com/jbunds/progress.svg)](https://pkg.go.dev/github.com/jbunds/progress) for API documentation and [![DeepWiki](doc/deepwiki.svg)](https://deepwiki.com/jbunds/progress) for technical internal implementation details.
 
 ---
 
