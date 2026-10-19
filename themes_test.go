@@ -23,7 +23,7 @@ func TestGetTheme(t *testing.T) {
 					{255, 195,  0},
 				},
 			},
-    },
+		},
 		{
 			name: "ocean",
 			want: &theme{
